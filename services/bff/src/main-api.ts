@@ -6,7 +6,12 @@ import { loadEnv } from "./config/env.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  const app = buildApp({ logger: true });
+  const app = buildApp({
+    logger: true,
+    ...(env.INTERNAL_LINKS_API_KEY
+      ? { tripAccess: { internalApiKey: env.INTERNAL_LINKS_API_KEY } }
+      : {}),
+  });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 }

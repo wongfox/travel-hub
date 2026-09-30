@@ -4,6 +4,8 @@ import { buildApp, startWorker } from "./composition-root.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { createInMemoryQueueClient } from "./infra/queue/queue-client.js";
 import { SAMPLE_JOB_QUEUE } from "./infra/queue/sample-job.js";
+import { createInMemoryAccessLinkStore } from "./modules/trip-access/access-link-store.js";
+import { resolveAccessLinkByToken } from "./modules/trip-access/resolve-link.js";
 
 describe("buildApp", () => {
   it("responds 200 with an ok status on GET /healthz", async () => {
@@ -57,6 +59,56 @@ describe("buildApp", () => {
     expect(response.headers["referrer-policy"]).toBe("no-referrer");
     expect(response.headers["permissions-policy"]).toBe("camera=(self)");
     expect(response.headers["content-security-policy"]).toContain("default-src 'self'");
+  });
+});
+
+describe("buildApp — trip-access (task 5.2)", () => {
+  it("registers POST /internal/links, rejecting an unauthenticated request as 401 by default", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/links",
+      payload: { reservationRef: "RES-1001", contact: { kind: "email", address: "a@b.com" }, locale: "es" },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("issues a link end to end against the default (in-memory store + stub delivery) wiring when given the configured internal API key", async () => {
+    const app = buildApp({ tripAccess: { internalApiKey: "dev-only-internal-key" } });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/links",
+      headers: { authorization: "Bearer dev-only-internal-key" },
+      payload: { reservationRef: "RES-1001", contact: { kind: "email", address: "a@b.com" }, locale: "es" },
+    });
+
+    expect(response.statusCode).toBe(201);
+  });
+
+  it("accepts an injected accessLinkStore, so a real (e.g. Drizzle-backed) store can be wired in without changing this function", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createLinkDeliveryStub } = await import("./adapters/link-delivery/stub.js");
+    const linkDelivery = createLinkDeliveryStub();
+    const app = buildApp({
+      tripAccess: { internalApiKey: "dev-only-internal-key", accessLinkStore, linkDelivery },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/links",
+      headers: { authorization: "Bearer dev-only-internal-key" },
+      payload: { reservationRef: "RES-1001", contact: { kind: "email", address: "a@b.com" }, locale: "es" },
+    });
+    const body = response.json() as { accessLinkId: string };
+    const token = linkDelivery.deliveries[0]!.linkUrl.split("#")[1]!;
+
+    // The record is reachable through the exact store instance that was injected.
+    const record = await resolveAccessLinkByToken(token, accessLinkStore);
+    expect(record?.id).toBe(body.accessLinkId);
+    expect(record?.reservationRef).toBe("RES-1001");
   });
 });
 

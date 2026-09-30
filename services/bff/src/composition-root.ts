@@ -13,6 +13,19 @@ import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { registerSecurityPlugins } from "./infra/http/security-plugins.js";
 import type { QueueClient } from "./infra/queue/queue-client.js";
 import { registerSampleJob, SAMPLE_JOB_QUEUE, type SampleJobExecutor } from "./infra/queue/sample-job.js";
+import { createInMemoryAccessLinkStore, type AccessLinkStore } from "./modules/trip-access/access-link-store.js";
+import { registerTripAccessRoutes } from "./modules/trip-access/http.js";
+import type { LinkDeliveryPort } from "./modules/trip-access/ports.js";
+import { createLinkDeliveryStub } from "./adapters/link-delivery/stub.js";
+
+/**
+ * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
+ * (env.ts). Design-interfaces leaves the exact service-auth mechanism open
+ * ("mTLS or signed service token"); startup must never rely on this default
+ * outside `development`/`test` (see main-api.ts).
+ */
+const DEFAULT_DEV_INTERNAL_LINKS_API_KEY = "dev-only-internal-links-key";
+const DEFAULT_LINK_EXPIRY_MS = 72 * 60 * 60 * 1000; // 72h grace, per design Decision 4 (configurable)
 
 export interface BuildAppOptions {
   /**
@@ -21,6 +34,15 @@ export interface BuildAppOptions {
    * `false`/omitted disables logging.
    */
   logger?: boolean | Logger;
+  /** `trip-link-access` issuance wiring (task 5.2). All fields default sensibly for dev/test. */
+  tripAccess?: {
+    accessLinkStore?: AccessLinkStore;
+    linkDelivery?: LinkDeliveryPort;
+    internalApiKey?: string;
+    linkExpiryMs?: number;
+    buildLinkUrl?: (token: string) => string;
+    now?: () => Date;
+  };
 }
 
 /**
@@ -51,6 +73,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/healthz", async () => {
     return { status: "ok" as const };
+  });
+
+  const tripAccessOptions = options.tripAccess ?? {};
+  registerTripAccessRoutes(app, {
+    store: tripAccessOptions.accessLinkStore ?? createInMemoryAccessLinkStore(),
+    linkDelivery: tripAccessOptions.linkDelivery ?? createLinkDeliveryStub(),
+    internalApiKey: tripAccessOptions.internalApiKey ?? DEFAULT_DEV_INTERNAL_LINKS_API_KEY,
+    linkExpiryMs: tripAccessOptions.linkExpiryMs ?? DEFAULT_LINK_EXPIRY_MS,
+    buildLinkUrl:
+      tripAccessOptions.buildLinkUrl ?? ((token: string) => `https://app.travel-hub.local/t#${token}`),
+    ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 
   return app;
