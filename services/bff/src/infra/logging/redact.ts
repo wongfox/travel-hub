@@ -49,29 +49,49 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * Recursively redacts a log payload: denylisted field names are replaced
  * outright, and string values that look like an email are redacted even
  * under an unrecognized key (defense in depth against key-naming misses).
- * Non-plain objects (class instances, Buffers, etc.) and already-visited
- * objects (cycle guard) pass through unchanged rather than being recursed
- * into, since real logger payloads (e.g. Fastify's request/response
- * objects) can be deeply nested engine internals or self-referencing.
+ * Non-plain objects (class instances, Buffers, etc.) pass through
+ * unchanged rather than being recursed into, since real logger payloads
+ * (e.g. Fastify's request/response objects) can be deeply nested engine
+ * internals.
+ *
+ * `ancestors` tracks the objects currently being processed on this
+ * recursion path — an object seen here is a genuine cycle (self-reference),
+ * so it passes through raw rather than recursing forever. `cache` tracks
+ * objects that have *finished* processing — an object seen here was
+ * reached again from a different, non-circular branch (e.g. the same
+ * object referenced under two sibling keys), so its already-computed
+ * redacted result is reused instead of returning the original, unredacted
+ * object.
  */
-export function redactLogPayload(payload: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+export function redactLogPayload(
+  payload: unknown,
+  ancestors: WeakSet<object> = new WeakSet(),
+  cache: WeakMap<object, unknown> = new WeakMap(),
+): unknown {
   if (Array.isArray(payload)) {
-    if (seen.has(payload)) return payload;
-    seen.add(payload);
-    return payload.map((item) => redactLogPayload(item, seen));
+    if (ancestors.has(payload)) return payload;
+    if (cache.has(payload)) return cache.get(payload);
+    ancestors.add(payload);
+    const result = payload.map((item) => redactLogPayload(item, ancestors, cache));
+    ancestors.delete(payload);
+    cache.set(payload, result);
+    return result;
   }
 
   if (isPlainObject(payload)) {
-    if (seen.has(payload)) return payload;
-    seen.add(payload);
+    if (ancestors.has(payload)) return payload;
+    if (cache.has(payload)) return cache.get(payload);
+    ancestors.add(payload);
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(payload)) {
       if (isDenylistedKey(key) || looksLikeEmail(value)) {
         result[key] = REDACTED;
       } else {
-        result[key] = redactLogPayload(value, seen);
+        result[key] = redactLogPayload(value, ancestors, cache);
       }
     }
+    ancestors.delete(payload);
+    cache.set(payload, result);
     return result;
   }
 

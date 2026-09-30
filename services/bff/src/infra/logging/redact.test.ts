@@ -62,6 +62,16 @@ describe("redactLogPayload", () => {
     expect(() => redactLogPayload(circular)).not.toThrow();
   });
 
+  it("redacts a shared (non-circular) object referenced from two different keys, not just the first occurrence", () => {
+    const shared = { token: "shared-secret-value" };
+    const payload = { a: shared, b: shared };
+
+    const redacted = redactLogPayload(payload) as { a: { token: string }; b: { token: string } };
+
+    expect(redacted.a.token).toBe("[REDACTED]");
+    expect(redacted.b.token).toBe("[REDACTED]");
+  });
+
   it("leaves non-plain objects (class instances, Buffers) untouched instead of recursing into their internals", () => {
     class Socket {
       constructor(public remoteAddress: string) {}
