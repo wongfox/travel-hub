@@ -1,0 +1,82 @@
+import {
+  boolean,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+
+/**
+ * Foundational app-owned schema (design Data Model, task 3.3 scope only —
+ * `wifi_package`/`wifi_order`/`precheckin_submission`/`push_subscription`/
+ * `notification`/`pulse_response`/`staff_alert`/`content_cache`/
+ * `analytics_event` and pg-boss's own schema land with their owning
+ * capability's work unit). All tables are keyed off SIR's `reservation_ref`
+ * + `passenger_ref` (SIR remains the source of truth — see design's Data
+ * Model section); nothing here duplicates SIR data long-term.
+ */
+
+export const consentPurpose = pgEnum("consent_purpose", [
+  "analytics",
+  "push",
+  "pulse",
+  "precheckin_biometric",
+]);
+
+export const accessLink = pgTable("access_link", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tokenHash: text("token_hash").notNull().unique(),
+  reservationRef: text("reservation_ref").notNull(),
+  /** Empty array means "all passengers on the reservation" per the design. */
+  passengerScope: text("passenger_scope").array().notNull().default([]),
+  localeHint: text("locale_hint"),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  supersededBy: uuid("superseded_by").references((): AnyPgColumn => accessLink.id),
+  issueChannel: text("issue_channel").notNull(),
+});
+
+export const session = pgTable("session", {
+  idHash: text("id_hash").primaryKey(),
+  linkId: uuid("link_id")
+    .notNull()
+    .references(() => accessLink.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  locale: text("locale").notNull(),
+  userAgentClass: text("user_agent_class"),
+});
+
+export const consentRecord = pgTable("consent_record", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  linkId: uuid("link_id")
+    .notNull()
+    .references(() => accessLink.id),
+  reservationRef: text("reservation_ref").notNull(),
+  passengerRef: text("passenger_ref"),
+  purpose: consentPurpose("purpose").notNull(),
+  textVersion: text("text_version").notNull(),
+  granted: boolean("granted").notNull(),
+  /** Append-only: withdrawal is a new row with granted=false, not an update. */
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const featureFlag = pgTable("feature_flag", {
+  key: text("key").primaryKey(),
+  value: boolean("value").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const piiAccessAudit = pgTable("pii_access_audit", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  actor: text("actor").notNull(),
+  action: text("action").notNull(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: text("subject_id").notNull(),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+});
