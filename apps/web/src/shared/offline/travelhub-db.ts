@@ -2,17 +2,20 @@ import { openDB, type IDBPDatabase } from "idb";
 
 /**
  * Single shared IndexedDB connection (design Data Model "Client-side":
- * IndexedDB `travelhub` v1) backing both `trip-snapshot-store.ts`
- * (`snapshots`, keyed by link id) and `trip-prefs-store.ts` (`prefs` —
- * currently just the active link id; locale/dismissed-banners are a future
- * addition to the same store, not introduced by this task). Both stores are
- * created in the same `upgrade` callback under `DB_VERSION = 1` rather than
- * bumping the version when `prefs` was added: the product has no released
- * users yet (design Migration/Rollout: "No data migration (greenfield)"),
- * so there is no existing v1 database missing this store to migrate.
+ * IndexedDB `travelhub`) backing both `trip-snapshot-store.ts` (`snapshots`,
+ * keyed by link id) and `trip-prefs-store.ts` (`prefs` — currently just the
+ * active link id; locale/dismissed-banners are a future addition to the
+ * same store, not introduced by this task).
+ *
+ * `DB_VERSION` must be bumped every time a store is added or changed: native
+ * IndexedDB only invokes `upgrade` when the requested version is greater
+ * than the version already stored on that device, so a device that already
+ * opened this database under a prior `DB_VERSION` (e.g. one that only ever
+ * shipped `snapshots`) would otherwise silently keep missing any store
+ * added since, with no error surfaced anywhere it's read.
  */
 export const DB_NAME = "travelhub";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 export const SNAPSHOTS_STORE = "snapshots";
 export const PREFS_STORE = "prefs";
 
