@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { registerTripRoutes } from "./http.js";
 import { DEFAULT_SESSION_COOKIE_NAME } from "../trip-access/http.js";
@@ -7,6 +8,7 @@ import { createInMemoryAccessLinkStore, type AccessLinkStore } from "../trip-acc
 import { createInMemorySessionStore, type SessionStore } from "../trip-access/session-store.js";
 import { generateAccessToken, hashAccessToken } from "../trip-access/token.js";
 import type { SirBookingPort, SirReservation } from "../booking/ports.js";
+import type { TicketDocumentPort } from "./ports.js";
 
 const reservation: SirReservation = {
   reservationRef: "RES-1001",
@@ -21,7 +23,14 @@ const reservation: SirReservation = {
       arrivalLocal: "2026-11-02T09:40:00-05:00",
       tier: "PRIME",
       status: "SCHEDULED",
+      seat: "5A",
+      coach: "3",
+      barcodeFormat: "CODE128",
+      barcodePayload: "BP-L1",
     },
+  ],
+  tickets: [
+    { ticketRef: "TCK-CONSETTUR", kind: "CONSETTUR", title: "Consettur bus", milestoneLegRef: "L1", fileId: "DOC-1" },
   ],
 };
 
@@ -36,6 +45,14 @@ function fakeSirBooking(): Pick<SirBookingPort, "getReservation" | "getRelocatio
   };
 }
 
+function fakeTicketDocument(): TicketDocumentPort {
+  return {
+    async fetch(docId: string) {
+      return { contentType: "application/pdf", body: Readable.from(Buffer.from(`content:${docId}`)) };
+    },
+  };
+}
+
 async function buildTestApp(): Promise<{
   app: FastifyInstance;
   accessLinkStore: AccessLinkStore;
@@ -45,7 +62,12 @@ async function buildTestApp(): Promise<{
   await app.register(cookie);
   const accessLinkStore = createInMemoryAccessLinkStore();
   const sessionStore = createInMemorySessionStore();
-  registerTripRoutes(app, { accessLinkStore, sessionStore, sirBooking: fakeSirBooking() });
+  registerTripRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    sirBooking: fakeSirBooking(),
+    ticketDocument: fakeTicketDocument(),
+  });
   await app.ready();
   return { app, accessLinkStore, sessionStore };
 }
@@ -104,5 +126,45 @@ describe("GET /api/trip", () => {
     const body = response.json() as { legs: Array<{ tier: string; id: string }> };
     expect(body.legs).toHaveLength(1);
     expect(body.legs[0]).toMatchObject({ id: "L1", tier: "PRIME" });
+  });
+});
+
+describe("GET /api/documents/:id", () => {
+  it("returns 401 link_expired when no session cookie is present", async () => {
+    const { app } = await buildTestApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/documents/DOC-1" });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ code: "link_expired" });
+  });
+
+  it("streams the binary file with its contentType for a document id owned by the session's trip", async () => {
+    const { app, accessLinkStore, sessionStore } = await buildTestApp();
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/documents/DOC-1",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("application/pdf");
+    expect(response.body).toBe("content:DOC-1");
+  });
+
+  it("returns 404 for a document id not owned by the session's trip", async () => {
+    const { app, accessLinkStore, sessionStore } = await buildTestApp();
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/documents/DOC-BELONGS-TO-ANOTHER-TRIP",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ code: "not_found" });
   });
 });

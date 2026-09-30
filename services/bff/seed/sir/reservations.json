@@ -14,7 +14,27 @@
         "departureLocal": "2026-11-02T08:10:00-05:00",
         "arrivalLocal": "2026-11-02T09:40:00-05:00",
         "tier": "PRIME",
-        "status": "SCHEDULED"
+        "status": "SCHEDULED",
+        "seat": "5A",
+        "coach": "3",
+        "barcodeFormat": "CODE128",
+        "barcodePayload": "BP-RES-1001-L1"
+      }
+    ],
+    "tickets": [
+      {
+        "ticketRef": "TCK-1001-CONSETTUR",
+        "kind": "CONSETTUR",
+        "title": "Consettur bus",
+        "milestoneLegRef": "L1",
+        "fileId": "DOC-1001-CONSETTUR"
+      },
+      {
+        "ticketRef": "TCK-1001-INC",
+        "kind": "INC_ENTRY",
+        "title": "INC entry ticket",
+        "milestoneLegRef": "L1",
+        "barcodePayload": "INC-1001-BARCODE"
       }
     ],
     "relocations": []
@@ -33,7 +53,20 @@
         "departureLocal": "2026-11-03T07:00:00-05:00",
         "arrivalLocal": "2026-11-03T10:50:00-05:00",
         "tier": "VOYAGER",
-        "status": "RELOCATED"
+        "status": "RELOCATED",
+        "seat": "2B",
+        "coach": "1",
+        "barcodeFormat": "CODE128",
+        "barcodePayload": "BP-RES-2002-L1"
+      }
+    ],
+    "tickets": [
+      {
+        "ticketRef": "TCK-2002-MEAL",
+        "kind": "MEAL_TEATIME",
+        "title": "Tea time service",
+        "milestoneLegRef": "L1",
+        "fileId": "DOC-2002-MEAL"
       }
     ],
     "relocations": [

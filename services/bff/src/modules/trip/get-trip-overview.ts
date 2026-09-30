@@ -6,6 +6,8 @@ import { resolveServiceTier } from "./resolve-service-tier.js";
 import { selectNextMilestone } from "./select-next-milestone.js";
 import { buildRelocationAlerts } from "./build-relocation-alerts.js";
 import { maskReservationRef } from "./mask-reservation-ref.js";
+import { buildBoardingPasses } from "./build-boarding-passes.js";
+import { buildDocuments } from "./build-documents.js";
 
 export interface GetTripOverviewDeps {
   sirBooking: Pick<SirBookingPort, "getReservation" | "getRelocations">;
@@ -16,17 +18,17 @@ export interface GetTripOverviewDeps {
 }
 
 /**
- * `trip-home`'s `GET /api/trip` overview projection (task 6.2): the single
- * payload `trip-home`, `trip-itinerary`, `travel-documents`, and
+ * `trip-home`'s `GET /api/trip` overview projection (tasks 6.2-6.4): the
+ * single payload `trip-home`, `trip-itinerary`, `travel-documents`, and
  * `service-tier-experience` all render from (design's Data Flow section).
  *
- * `boardingPasses`/`documents` are intentionally empty here — the boarding
- * pass view (`trip-itinerary`, task 6.3) and ticket listing
- * (`travel-documents`, task 6.4) populate those fields in the next work
- * unit; this overview already carries every field `trip-home` itself needs
- * (status/next-milestone/alerts, task 6.2's own scope). Likewise
- * `precheckinStatus` defaults to `"none"` for every passenger until
- * `pre-check-in` (Phase 8) exists.
+ * `boardingPasses` (`trip-itinerary`, task 6.3) and `documents`
+ * (`travel-documents`, task 6.4) are derived from the same `reservation`
+ * fetched above, so a relocation recorded in SIR is reflected consistently
+ * across the itinerary/boarding pass and the `trip-home` alert banner from
+ * one single fetch (spec "Relocation reflected across itinerary, boarding
+ * pass and home banner together"). `precheckinStatus` defaults to `"none"`
+ * for every passenger until `pre-check-in` (Phase 8) exists.
  */
 export async function getTripOverview(
   accessLink: AccessLinkRecord,
@@ -61,8 +63,8 @@ export async function getTripOverview(
       tier: resolveServiceTier(leg.tier),
       status: leg.status,
     })),
-    boardingPasses: [],
-    documents: [],
+    boardingPasses: buildBoardingPasses(reservation.legs, relocations),
+    documents: buildDocuments(reservation.legs, reservation.tickets),
     alerts: buildRelocationAlerts(relocations),
     nextMilestone: selectNextMilestone(reservation.legs),
     features: resolvePassengerFeatures(deps.flags ?? FLAG_DEFAULTS),

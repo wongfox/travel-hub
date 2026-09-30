@@ -234,6 +234,87 @@ describe("buildApp — trip overview (task 6.2)", () => {
   });
 });
 
+describe("buildApp — trip-itinerary + travel-documents (task 6.3/6.4)", () => {
+  it("returns boardingPasses and documents built from the seed fixture, end to end for a real session", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({ tripAccess: { accessLinkStore, sessionStore } });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+
+    const tripResponse = await app.inject({
+      method: "GET",
+      url: "/api/trip",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    const trip = tripResponse.json() as {
+      boardingPasses: Array<{ legId: string; seat: string }>;
+      documents: Array<{ kind: string; fileId?: string }>;
+    };
+    // RES-1001's seed fixture has one leg (seat 5A) and two tickets (Consettur with a fileId, INC entry with a barcode).
+    expect(trip.boardingPasses).toEqual([
+      { legId: "L1", seat: "5A", coach: "3", barcodeFormat: "CODE128", barcodePayload: "BP-RES-1001-L1", tier: "PRIME" },
+    ]);
+    expect(trip.documents.map((doc) => doc.kind).sort()).toEqual(["CONSETTUR", "INC_ENTRY", "TRAIN"]);
+
+    const fileDoc = trip.documents.find((doc) => doc.kind === "CONSETTUR");
+
+    const documentResponse = await app.inject({
+      method: "GET",
+      url: `/api/documents/${fileDoc?.fileId}`,
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+
+    expect(documentResponse.statusCode).toBe(200);
+    expect(documentResponse.headers["content-type"]).toBe("application/pdf");
+  });
+
+  it("reflects RES-2002's relocated seat in the boarding pass automatically, consistent with its trip-home alert", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-2002",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "whatsapp",
+    });
+    const app = buildApp({ tripAccess: { accessLinkStore, sessionStore } });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/trip",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    const trip = response.json() as { boardingPasses: Array<{ seat: string }>; alerts: unknown[] };
+
+    // RES-2002's seed relocation records newSeat "3C" (original seat is "2B").
+    expect(trip.boardingPasses[0]?.seat).toBe("3C");
+    expect(trip.alerts).toHaveLength(1);
+  });
+});
+
 describe("startWorker", () => {
   it("starts the given queue client and registers the sample job on it (task 3.4)", async () => {
     const queueClient = createInMemoryQueueClient();

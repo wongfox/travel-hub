@@ -1,6 +1,12 @@
 import { z } from "zod";
-import { LegStatusSchema, ServiceTierSchema } from "contracts";
-import type { SirLeg, SirPassenger, SirRelocation, SirReservation } from "../../modules/booking/ports.js";
+import { LegStatusSchema, ServiceTierSchema, TicketKindSchema } from "contracts";
+import type {
+  SirLeg,
+  SirPassenger,
+  SirRelocation,
+  SirReservation,
+  SirTicket,
+} from "../../modules/booking/ports.js";
 import type { ContactChannel } from "../../modules/trip-access/ports.js";
 
 /**
@@ -31,6 +37,10 @@ const SeedLegSchema = z.object({
   arrivalLocal: z.string().min(1),
   tier: ServiceTierSchema,
   status: LegStatusSchema,
+  seat: z.string().min(1),
+  coach: z.string().min(1),
+  barcodeFormat: z.string().min(1),
+  barcodePayload: z.string().min(1),
 });
 
 const SeedRelocationSchema = z.object({
@@ -40,11 +50,21 @@ const SeedRelocationSchema = z.object({
   newSeat: z.string().min(1).optional(),
 });
 
+const SeedTicketSchema = z.object({
+  ticketRef: z.string().min(1),
+  kind: TicketKindSchema,
+  title: z.string().min(1),
+  milestoneLegRef: z.string().min(1).nullable(),
+  barcodePayload: z.string().min(1).optional(),
+  fileId: z.string().min(1).optional(),
+});
+
 const SeedReservationSchema = z.object({
   reservationRef: z.string().min(1),
   contact: SeedContactChannelSchema,
   passengers: z.array(SeedPassengerSchema),
   legs: z.array(SeedLegSchema),
+  tickets: z.array(SeedTicketSchema),
   relocations: z.array(SeedRelocationSchema),
 });
 
@@ -73,6 +93,27 @@ function toLegs(legs: SeedReservation["legs"]): SirLeg[] {
 }
 
 /**
+ * Maps a single seed ticket into the domain `SirTicket` shape, omitting
+ * `barcodePayload`/`fileId` entirely (not as literal `undefined`) when the
+ * seed did not provide them — same `exactOptionalPropertyTypes: true`
+ * convention as `mapSeedRelocationToDomain`.
+ */
+function toTicket(ticket: SeedReservation["tickets"][number]): SirTicket {
+  return {
+    ticketRef: ticket.ticketRef,
+    kind: ticket.kind,
+    title: ticket.title,
+    milestoneLegRef: ticket.milestoneLegRef,
+    ...(ticket.barcodePayload !== undefined ? { barcodePayload: ticket.barcodePayload } : {}),
+    ...(ticket.fileId !== undefined ? { fileId: ticket.fileId } : {}),
+  };
+}
+
+function toTickets(tickets: SeedReservation["tickets"]): SirTicket[] {
+  return tickets.map(toTicket);
+}
+
+/**
  * Anti-corruption mapping: seed/raw shape -> domain `SirReservation`.
  * `relocations` are intentionally excluded — `SirBookingPort.getRelocations`
  * reads them separately (mirroring `SirBookingPort`'s own two-method split).
@@ -83,6 +124,7 @@ export function mapSeedReservationToDomain(seed: SeedReservation): SirReservatio
     contact: toContactChannel(seed.contact),
     passengers: toPassengers(seed.passengers),
     legs: toLegs(seed.legs),
+    tickets: toTickets(seed.tickets),
   };
 }
 
