@@ -1,13 +1,14 @@
 /**
  * Entry point for the `worker` process (sagas, dispatch, purges, polling).
- * No jobs are registered yet (pg-boss wiring lands in task 3.4), so this
- * process boots, logs the (empty) registration result, and exits cleanly —
- * it does not hang waiting on a queue that does not exist yet.
  */
 import { startWorker } from "./composition-root.js";
+import { loadEnv } from "./config/env.js";
+import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 
 async function main(): Promise<void> {
-  const result = await startWorker();
+  const env = loadEnv();
+  const queueClient = createPgBossQueueClient(env.DATABASE_URL);
+  const result = await startWorker({ queueClient });
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
 }
 
