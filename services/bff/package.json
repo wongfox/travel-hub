@@ -1,0 +1,29 @@
+{
+  "name": "bff",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Experience API / BFF — Node.js 22 + Fastify, hexagonal. Two processes: api (HTTP) and worker (sagas, dispatch, purges, polling).",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev:api": "tsx src/main-api.ts",
+    "dev:worker": "tsx src/main-worker.ts",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.3",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
