@@ -9,6 +9,8 @@
  */
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Logger } from "pino";
+import { isProductionLike } from "./config/go-live-guards.js";
+import type { NodeEnvName } from "./config/env.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { registerSecurityPlugins } from "./infra/http/security-plugins.js";
 import type { QueueClient } from "./infra/queue/queue-client.js";
@@ -39,6 +41,13 @@ export interface BuildAppOptions {
     accessLinkStore?: AccessLinkStore;
     linkDelivery?: LinkDeliveryPort;
     internalApiKey?: string;
+    /**
+     * The running environment, used only to decide whether a missing
+     * `internalApiKey` is a startup error (production-like) or an
+     * acceptable dev/test default. Defaults to `"development"` so existing
+     * callers that never pass it keep the dev-only fallback.
+     */
+    nodeEnv?: NodeEnvName;
     linkExpiryMs?: number;
     buildLinkUrl?: (token: string) => string;
     now?: () => Date;
@@ -76,6 +85,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   const tripAccessOptions = options.tripAccess ?? {};
+  if (!tripAccessOptions.internalApiKey && isProductionLike(tripAccessOptions.nodeEnv ?? "development")) {
+    throw new Error(
+      "INTERNAL_LINKS_API_KEY is required in a production-like environment (production/staging); " +
+        "refusing to start with the dev-only default internal API key.",
+    );
+  }
   registerTripAccessRoutes(app, {
     store: tripAccessOptions.accessLinkStore ?? createInMemoryAccessLinkStore(),
     linkDelivery: tripAccessOptions.linkDelivery ?? createLinkDeliveryStub(),

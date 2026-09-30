@@ -59,8 +59,11 @@ export interface GoLiveGuardResult {
  * Environments where guarded flags enforce their prerequisites. `staging` is
  * treated the same as `production` (see env.ts's NodeEnvSchema docstring) so
  * a guarded flag cannot be exercised against stub adapters in staging either.
+ * Exported for reuse by any other startup check that needs the same
+ * production-like boundary (e.g. composition-root.ts's internal-API-key
+ * check).
  */
-function isProductionLike(nodeEnv: NodeEnvName): boolean {
+export function isProductionLike(nodeEnv: NodeEnvName): boolean {
   return nodeEnv === "production" || nodeEnv === "staging";
 }
 

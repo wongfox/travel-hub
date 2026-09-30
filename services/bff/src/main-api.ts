@@ -8,9 +8,10 @@ async function main(): Promise<void> {
   const env = loadEnv();
   const app = buildApp({
     logger: true,
-    ...(env.INTERNAL_LINKS_API_KEY
-      ? { tripAccess: { internalApiKey: env.INTERNAL_LINKS_API_KEY } }
-      : {}),
+    tripAccess: {
+      nodeEnv: env.NODE_ENV,
+      ...(env.INTERNAL_LINKS_API_KEY ? { internalApiKey: env.INTERNAL_LINKS_API_KEY } : {}),
+    },
   });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });

@@ -110,6 +110,27 @@ describe("buildApp — trip-access (task 5.2)", () => {
     expect(record?.id).toBe(body.accessLinkId);
     expect(record?.reservationRef).toBe("RES-1001");
   });
+
+  it("throws at build time in a production-like environment when no internalApiKey is provided, instead of silently falling back to the dev-only default", () => {
+    expect(() => buildApp({ tripAccess: { nodeEnv: "production" } })).toThrow(
+      /INTERNAL_LINKS_API_KEY/,
+    );
+    expect(() => buildApp({ tripAccess: { nodeEnv: "staging" } })).toThrow(
+      /INTERNAL_LINKS_API_KEY/,
+    );
+  });
+
+  it("still falls back to the dev-only default in development and test, and does not throw", () => {
+    expect(() => buildApp({ tripAccess: { nodeEnv: "development" } })).not.toThrow();
+    expect(() => buildApp({ tripAccess: { nodeEnv: "test" } })).not.toThrow();
+    expect(() => buildApp()).not.toThrow();
+  });
+
+  it("does not throw in production when a real internalApiKey is provided", () => {
+    expect(() =>
+      buildApp({ tripAccess: { nodeEnv: "production", internalApiKey: "real-key" } }),
+    ).not.toThrow();
+  });
 });
 
 describe("startWorker", () => {
