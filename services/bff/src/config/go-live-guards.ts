@@ -55,9 +55,13 @@ export interface GoLiveGuardResult {
   missing: string[];
 }
 
-/** Environments where guarded flags may run against stub adapters with synthetic data. */
+/**
+ * Environments where guarded flags enforce their prerequisites. `staging` is
+ * treated the same as `production` (see env.ts's NodeEnvSchema docstring) so
+ * a guarded flag cannot be exercised against stub adapters in staging either.
+ */
 function isProductionLike(nodeEnv: NodeEnvName): boolean {
-  return nodeEnv === "production";
+  return nodeEnv === "production" || nodeEnv === "staging";
 }
 
 function isNonStub(adapter: string): boolean {
@@ -121,9 +125,9 @@ const GUARD_CHECKS: Record<GuardedFlagKey, (ctx: GoLiveContext) => GoLiveGuardRe
 
 /**
  * Evaluates whether a guarded flag is allowed to be `true` given the
- * current environment and declared prerequisites. Non-production
- * environments (`development`, `test`, `staging`) always allow guarded
- * flags to run against stubs with synthetic data.
+ * current environment and declared prerequisites. Only `development` and
+ * `test` always allow guarded flags to run against stubs with synthetic
+ * data; `staging` and `production` both enforce the real prerequisites.
  */
 export function evaluateGoLiveGuard(flag: GuardedFlagKey, ctx: GoLiveContext): GoLiveGuardResult {
   if (!isProductionLike(ctx.nodeEnv)) {

@@ -163,8 +163,37 @@ describe("evaluateGoLiveGuard — non-production environments", () => {
     });
   });
 
-  it("also allows in staging, which is treated the same as development for guard purposes", () => {
+});
+
+describe("evaluateGoLiveGuard — staging is production-like", () => {
+  it("enforces guarded-flag prerequisites in staging exactly like production", () => {
     const ctx = baseContext({ nodeEnv: "staging" });
+
+    expect(evaluateGoLiveGuard("wifi.checkout", ctx)).toEqual({
+      allowed: false,
+      missing: [
+        "non-stub PaymentGatewayPort adapter",
+        "non-stub EReceiptPort adapter",
+        "non-stub SirPosPort adapter",
+        "non-stub WifiEntitlementPort adapter",
+      ],
+    });
+  });
+
+  it("allows in staging once prerequisites are met, same as production", () => {
+    const ctx = baseContext({
+      nodeEnv: "staging",
+      adapters: {
+        precheckinHandoff: "vendor",
+        webPush: "vendor",
+        staffAlert: "vendor",
+        payment: "vendor",
+        receipt: "vendor",
+        sirPos: "vendor",
+        wifiEntitlement: "ti-convergia",
+        content: "vendor",
+      },
+    });
 
     expect(evaluateGoLiveGuard("wifi.checkout", ctx)).toEqual({ allowed: true, missing: [] });
   });
