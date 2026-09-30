@@ -43,6 +43,9 @@
     "nextMilestone": {
       "label": "Next departure: {origin} → {destination} at {time}",
       "none": "Your trip is complete — no further milestones."
+    },
+    "offline": {
+      "lastUpdated": "Last updated: {time}"
     }
   },
   "alerts": {

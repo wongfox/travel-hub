@@ -1,5 +1,6 @@
 import { precacheAndRoute } from "workbox-precaching";
 import { registerDenylistRoutes } from "./register-denylist.js";
+import { registerDocumentCacheRoute } from "./register-document-cache.js";
 import { checkRemoteKill } from "./kill-switch.js";
 
 /**
@@ -16,6 +17,11 @@ import { checkRemoteKill } from "./kill-switch.js";
  * name bump is needed here. `checkRemoteKill` runs on activation and
  * unregisters + clears every cache when `/sw-kill.json` reports the app
  * should be killed (design Migration/Rollout item 5).
+ * `registerDocumentCacheRoute` (task 7.1) caches purchased tickets into
+ * `th-docs-v1` so `travel-documents` stays viewable offline after one
+ * online load, ordered after the denylist so a future overlapping pattern
+ * still resolves to whichever route Workbox matches first without either
+ * route depending on the other's registration order today.
  *
  * `self` is typed locally rather than via the `webworker` lib (which would
  * conflict with the app's `dom` lib) — a standard pattern for `injectManifest`
@@ -35,6 +41,7 @@ declare const self: {
 precacheAndRoute(self.__WB_MANIFEST);
 
 registerDenylistRoutes();
+registerDocumentCacheRoute();
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(

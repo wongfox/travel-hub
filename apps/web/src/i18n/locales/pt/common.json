@@ -43,6 +43,9 @@
     "nextMilestone": {
       "label": "Próxima partida: {origin} → {destination} às {time}",
       "none": "Sua viagem terminou — não há mais etapas."
+    },
+    "offline": {
+      "lastUpdated": "Última atualização: {time}"
     }
   },
   "alerts": {

@@ -2,6 +2,7 @@ import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
+import { isSensitiveRoute } from "contracts";
 import type { FastifyInstance } from "fastify";
 
 export interface SecurityPluginsOptions {
@@ -36,6 +37,18 @@ export async function registerSecurityPlugins(
   // Helmet does not set Permissions-Policy (dropped upstream); set it explicitly.
   app.addHook("onSend", async (_request, reply) => {
     reply.header("Permissions-Policy", "camera=(self)");
+  });
+
+  // Design Security section / task 7.2: the BFF sends `Cache-Control:
+  // no-store` on every sensitive route family (pre check-in, session, WiFi,
+  // push), defense-in-depth alongside the service worker's own denylist
+  // (`apps/web/src/sw/denylist.ts`) which reads the exact same pattern list
+  // from `contracts`.
+  app.addHook("onSend", async (request, reply) => {
+    const pathname = request.url.split("?")[0] ?? request.url;
+    if (isSensitiveRoute(pathname)) {
+      reply.header("Cache-Control", "no-store");
+    }
   });
 
   await app.register(cookie);
