@@ -31,5 +31,51 @@
       "confirmation": "Se esses dados corresponderem a uma reserva, enviamos um novo link.",
       "error": "Algo deu errado. Tente novamente."
     }
+  },
+  "trip": {
+    "loading": "Carregando sua viagem…",
+    "loadError": "Não foi possível carregar sua viagem. Tente novamente.",
+    "status": {
+      "upcoming": "Viagem próxima",
+      "inProgress": "Viagem em andamento",
+      "completed": "Viagem concluída"
+    },
+    "nextMilestone": {
+      "label": "Próxima partida: {origin} → {destination} às {time}",
+      "none": "Sua viagem terminou — não há mais etapas."
+    }
+  },
+  "alerts": {
+    "relocation": {
+      "title": "Sua alocação mudou",
+      "body": "Alteramos seu trem, vagão ou assento. Confira seu cartão de embarque atualizado."
+    }
+  },
+  "itinerary": {
+    "heading": "Itinerário",
+    "status": {
+      "pending": "Pendente",
+      "next": "Próximo",
+      "inProgress": "Em andamento",
+      "completed": "Concluído"
+    },
+    "documentsHeading": "Documentos"
+  },
+  "documents": {
+    "heading": "Documentos de viagem",
+    "kind": {
+      "train": "Passagem de trem",
+      "consettur": "Ônibus Consettur",
+      "incEntry": "Entrada em Machu Picchu",
+      "mealTeatime": "Refeição / hora do chá",
+      "other": "Outro"
+    },
+    "viewFile": "Ver documento",
+    "barcodeLabel": "Código de barras"
+  },
+  "nav": {
+    "home": "Viagem",
+    "itinerary": "Itinerário",
+    "documents": "Documentos"
   }
 }
