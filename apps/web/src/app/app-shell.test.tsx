@@ -8,4 +8,14 @@ describe("AppShell", () => {
 
     expect(screen.getByRole("heading", { name: "Travel Hub" })).toBeInTheDocument();
   });
+
+  it("renders provided children below the heading", () => {
+    render(
+      <AppShell>
+        <p>Route content</p>
+      </AppShell>,
+    );
+
+    expect(screen.getByText("Route content")).toBeInTheDocument();
+  });
 });

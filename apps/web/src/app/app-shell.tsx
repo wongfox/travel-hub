@@ -1,12 +1,15 @@
+import type { ReactNode } from "react";
+
 /**
- * Minimal app shell for task 4.1 (Vite + React + PWA scaffold). This is
- * intentionally empty beyond a landmark heading; the router tree and
- * TanStack Query provider are wired in on top of it by task 4.2.
+ * App shell for task 4.1 (Vite + React + PWA scaffold), reused by the
+ * router's root route (task 4.2) as the layout wrapping every matched
+ * route's `<Outlet />`.
  */
-export function AppShell() {
+export function AppShell({ children }: { children?: ReactNode }) {
   return (
     <div id="app-shell">
       <h1>Travel Hub</h1>
+      {children}
     </div>
   );
 }
