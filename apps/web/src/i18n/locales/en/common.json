@@ -1,0 +1,17 @@
+{
+  "app": {
+    "name": "Travel Hub"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you are looking for does not exist."
+  },
+  "language": {
+    "es": "Spanish",
+    "en": "English",
+    "pt": "Portuguese"
+  },
+  "sample": {
+    "itemCount": "{count, plural, one {# item} other {# items}}"
+  }
+}
