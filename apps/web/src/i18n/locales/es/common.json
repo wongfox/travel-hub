@@ -9,7 +9,8 @@
   "language": {
     "es": "Español",
     "en": "Inglés",
-    "pt": "Portugués"
+    "pt": "Portugués",
+    "selectorLabel": "Idioma"
   },
   "sample": {
     "itemCount": "{count, plural, one {# elemento} other {# elementos}}"

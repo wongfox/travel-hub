@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { createI18n } from "./index.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { createI18n, LOCALE_STORAGE_KEY, persistLocale } from "./index.js";
 
 describe("createI18n", () => {
   it("loads the common namespace resources for the initial locale", () => {
@@ -32,5 +32,30 @@ describe("createI18n", () => {
 
     expect(i18n.t("sample.itemCount", { count: 1 })).toBe("1 elemento");
     expect(i18n.t("sample.itemCount", { count: 3 })).toBe("3 elementos");
+  });
+});
+
+/**
+ * `persistLocale` (task 7.3, `localization` "Language selection": "MUST
+ * persist that selection for the session/link") is the write-half of the
+ * explicit-choice resolution `resolveLocale`/`createBrowserI18n` already
+ * read from `localStorage` — until this task, nothing ever wrote to it.
+ */
+describe("persistLocale", () => {
+  afterEach(() => {
+    window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+  });
+
+  it("writes the given locale under the key createBrowserI18n reads on startup", () => {
+    persistLocale("pt");
+
+    expect(window.localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("pt");
+  });
+
+  it("overwrites a previously persisted locale", () => {
+    persistLocale("en");
+    persistLocale("es");
+
+    expect(window.localStorage.getItem(LOCALE_STORAGE_KEY)).toBe("es");
   });
 });
