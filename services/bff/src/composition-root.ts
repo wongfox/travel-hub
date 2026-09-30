@@ -1,15 +1,26 @@
 /**
  * Composition root: the single place where adapters are wired to ports and
- * the Fastify application is assembled. Constructor-injection convention
- * per design Decision 2 — no DI framework/container.
+ * the Fastify application/worker are assembled. Constructor-injection
+ * convention per design Decision 2 — no DI framework/container.
  *
- * At this stage (task 3.1) there are no outbound ports to wire yet; this
- * file exists as the wiring point future work units (3.4+) extend.
+ * Capability-module ports (SirBookingPort, PaymentGatewayPort, etc.) still
+ * land in later work units; this file currently wires the shared
+ * infrastructure (HTTP app, job queue) those modules will extend.
  */
 import Fastify, { type FastifyInstance } from "fastify";
+import type { Logger } from "pino";
+import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
+import { registerSecurityPlugins } from "./infra/http/security-plugins.js";
+import type { QueueClient } from "./infra/queue/queue-client.js";
+import { registerSampleJob, SAMPLE_JOB_QUEUE, type SampleJobExecutor } from "./infra/queue/sample-job.js";
 
 export interface BuildAppOptions {
-  logger?: boolean;
+  /**
+   * `true` builds a default redacting logger (task 3.5); pass a pre-built
+   * logger (e.g. one pointed at a custom destination) to override it;
+   * `false`/omitted disables logging.
+   */
+  logger?: boolean | Logger;
 }
 
 /**
@@ -19,7 +30,24 @@ export interface BuildAppOptions {
  * a real port.
  */
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: options.logger ?? false });
+  const loggerInstance =
+    options.logger === true
+      ? createRedactingLogger()
+      : options.logger === false || options.logger === undefined
+        ? undefined
+        : options.logger;
+  // Cast away Fastify's logger-instance generic: `FastifyInstance`'s default
+  // logger type parameter (`FastifyBaseLogger`) is intentionally looser than
+  // pino's own `Logger`, and this function's public return type stays the
+  // plain `FastifyInstance` regardless of which logger variant was used.
+  const app = (
+    loggerInstance ? Fastify({ loggerInstance }) : Fastify({ logger: false })
+  ) as FastifyInstance;
+
+  // `.register()` enqueues synchronously; Fastify's own boot sequencing
+  // (avvio) resolves every registered plugin before `.ready()`/`.listen()`/
+  // `.inject()` complete, so this does not need to be awaited here.
+  void registerSecurityPlugins(app);
 
   app.get("/healthz", async () => {
     return { status: "ok" as const };
@@ -29,16 +57,33 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 }
 
 export interface WorkerBootResult {
-  /** Job names registered on the worker's queue. Empty until task 3.4 wires pg-boss. */
+  /** Job names registered on the worker's queue. */
   jobsRegistered: string[];
 }
 
+export interface StartWorkerOptions {
+  /** Queue client to start and register jobs on (real pg-boss adapter in production, fake in tests). */
+  queueClient: QueueClient;
+  /** Executor for the sample job (task 3.4). Defaults to a no-op — later work units' real jobs bring their own executors and registration calls. */
+  sampleJobExecutor?: SampleJobExecutor;
+}
+
+const noopSampleJobExecutor: SampleJobExecutor = {
+  async execute() {
+    // No real downstream side effect yet — the sample job exists to prove
+    // the queue's natural-key dedupe and bounded-retry/dead-letter wiring
+    // (task 3.4's acceptance criteria), not to perform real work.
+  },
+};
+
 /**
- * Boots the `worker` process's wiring. No queue exists yet (pg-boss lands in
- * task 3.4), so this currently resolves immediately with zero registered
- * jobs — main-worker.ts exits cleanly right after, per task 3.1's acceptance
- * criteria.
+ * Boots the `worker` process's wiring: starts the given queue client and
+ * registers every worker-owned job on it. Currently registers the task 3.4
+ * sample job; later work units' capability modules register their own jobs
+ * here as they land.
  */
-export async function startWorker(): Promise<WorkerBootResult> {
-  return { jobsRegistered: [] };
+export async function startWorker(options: StartWorkerOptions): Promise<WorkerBootResult> {
+  await options.queueClient.start();
+  await registerSampleJob(options.queueClient, options.sampleJobExecutor ?? noopSampleJobExecutor);
+  return { jobsRegistered: [SAMPLE_JOB_QUEUE] };
 }
