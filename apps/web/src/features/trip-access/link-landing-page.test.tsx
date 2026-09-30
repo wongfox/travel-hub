@@ -14,9 +14,10 @@ function renderLandingPage(props: {
   getHash: () => string;
   replaceState?: (path: string) => void;
   navigate?: (path: string) => void;
+  locale?: "en" | "es" | "pt";
 }) {
   return render(
-    <I18nextProvider i18n={createI18n({ initialLocale: "en" })}>
+    <I18nextProvider i18n={createI18n({ initialLocale: props.locale ?? "en" })}>
       <LinkLandingPage
         apiClient={props.apiClient}
         getHash={props.getHash}
@@ -35,7 +36,18 @@ describe("LinkLandingPage", () => {
     renderLandingPage({ apiClient, getHash: () => "#a-real-token" });
 
     await vi.waitFor(() => {
-      expect(post).toHaveBeenCalledWith("/api/session", { token: "a-real-token" });
+      expect(post).toHaveBeenCalledWith("/api/session", { token: "a-real-token", locale: "en" });
+    });
+  });
+
+  it("forwards the page's actual current locale, not a hardcoded default", async () => {
+    const post = vi.fn().mockResolvedValue({ expiresAt: "2026-11-05T00:00:00.000Z" });
+    const apiClient = buildFakeApiClient(post);
+
+    renderLandingPage({ apiClient, getHash: () => "#a-real-token", locale: "pt" });
+
+    await vi.waitFor(() => {
+      expect(post).toHaveBeenCalledWith("/api/session", { token: "a-real-token", locale: "pt" });
     });
   });
 

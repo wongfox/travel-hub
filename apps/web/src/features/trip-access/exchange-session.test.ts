@@ -11,13 +11,13 @@ function buildFakeApiClient(post: ApiClient["post"]): ApiClient {
 }
 
 describe("exchangeSession", () => {
-  it("posts the token to /api/session and returns the parsed result", async () => {
+  it("posts the token and the caller's current locale to /api/session and returns the parsed result", async () => {
     const post = vi.fn().mockResolvedValue({ expiresAt: "2026-11-05T00:00:00.000Z" });
     const apiClient = buildFakeApiClient(post);
 
-    const result = await exchangeSession(apiClient, "raw-token-value");
+    const result = await exchangeSession(apiClient, "raw-token-value", "pt");
 
-    expect(post).toHaveBeenCalledWith("/api/session", { token: "raw-token-value" });
+    expect(post).toHaveBeenCalledWith("/api/session", { token: "raw-token-value", locale: "pt" });
     expect(result).toEqual({ expiresAt: "2026-11-05T00:00:00.000Z" });
   });
 
@@ -26,6 +26,6 @@ describe("exchangeSession", () => {
     const post = vi.fn().mockRejectedValue(failure);
     const apiClient = buildFakeApiClient(post);
 
-    await expect(exchangeSession(apiClient, "raw-token-value")).rejects.toBe(failure);
+    await expect(exchangeSession(apiClient, "raw-token-value", "en")).rejects.toBe(failure);
   });
 });

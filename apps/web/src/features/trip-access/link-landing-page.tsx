@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { Locale } from "contracts";
 import type { ApiClient } from "../../shared/api/client.js";
 import { exchangeSession } from "./exchange-session.js";
 import { readTokenFromHash } from "./read-token-from-hash.js";
@@ -36,7 +37,7 @@ export function LinkLandingPage({
   getHash = () => window.location.hash,
   replaceState = (path: string) => window.history.replaceState(null, "", path),
 }: LinkLandingPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   // Read once, synchronously, during the initial render (not inside the
   // effect below): the fragment never changes for the lifetime of this
   // component, and computing the starting state here — rather than calling
@@ -49,7 +50,7 @@ export function LinkLandingPage({
     if (!token) return;
     let cancelled = false;
 
-    exchangeSession(apiClient, token)
+    exchangeSession(apiClient, token, i18n.language as Locale)
       .then(() => {
         if (cancelled) return;
         replaceState(window.location.pathname);
