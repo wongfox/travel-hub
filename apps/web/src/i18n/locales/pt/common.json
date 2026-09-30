@@ -13,5 +13,12 @@
   },
   "sample": {
     "itemCount": "{count, plural, one {# item} other {# itens}}"
+  },
+  "tier": {
+    "voyager": "Voyager",
+    "vistadome360": "Vistadome 360°",
+    "prime": "Prime",
+    "firstClass": "Primeira Classe",
+    "unknown": "Padrão"
   }
 }
