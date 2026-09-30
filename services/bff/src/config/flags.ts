@@ -1,3 +1,5 @@
+import type { PassengerFeatureKey } from "contracts";
+
 /**
  * Feature flag keys and their production defaults, per design Decision 13.
  * Runtime overrides (kill switches without redeploy) come from the
@@ -42,4 +44,29 @@ export function resolveFlags(
   overrides: Partial<Record<FlagKey, boolean>> = {},
 ): Record<FlagKey, boolean> {
   return { ...FLAG_DEFAULTS, ...overrides };
+}
+
+/**
+ * Narrows the full server-side flag table down to the passenger-visible
+ * subset (`packages/contracts`'s `PassengerFeatureKeySchema`), for
+ * `TripDTO.features` (task 6.2) and `GET /api/session`'s `features`.
+ * Server-only flags (`links.issuance`, `precheckin.production_collection`,
+ * `pulse.staff_alerts`) are deliberately excluded — they gate backend
+ * behavior, not a passenger-facing UI toggle, per `trip.ts`'s own doc
+ * comment on `PassengerFeatureKeySchema`.
+ */
+export function resolvePassengerFeatures(
+  flags: Record<FlagKey, boolean>,
+): Record<PassengerFeatureKey, boolean> {
+  return {
+    precheckinCaptureUi: flags["precheckin.capture_ui"],
+    pushEnabled: flags["push.enabled"],
+    pushA2hsPrompt: flags["push.a2hs_prompt"],
+    pulseCapture: flags["pulse.capture"],
+    wifiCheckout: flags["wifi.checkout"],
+    menuEnabled: flags["menu.enabled"],
+    destinationEnabled: flags["destination.enabled"],
+    tierTheming: flags["tier.theming"],
+    offlineContent: flags["offline.content"],
+  };
 }

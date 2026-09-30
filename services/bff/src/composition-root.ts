@@ -23,6 +23,8 @@ import type { LinkDeliveryPort } from "./modules/trip-access/ports.js";
 import { createLinkDeliveryStub } from "./adapters/link-delivery/stub.js";
 import type { SirBookingPort } from "./modules/booking/ports.js";
 import { createSirBookingStub } from "./adapters/sir-booking/stub.js";
+import { registerTripRoutes } from "./modules/trip/http.js";
+import type { FlagKey } from "./config/flags.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -67,6 +69,16 @@ export interface BuildAppOptions {
     reissueRateLimiter?: RateLimiter;
     now?: () => Date;
   };
+  /**
+   * `trip` overview wiring (task 6.2). Shares `tripAccess`'s
+   * `accessLinkStore`/`sessionStore` by default (a session created via
+   * `POST /api/session` must be resolvable here) — only override them
+   * through `tripAccess` unless a test genuinely needs divergent stores.
+   */
+  trip?: {
+    sirBooking?: Pick<SirBookingPort, "getReservation" | "getRelocations">;
+    flags?: Record<FlagKey, boolean>;
+  };
 }
 
 /**
@@ -106,10 +118,17 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         "refusing to start with the dev-only default internal API key.",
     );
   }
+  // Shared by both `trip-access` and `trip` below: a session created via
+  // `POST /api/session` (trip-access) must resolve via the exact same store
+  // instances when `GET /api/trip` (trip) looks it up.
+  const accessLinkStore = tripAccessOptions.accessLinkStore ?? createInMemoryAccessLinkStore();
+  const sessionStore = tripAccessOptions.sessionStore ?? createInMemorySessionStore();
+  const sharedSirBookingStub = createSirBookingStub();
+
   registerTripAccessRoutes(app, {
-    store: tripAccessOptions.accessLinkStore ?? createInMemoryAccessLinkStore(),
-    sessionStore: tripAccessOptions.sessionStore ?? createInMemorySessionStore(),
-    sirBooking: tripAccessOptions.sirBooking ?? createSirBookingStub(),
+    store: accessLinkStore,
+    sessionStore,
+    sirBooking: tripAccessOptions.sirBooking ?? sharedSirBookingStub,
     linkDelivery: tripAccessOptions.linkDelivery ?? createLinkDeliveryStub(),
     internalApiKey: tripAccessOptions.internalApiKey ?? DEFAULT_DEV_INTERNAL_LINKS_API_KEY,
     linkExpiryMs: tripAccessOptions.linkExpiryMs ?? DEFAULT_LINK_EXPIRY_MS,
@@ -120,6 +139,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       tripAccessOptions.sessionRateLimiter ?? createInMemoryRateLimiter(DEFAULT_SESSION_RATE_LIMIT),
     reissueRateLimiter:
       tripAccessOptions.reissueRateLimiter ?? createInMemoryRateLimiter(DEFAULT_REISSUE_RATE_LIMIT),
+    ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
+  });
+
+  const tripOptions = options.trip ?? {};
+  registerTripRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
+    ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 

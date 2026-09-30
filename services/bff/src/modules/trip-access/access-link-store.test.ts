@@ -145,4 +145,25 @@ describe("createInMemoryAccessLinkStore", () => {
 
     await expect(store.revoke("does-not-exist", "new-link-id")).resolves.toBeUndefined();
   });
+
+  it("finds a previously created record by its id", async () => {
+    const store = createInMemoryAccessLinkStore();
+    const created = await store.create({
+      tokenHash: "hash-h",
+      reservationRef: "RES-8008",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+
+    const found = await store.findById(created.id);
+
+    expect(found).toEqual(created);
+  });
+
+  it("returns null when no record matches the given id", async () => {
+    const store = createInMemoryAccessLinkStore();
+
+    expect(await store.findById("does-not-exist")).toBeNull();
+  });
 });

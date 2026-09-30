@@ -34,6 +34,14 @@ export interface AccessLinkStore {
   create(input: CreateAccessLinkInput): Promise<AccessLinkRecord>;
   findByTokenHash(tokenHash: string): Promise<AccessLinkRecord | null>;
   /**
+   * Looks up a link by its own id rather than its token hash. Needed by
+   * capability modules (e.g. `trip`, task 6.2) that only know a session's
+   * `linkId` (design's `session.link_id` foreign key) and must resolve it
+   * back to the link's `reservationRef`/`passengerScope` without ever
+   * touching the raw token.
+   */
+  findById(id: string): Promise<AccessLinkRecord | null>;
+  /**
    * Every not-yet-revoked link currently issued for a reservation. Used by
    * the reissue use case (task 5.4) to find which previous links must be
    * superseded when a new one is issued.
@@ -65,6 +73,15 @@ export function createInMemoryAccessLinkStore(): AccessLinkStore {
 
     async findByTokenHash(tokenHash: string): Promise<AccessLinkRecord | null> {
       return byTokenHash.get(tokenHash) ?? null;
+    },
+
+    async findById(id: string): Promise<AccessLinkRecord | null> {
+      for (const record of byTokenHash.values()) {
+        if (record.id === id) {
+          return record;
+        }
+      }
+      return null;
     },
 
     async findActiveByReservation(reservationRef: string): Promise<AccessLinkRecord[]> {
