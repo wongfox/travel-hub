@@ -315,6 +315,59 @@ describe("buildApp — trip-itinerary + travel-documents (task 6.3/6.4)", () => 
   });
 });
 
+describe("buildApp — privacy consent capture (task 8.1)", () => {
+  async function establishSession(): Promise<{
+    app: ReturnType<typeof buildApp>;
+    cookieValue: string;
+  }> {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({ tripAccess: { accessLinkStore, sessionStore } });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+    return { app, cookieValue };
+  }
+
+  it("registers POST /api/consents end to end against the default (in-memory) wiring", async () => {
+    const { app, cookieValue } = await establishSession();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/consents",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: { purpose: "precheckin_biometric", textVersion: "v1", granted: true },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ purpose: "precheckin_biometric", granted: true });
+  });
+
+  it("rejects an unauthenticated request", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/consents",
+      payload: { purpose: "precheckin_biometric", textVersion: "v1", granted: true },
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+});
+
 describe("startWorker", () => {
   it("starts the given queue client and registers the sample job on it (task 3.4)", async () => {
     const queueClient = createInMemoryQueueClient();
