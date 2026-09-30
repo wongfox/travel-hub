@@ -98,4 +98,22 @@ describe("createApiClient", () => {
 
     expect(fetchSpy).toHaveBeenCalled();
   });
+
+  it("uses a later-stubbed global fetch even when the client was created before the stub (module-singleton pattern)", async () => {
+    // Regression for a real bug: `route-tree.tsx` builds one module-level
+    // `defaultApiClient` at import time, so any consumer that creates a
+    // client before a test stubs `globalThis.fetch` must still observe the
+    // stub on every request — not a `fetch` reference frozen at creation.
+    const client = createApiClient();
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const result = await client.get<{ ok: boolean }>("/api/trip");
+
+    expect(result).toEqual({ ok: true });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/trip",
+      expect.objectContaining({ method: "GET", credentials: "same-origin" }),
+    );
+  });
 });
