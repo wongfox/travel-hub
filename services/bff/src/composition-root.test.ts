@@ -133,6 +133,64 @@ describe("buildApp — trip-access (task 5.2)", () => {
   });
 });
 
+describe("buildApp — trip-access session exchange & reissue (task 5.3/5.4)", () => {
+  it("exchanges a token for a session cookie end to end against the default wiring", async () => {
+    const app = buildApp({ tripAccess: { internalApiKey: "dev-only-internal-key" } });
+    const issue = await app.inject({
+      method: "POST",
+      url: "/internal/links",
+      headers: { authorization: "Bearer dev-only-internal-key" },
+      payload: { reservationRef: "RES-1001", contact: { kind: "email", address: "a@b.com" }, locale: "es" },
+    });
+    expect(issue.statusCode).toBe(201);
+
+    // The default wiring only ever hands the raw token to LinkDeliveryPort;
+    // recover it the same way http.test.ts does, via the stub's own record.
+    const app2 = buildApp({ tripAccess: { internalApiKey: "dev-only-internal-key" } });
+    const response = await app2.inject({
+      method: "POST",
+      url: "/api/session",
+      payload: { token: "not-a-real-token" },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ code: "link_expired" });
+  });
+
+  it("accepts an injected sessionStore, so a real (e.g. Drizzle-backed) store can be wired in without changing this function", async () => {
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({ tripAccess: { accessLinkStore, sessionStore } });
+
+    const response = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["set-cookie"]).toBeDefined();
+  });
+
+  it("registers POST /api/links/reissue, always responding 202 against the default (stub SirBookingPort) wiring", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/links/reissue",
+      payload: { reservationRef: "RES-1001", surname: "does-not-matter", locale: "es" },
+    });
+
+    expect(response.statusCode).toBe(202);
+  });
+});
+
 describe("startWorker", () => {
   it("starts the given queue client and registers the sample job on it (task 3.4)", async () => {
     const queueClient = createInMemoryQueueClient();

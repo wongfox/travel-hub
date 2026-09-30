@@ -16,9 +16,13 @@ import { registerSecurityPlugins } from "./infra/http/security-plugins.js";
 import type { QueueClient } from "./infra/queue/queue-client.js";
 import { registerSampleJob, SAMPLE_JOB_QUEUE, type SampleJobExecutor } from "./infra/queue/sample-job.js";
 import { createInMemoryAccessLinkStore, type AccessLinkStore } from "./modules/trip-access/access-link-store.js";
+import { createInMemorySessionStore, type SessionStore } from "./modules/trip-access/session-store.js";
+import { createInMemoryRateLimiter, type RateLimiter } from "./modules/trip-access/rate-limiter.js";
 import { registerTripAccessRoutes } from "./modules/trip-access/http.js";
 import type { LinkDeliveryPort } from "./modules/trip-access/ports.js";
 import { createLinkDeliveryStub } from "./adapters/link-delivery/stub.js";
+import type { SirBookingPort } from "./modules/booking/ports.js";
+import { createSirBookingStub } from "./adapters/sir-booking/stub.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -28,6 +32,9 @@ import { createLinkDeliveryStub } from "./adapters/link-delivery/stub.js";
  */
 const DEFAULT_DEV_INTERNAL_LINKS_API_KEY = "dev-only-internal-links-key";
 const DEFAULT_LINK_EXPIRY_MS = 72 * 60 * 60 * 1000; // 72h grace, per design Decision 4 (configurable)
+const DEFAULT_SESSION_SLIDING_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, per design Decision 4 (configurable)
+const DEFAULT_SESSION_RATE_LIMIT = { max: 10, windowMs: 60_000 };
+const DEFAULT_REISSUE_RATE_LIMIT = { max: 5, windowMs: 60_000 };
 
 export interface BuildAppOptions {
   /**
@@ -36,9 +43,14 @@ export interface BuildAppOptions {
    * `false`/omitted disables logging.
    */
   logger?: boolean | Logger;
-  /** `trip-link-access` issuance wiring (task 5.2). All fields default sensibly for dev/test. */
+  /**
+   * `trip-link-access` issuance (task 5.2), session-exchange (task 5.3) and
+   * reissue (task 5.4) wiring. All fields default sensibly for dev/test.
+   */
   tripAccess?: {
     accessLinkStore?: AccessLinkStore;
+    sessionStore?: SessionStore;
+    sirBooking?: Pick<SirBookingPort, "getContactForLinkDelivery">;
     linkDelivery?: LinkDeliveryPort;
     internalApiKey?: string;
     /**
@@ -49,7 +61,10 @@ export interface BuildAppOptions {
      */
     nodeEnv?: NodeEnvName;
     linkExpiryMs?: number;
+    sessionSlidingMs?: number;
     buildLinkUrl?: (token: string) => string;
+    sessionRateLimiter?: RateLimiter;
+    reissueRateLimiter?: RateLimiter;
     now?: () => Date;
   };
 }
@@ -93,11 +108,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   }
   registerTripAccessRoutes(app, {
     store: tripAccessOptions.accessLinkStore ?? createInMemoryAccessLinkStore(),
+    sessionStore: tripAccessOptions.sessionStore ?? createInMemorySessionStore(),
+    sirBooking: tripAccessOptions.sirBooking ?? createSirBookingStub(),
     linkDelivery: tripAccessOptions.linkDelivery ?? createLinkDeliveryStub(),
     internalApiKey: tripAccessOptions.internalApiKey ?? DEFAULT_DEV_INTERNAL_LINKS_API_KEY,
     linkExpiryMs: tripAccessOptions.linkExpiryMs ?? DEFAULT_LINK_EXPIRY_MS,
+    sessionSlidingMs: tripAccessOptions.sessionSlidingMs ?? DEFAULT_SESSION_SLIDING_MS,
     buildLinkUrl:
       tripAccessOptions.buildLinkUrl ?? ((token: string) => `https://app.travel-hub.local/t#${token}`),
+    sessionRateLimiter:
+      tripAccessOptions.sessionRateLimiter ?? createInMemoryRateLimiter(DEFAULT_SESSION_RATE_LIMIT),
+    reissueRateLimiter:
+      tripAccessOptions.reissueRateLimiter ?? createInMemoryRateLimiter(DEFAULT_REISSUE_RATE_LIMIT),
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 

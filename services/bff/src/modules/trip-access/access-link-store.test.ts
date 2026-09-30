@@ -70,4 +70,79 @@ describe("createInMemoryAccessLinkStore", () => {
     expect(foundA?.reservationRef).toBe("RES-1001");
     expect(foundB?.reservationRef).toBe("RES-2002");
   });
+
+  it("finds only the not-yet-revoked links for a reservation", async () => {
+    const store = createInMemoryAccessLinkStore();
+    const first = await store.create({
+      tokenHash: "hash-c",
+      reservationRef: "RES-3003",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    await store.create({
+      tokenHash: "hash-d",
+      reservationRef: "RES-3003",
+      passengerScope: [],
+      expiresAt: "2026-11-06T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    await store.revoke(first.id, "some-other-id");
+
+    const active = await store.findActiveByReservation("RES-3003");
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.tokenHash).toBe("hash-d");
+  });
+
+  it("returns an empty array for a reservation with no links at all", async () => {
+    const store = createInMemoryAccessLinkStore();
+
+    expect(await store.findActiveByReservation("RES-UNKNOWN")).toEqual([]);
+  });
+
+  it("does not return an unrelated reservation's active links", async () => {
+    const store = createInMemoryAccessLinkStore();
+    await store.create({
+      tokenHash: "hash-e",
+      reservationRef: "RES-4004",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+
+    expect(await store.findActiveByReservation("RES-5005")).toEqual([]);
+  });
+
+  it("revoke sets revokedAt and supersededBy on the targeted record only", async () => {
+    const store = createInMemoryAccessLinkStore();
+    const target = await store.create({
+      tokenHash: "hash-f",
+      reservationRef: "RES-6006",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const untouched = await store.create({
+      tokenHash: "hash-g",
+      reservationRef: "RES-7007",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+
+    await store.revoke(target.id, "new-link-id");
+
+    const revoked = await store.findByTokenHash("hash-f");
+    const other = await store.findByTokenHash("hash-g");
+    expect(revoked?.revokedAt).not.toBeNull();
+    expect(revoked?.supersededBy).toBe("new-link-id");
+    expect(other).toEqual(untouched);
+  });
+
+  it("revoking an unknown id is a harmless no-op", async () => {
+    const store = createInMemoryAccessLinkStore();
+
+    await expect(store.revoke("does-not-exist", "new-link-id")).resolves.toBeUndefined();
+  });
 });

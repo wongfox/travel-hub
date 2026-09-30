@@ -2,19 +2,33 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { registerTripAccessRoutes } from "./http.js";
 import { createInMemoryAccessLinkStore } from "./access-link-store.js";
+import { createInMemorySessionStore } from "./session-store.js";
+import { createInMemoryRateLimiter } from "./rate-limiter.js";
 import { createLinkDeliveryStub } from "../../adapters/link-delivery/stub.js";
 import { resolveAccessLinkByToken } from "./resolve-link.js";
+import type { ContactChannel } from "./ports.js";
+import type { SirBookingPort } from "../booking/ports.js";
 
 function buildTestApp() {
   const app = Fastify();
   const store = createInMemoryAccessLinkStore();
   const linkDelivery = createLinkDeliveryStub();
+  const noOpSirBooking: Pick<SirBookingPort, "getContactForLinkDelivery"> = {
+    async getContactForLinkDelivery(): Promise<ContactChannel | null> {
+      return null;
+    },
+  };
   registerTripAccessRoutes(app, {
     store,
+    sessionStore: createInMemorySessionStore(),
+    sirBooking: noOpSirBooking,
     linkDelivery,
     internalApiKey: "test-internal-key",
     linkExpiryMs: 72 * 60 * 60 * 1000,
+    sessionSlidingMs: 7 * 24 * 60 * 60 * 1000,
     buildLinkUrl: (token) => `https://app.travel-hub.local/t#${token}`,
+    sessionRateLimiter: createInMemoryRateLimiter({ max: 1_000_000, windowMs: 60_000 }),
+    reissueRateLimiter: createInMemoryRateLimiter({ max: 1_000_000, windowMs: 60_000 }),
   });
   return { app, store, linkDelivery };
 }
