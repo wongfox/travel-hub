@@ -14,6 +14,10 @@ describe("maskReservationRef", () => {
     expect(maskReservationRef("RES-2002")).toBe(maskReservationRef("RES-2002"));
   });
 
+  it("masks every character except the last 4 for a reference longer than 8 characters", () => {
+    expect(maskReservationRef("RESERVATION-12345")).toBe("*************2345");
+  });
+
   it("never returns the original reference unchanged for an identifiable reference", () => {
     const ref = "RES-1001";
     expect(maskReservationRef(ref)).not.toBe(ref);

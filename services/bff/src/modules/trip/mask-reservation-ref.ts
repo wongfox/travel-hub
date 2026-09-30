@@ -9,8 +9,11 @@ const VISIBLE_SUFFIX_LENGTH = 4;
  * than the visible window is masked entirely rather than revealed in full.
  */
 export function maskReservationRef(reservationRef: string): string {
-  const visibleLength = Math.max(0, reservationRef.length - VISIBLE_SUFFIX_LENGTH);
-  const maskedPrefix = "*".repeat(reservationRef.length - visibleLength);
-  const visibleSuffix = reservationRef.slice(reservationRef.length - visibleLength);
+  if (reservationRef.length <= VISIBLE_SUFFIX_LENGTH) {
+    return "*".repeat(reservationRef.length);
+  }
+  const maskedPrefixLength = reservationRef.length - VISIBLE_SUFFIX_LENGTH;
+  const maskedPrefix = "*".repeat(maskedPrefixLength);
+  const visibleSuffix = reservationRef.slice(maskedPrefixLength);
   return `${maskedPrefix}${visibleSuffix}`;
 }
