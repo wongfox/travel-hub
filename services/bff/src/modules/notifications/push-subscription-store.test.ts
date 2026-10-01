@@ -52,6 +52,21 @@ describe("createInMemoryPushSubscriptionStore", () => {
     expect(found.every((record) => record.reservationRef === "RES-1001")).toBe(true);
   });
 
+  it("excludes a subscription whose expiresAt has already passed (R3-002)", async () => {
+    const store = createInMemoryPushSubscriptionStore(() => new Date("2026-12-01T00:00:00.000Z"));
+    await store.create(INPUT); // expiresAt: 2026-11-05, in the past relative to the injected clock
+    const stillActive = await store.create({
+      ...INPUT,
+      endpoint: "https://push.example.com/endpoint-still-active",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+
+    const found = await store.findActiveByReservation("RES-1001");
+
+    expect(found).toHaveLength(1);
+    expect(found[0]?.id).toBe(stillActive.id);
+  });
+
   it("returns an empty array for a reservation with no subscriptions", async () => {
     const store = createInMemoryPushSubscriptionStore();
 

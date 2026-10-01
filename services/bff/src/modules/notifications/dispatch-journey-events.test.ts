@@ -141,4 +141,37 @@ describe("dispatchJourneyEvents", () => {
 
     expect(result.processed).toBe(2);
   });
+
+  it("one event's unhandled failure does not abort the rest of the batch (R3-001)", async () => {
+    const deps = buildDeps();
+    const secondEvent: JourneyEvent = {
+      reservationRef: "RES-2002",
+      legRef: "LEG-2",
+      type: "RELOCATION",
+      sourceEventId: "relocation:LEG-2:2026-10-02T00:00:00.000Z",
+      occurredAt: "2026-10-02T00:00:00.000Z",
+    };
+    const explodingSubscriptionStore: typeof deps.subscriptionStore = {
+      ...deps.subscriptionStore,
+      async findActiveByReservation(reservationRef) {
+        if (reservationRef === RELOCATION_EVENT.reservationRef) {
+          throw new Error("simulated subscription lookup failure");
+        }
+        return deps.subscriptionStore.findActiveByReservation(reservationRef);
+      },
+    };
+
+    const result = await dispatchJourneyEvents([RELOCATION_EVENT, secondEvent], {
+      ...deps,
+      subscriptionStore: explodingSubscriptionStore,
+    });
+
+    expect(result.processed).toBe(2);
+    expect(result.failed).toBe(1);
+    // The second event still reached notificationStore.create despite the first's failure.
+    const secondOutcome = await deps.notificationStore.findByDedupeKey(
+      `${secondEvent.type}:${secondEvent.reservationRef}:${secondEvent.sourceEventId}`,
+    );
+    expect(secondOutcome).not.toBeNull();
+  });
 });

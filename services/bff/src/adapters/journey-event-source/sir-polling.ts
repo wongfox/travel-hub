@@ -29,25 +29,32 @@ export function createSirPollingJourneyEventAdapter(deps: SirPollingJourneyEvent
 
       const events: JourneyEvent[] = [];
       for (const reservationRef of reservationRefs) {
-        const [reservation, relocations] = await Promise.all([
-          deps.sirBooking.getReservation({ reservationRef }),
-          deps.sirBooking.getRelocations({ reservationRef }),
-        ]);
+        // One reservation's lookup failure (e.g. cancelled/unreachable in
+        // SIR since the link was issued) must never drop every other
+        // reservation's events from this scan.
+        try {
+          const [reservation, relocations] = await Promise.all([
+            deps.sirBooking.getReservation({ reservationRef }),
+            deps.sirBooking.getRelocations({ reservationRef }),
+          ]);
 
-        for (const relocation of relocations) {
-          const leg = reservation.legs.find((candidate) => candidate.legRef === relocation.legRef);
-          if (!leg) continue;
+          for (const relocation of relocations) {
+            const leg = reservation.legs.find((candidate) => candidate.legRef === relocation.legRef);
+            if (!leg) continue;
 
-          const departureMs = new Date(leg.departureLocal).getTime();
-          if (departureMs < window.from.getTime() || departureMs > window.to.getTime()) continue;
+            const departureMs = new Date(leg.departureLocal).getTime();
+            if (departureMs < window.from.getTime() || departureMs > window.to.getTime()) continue;
 
-          events.push({
-            reservationRef,
-            legRef: relocation.legRef,
-            type: "RELOCATION",
-            sourceEventId: `${relocation.legRef}:${relocation.recordedAt}`,
-            occurredAt: relocation.recordedAt,
-          });
+            events.push({
+              reservationRef,
+              legRef: relocation.legRef,
+              type: "RELOCATION",
+              sourceEventId: `${relocation.legRef}:${relocation.recordedAt}`,
+              occurredAt: relocation.recordedAt,
+            });
+          }
+        } catch {
+          continue;
         }
       }
 
