@@ -10,6 +10,7 @@ import { HelpPage } from "../features/help/help-page.js";
 import { MenuPage } from "../features/menu/menu-page.js";
 import { DestinationPage } from "../features/destination/destination-page.js";
 import { WifiPage } from "../features/wifi/wifi-page.js";
+import { PushPage } from "../features/push/push-page.js";
 
 /**
  * Code-based route tree stub (task 4.2). File-based routing/codegen is not
@@ -97,6 +98,11 @@ function WifiRoute() {
   return <WifiPage apiClient={defaultApiClient} />;
 }
 
+/** `push-notifications` (task 11.3): same sibling-route convention as `help`/`menu`/`destination`/`wifi`. */
+function PushRoute() {
+  return <PushPage apiClient={defaultApiClient} />;
+}
+
 const tripAccessLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/t",
@@ -145,6 +151,12 @@ const tripWifiRoute = createRoute({
   component: WifiRoute,
 });
 
+const tripPushRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/push",
+  component: PushRoute,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   tripAccessLandingRoute,
@@ -155,4 +167,5 @@ export const routeTree = rootRoute.addChildren([
   tripMenuRoute,
   tripDestinationRoute,
   tripWifiRoute,
+  tripPushRoute,
 ]);

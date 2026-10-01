@@ -1,5 +1,6 @@
 import type { Locale } from "contracts";
 import type { SirBookingPort } from "../booking/ports.js";
+import type { PushSubscriptionStore } from "../notifications/ports.js";
 import type { AccessLinkStore } from "./access-link-store.js";
 import type { LinkDeliveryPort } from "./ports.js";
 import { issueAccessLink } from "./issue-link.js";
@@ -10,6 +11,14 @@ export interface ReissueLinkDeps {
   linkDelivery: LinkDeliveryPort;
   linkExpiryMs: number;
   buildLinkUrl: (token: string) => string;
+  /**
+   * Task 11.1's reissue-invalidation acceptance ("reissuing a link
+   * invalidates the prior subscription and requires a fresh opt-in"):
+   * optional so every caller that predates `push-notifications` keeps
+   * working unchanged. When provided, every push subscription bound to a
+   * link this call revokes is deleted in the same pass.
+   */
+  pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByLinkId">;
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
 }
@@ -54,5 +63,10 @@ export async function reissueAccessLink(input: ReissueLinkInput, deps: ReissueLi
     },
   );
 
-  await Promise.all(previouslyActive.map((link) => deps.store.revoke(link.id, accessLinkId)));
+  await Promise.all(
+    previouslyActive.map(async (link) => {
+      await deps.store.revoke(link.id, accessLinkId);
+      await deps.pushSubscriptionStore?.deleteByLinkId(link.id);
+    }),
+  );
 }

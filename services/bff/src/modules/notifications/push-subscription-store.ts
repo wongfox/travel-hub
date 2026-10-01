@@ -1,0 +1,52 @@
+import { randomUUID } from "node:crypto";
+import type { CreatePushSubscriptionInput, PushSubscriptionRecord, PushSubscriptionStore } from "./ports.js";
+
+/**
+ * Deterministic, in-memory `PushSubscriptionStore` (task 11.1), same
+ * in-memory-port-first convention as `AccessLinkStore`/`ConsentStore`: unit
+ * testable without a live Postgres instance until a Drizzle-backed adapter
+ * over the design's `push_subscription` table lands.
+ */
+export function createInMemoryPushSubscriptionStore(): PushSubscriptionStore {
+  const byId = new Map<string, PushSubscriptionRecord>();
+
+  return {
+    async create(input: CreatePushSubscriptionInput): Promise<PushSubscriptionRecord> {
+      const record: PushSubscriptionRecord = {
+        id: randomUUID(),
+        linkId: input.linkId,
+        reservationRef: input.reservationRef,
+        passengerScope: input.passengerScope,
+        endpoint: input.endpoint,
+        p256dh: input.p256dh,
+        auth: input.auth,
+        locale: input.locale,
+        consentRecordId: input.consentRecordId,
+        createdAt: new Date().toISOString(),
+        expiresAt: input.expiresAt,
+      };
+      byId.set(record.id, record);
+      return record;
+    },
+
+    async findById(id: string): Promise<PushSubscriptionRecord | null> {
+      return byId.get(id) ?? null;
+    },
+
+    async findActiveByReservation(reservationRef: string): Promise<PushSubscriptionRecord[]> {
+      return [...byId.values()].filter((record) => record.reservationRef === reservationRef);
+    },
+
+    async deleteById(id: string): Promise<void> {
+      byId.delete(id);
+    },
+
+    async deleteByLinkId(linkId: string): Promise<void> {
+      for (const record of [...byId.values()]) {
+        if (record.linkId === linkId) {
+          byId.delete(record.id);
+        }
+      }
+    },
+  };
+}
