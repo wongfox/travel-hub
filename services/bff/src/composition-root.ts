@@ -302,6 +302,20 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     const p = options.precheckin;
     const flags = p.flags ?? FLAG_DEFAULTS;
     const nodeEnv = p.nodeEnv ?? "development";
+    const adapterPrecheckinHandoff = p.adapterPrecheckinHandoff ?? "stub";
+
+    // The go-live guard below only checks the adapter *name*; without this
+    // check, declaring a non-stub ADAPTER_PRECHECKIN_HANDOFF without also
+    // wiring a real `handoffPort` would let the guard pass while
+    // `registerHandoffJob` below silently falls back to
+    // `createPrecheckinHandoffStub()`, so pre-check-in PII would never
+    // actually reach the declared adapter.
+    if (adapterPrecheckinHandoff !== "stub" && !p.handoffPort) {
+      throw new Error(
+        `ADAPTER_PRECHECKIN_HANDOFF="${adapterPrecheckinHandoff}" has no real adapter wired in; ` +
+          "startWorker's precheckin.handoffPort must be provided, or ADAPTER_PRECHECKIN_HANDOFF must stay \"stub\".",
+      );
+    }
 
     // Design Decision 13's go-live guard, wired to this module (task 8.5):
     // the worker refuses to boot its precheckin jobs if
@@ -310,7 +324,7 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     // policy/days, approved consent text version, a real KMS key).
     assertGoLiveGuard("precheckin.production_collection", flags["precheckin.production_collection"], {
       nodeEnv,
-      adapters: { ...INERT_GO_LIVE_ADAPTERS, precheckinHandoff: p.adapterPrecheckinHandoff ?? "stub" },
+      adapters: { ...INERT_GO_LIVE_ADAPTERS, precheckinHandoff: adapterPrecheckinHandoff },
       precheckin: {
         ...(p.retentionPolicyId ? { retentionPolicyId: p.retentionPolicyId } : {}),
         ...(p.retention?.retentionDays ? { retentionDays: p.retention.retentionDays } : {}),

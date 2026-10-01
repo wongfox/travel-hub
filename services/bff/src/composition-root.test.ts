@@ -548,7 +548,31 @@ describe("startWorker — pre check-in handoff/purge wiring (task 8.5)", () => {
     ).rejects.toThrow(GoLiveGuardError);
   });
 
-  it("allows precheckin.production_collection true in production once every prerequisite is declared", async () => {
+  it("throws when ADAPTER_PRECHECKIN_HANDOFF names a non-stub adapter but no real handoffPort is wired in", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    // The go-live guard only checks the adapter *name*; without this check,
+    // a worker boots "successfully" claiming a real handoff adapter while
+    // `registerHandoffJob` silently falls back to `createPrecheckinHandoffStub()`
+    // (see composition-root.ts's `p.handoffPort ?? createPrecheckinHandoffStub()`),
+    // so pre-check-in PII would never actually reach the declared adapter.
+    await expect(
+      startWorker({
+        queueClient,
+        precheckin: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never,
+          adapterPrecheckinHandoff: "s3",
+          retention: { retentionDays: 30, handoffGraceMs: 7 * 24 * 60 * 60 * 1000 },
+          retentionPolicyId: "policy-1",
+          consentTextVersion: "v1",
+          kmsKeyConfigured: true,
+        },
+      }),
+    ).rejects.toThrow(/ADAPTER_PRECHECKIN_HANDOFF/);
+  });
+
+  it("allows precheckin.production_collection true in production once every prerequisite is declared, including a real handoffPort", async () => {
     const queueClient = createInMemoryQueueClient();
 
     const result = await startWorker({
@@ -557,6 +581,7 @@ describe("startWorker — pre check-in handoff/purge wiring (task 8.5)", () => {
         nodeEnv: "production",
         flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never,
         adapterPrecheckinHandoff: "s3",
+        handoffPort: createPrecheckinHandoffStub(),
         retention: { retentionDays: 30, handoffGraceMs: 7 * 24 * 60 * 60 * 1000 },
         retentionPolicyId: "policy-1",
         consentTextVersion: "v1",
