@@ -4,6 +4,7 @@ import { createInMemorySubmissionStore } from "./submission-store.js";
 import { createPrecheckinDocumentStoreStub } from "../../adapters/precheckin-document-store/stub.js";
 import { createKmsStub } from "../../infra/crypto/kms-stub.js";
 import { AlreadySubmittedError, type PrecheckinDocumentStorePort } from "./ports.js";
+import { computeInitialPurgeAfter, type RetentionConfig } from "./retention.js";
 
 /** Wraps a real stub so the Nth `put` call rejects, to test partial-failure cleanup. */
 function failPutOnCall(
@@ -27,6 +28,8 @@ function failPutOnCall(
 }
 
 const KEY_ID = "precheckin-test-key";
+const TRIP_END_LOCAL = "2026-01-10T18:00:00.000Z";
+const RETENTION: RetentionConfig = { retentionDays: 90, handoffGraceMs: 7 * 24 * 60 * 60 * 1000 };
 
 function buildDeps() {
   return {
@@ -34,6 +37,8 @@ function buildDeps() {
     documentStore: createPrecheckinDocumentStoreStub(),
     kms: createKmsStub(),
     keyId: KEY_ID,
+    tripEndLocal: TRIP_END_LOCAL,
+    retention: RETENTION,
   };
 }
 
@@ -124,6 +129,8 @@ describe("submitPrecheckin", () => {
       documentStore: failPutOnCall(realDocumentStore, 2),
       kms: createKmsStub(),
       keyId: KEY_ID,
+      tripEndLocal: TRIP_END_LOCAL,
+      retention: RETENTION,
     };
 
     await expect(submitPrecheckin(baseInput(), deps)).rejects.toThrow(/simulated put failure/);
@@ -131,6 +138,17 @@ describe("submitPrecheckin", () => {
     // The photo's `put` (call 1) succeeded before id_front's `put` (call 2) failed;
     // the orphaned photo ciphertext must be cleaned up, not left stranded forever.
     expect(realDocumentStore.contents.size).toBe(0);
+  });
+
+  it("computes purgeAfter from tripEndLocal + retention and starts status as 'received' (task 8.5)", async () => {
+    const deps = buildDeps();
+
+    const record = await submitPrecheckin(baseInput(), deps);
+
+    expect(record.status).toBe("received");
+    expect(record.handedOffAt).toBeNull();
+    expect(record.purgedAt).toBeNull();
+    expect(record.purgeAfter).toBe(computeInitialPurgeAfter(TRIP_END_LOCAL, RETENTION));
   });
 
   it("allows different passengers on the same reservation to each submit independently", async () => {

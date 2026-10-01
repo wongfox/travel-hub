@@ -7,6 +7,15 @@ import { SAMPLE_JOB_QUEUE } from "./infra/queue/sample-job.js";
 import { createInMemoryAccessLinkStore } from "./modules/trip-access/access-link-store.js";
 import { resolveAccessLinkByToken } from "./modules/trip-access/resolve-link.js";
 import { DEFAULT_SESSION_COOKIE_NAME } from "./modules/trip-access/http.js";
+import { FLAG_DEFAULTS } from "./config/flags.js";
+import { GoLiveGuardError } from "./config/go-live-guards.js";
+import { PRECHECKIN_HANDOFF_QUEUE } from "./modules/precheckin/handoff-job.js";
+import { PRECHECKIN_PURGE_QUEUE } from "./modules/precheckin/purge-job.js";
+import { createInMemorySubmissionStore } from "./modules/precheckin/submission-store.js";
+import { createPrecheckinDocumentStoreStub } from "./adapters/precheckin-document-store/stub.js";
+import { createPrecheckinHandoffStub } from "./adapters/precheckin-handoff/stub.js";
+import { createKmsStub } from "./infra/crypto/kms-stub.js";
+import { encryptEnvelope } from "./infra/crypto/envelope-encryption.js";
 
 describe("buildApp", () => {
   it("responds 200 with an ok status on GET /healthz", async () => {
@@ -498,5 +507,108 @@ describe("startWorker", () => {
     const result = await startWorker({ queueClient });
 
     expect(result.jobsRegistered).toEqual([SAMPLE_JOB_QUEUE]);
+  });
+
+  it("does not register precheckin jobs when no precheckin options are given (backward compatible)", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({ queueClient });
+
+    expect(result.jobsRegistered).toEqual([SAMPLE_JOB_QUEUE]);
+  });
+});
+
+describe("startWorker — pre check-in handoff/purge wiring (task 8.5)", () => {
+  it("registers the precheckin-handoff and precheckin-purge jobs when precheckin options are given", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      precheckin: { flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": false } as never },
+    });
+
+    expect(result.jobsRegistered).toEqual([
+      SAMPLE_JOB_QUEUE,
+      PRECHECKIN_HANDOFF_QUEUE,
+      PRECHECKIN_PURGE_QUEUE,
+    ]);
+  });
+
+  it("throws GoLiveGuardError when precheckin.production_collection is true in production without prerequisites", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        precheckin: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never,
+        },
+      }),
+    ).rejects.toThrow(GoLiveGuardError);
+  });
+
+  it("allows precheckin.production_collection true in production once every prerequisite is declared", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      precheckin: {
+        nodeEnv: "production",
+        flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never,
+        adapterPrecheckinHandoff: "s3",
+        retention: { retentionDays: 30, handoffGraceMs: 7 * 24 * 60 * 60 * 1000 },
+        retentionPolicyId: "policy-1",
+        consentTextVersion: "v1",
+        kmsKeyConfigured: true,
+      },
+    });
+
+    expect(result.jobsRegistered).toContain(PRECHECKIN_HANDOFF_QUEUE);
+  });
+
+  it("always allows the flag against stub adapters outside production/staging, even with no prerequisites", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      precheckin: { flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never },
+    });
+
+    expect(result.jobsRegistered).toContain(PRECHECKIN_HANDOFF_QUEUE);
+  });
+
+  it("actually runs the handoff job end to end when its queue is triggered", async () => {
+    const queueClient = createInMemoryQueueClient();
+    const submissionStore = createInMemorySubmissionStore();
+    const documentStore = createPrecheckinDocumentStoreStub();
+    const handoffPort = createPrecheckinHandoffStub();
+    const kms = createKmsStub();
+    const keyId = "test-key";
+    const photoEnvelope = await encryptEnvelope(Buffer.from("photo-bytes"), kms, keyId);
+    await documentStore.put("photo-key", photoEnvelope.ciphertext);
+    const idFrontEnvelope = await encryptEnvelope(Buffer.from("id-front-bytes"), kms, keyId);
+    await documentStore.put("id-front-key", idFrontEnvelope.ciphertext);
+    await submissionStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      docType: "DNI",
+      consentRecordId: "consent-1",
+      photo: { objectKey: "photo-key", wrappedDataKey: photoEnvelope.wrappedDataKey, iv: photoEnvelope.iv, authTag: photoEnvelope.authTag },
+      idFront: { objectKey: "id-front-key", wrappedDataKey: idFrontEnvelope.wrappedDataKey, iv: idFrontEnvelope.iv, authTag: idFrontEnvelope.authTag },
+      idBack: null,
+      purgeAfter: "2026-06-01T00:00:00.000Z",
+    });
+
+    await startWorker({
+      queueClient,
+      precheckin: { submissionStore, documentStore, kms, keyId, handoffPort },
+    });
+    await queueClient.sendIdempotent(PRECHECKIN_HANDOFF_QUEUE, "scan", {});
+    await queueClient.runPendingOnce(PRECHECKIN_HANDOFF_QUEUE);
+
+    expect(handoffPort.deliveries).toHaveLength(1);
+    const updated = await submissionStore.findByPassenger("RES-1001", "PAX-1");
+    expect(updated?.status).toBe("handed_off");
   });
 });

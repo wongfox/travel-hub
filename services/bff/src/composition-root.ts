@@ -9,7 +9,7 @@
  */
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Logger } from "pino";
-import { isProductionLike } from "./config/go-live-guards.js";
+import { assertGoLiveGuard, isProductionLike, type GoLiveContext } from "./config/go-live-guards.js";
 import type { NodeEnvName } from "./config/env.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { registerSecurityPlugins } from "./infra/http/security-plugins.js";
@@ -26,15 +26,24 @@ import { createSirBookingStub } from "./adapters/sir-booking/stub.js";
 import { registerTripRoutes } from "./modules/trip/http.js";
 import type { TicketDocumentPort } from "./modules/trip/ports.js";
 import { createTicketDocumentStub } from "./adapters/ticket-document/stub.js";
-import type { FlagKey } from "./config/flags.js";
+import { FLAG_DEFAULTS, type FlagKey } from "./config/flags.js";
 import { registerPrivacyRoutes } from "./modules/privacy/http.js";
 import { createInMemoryConsentStore, type ConsentStore } from "./modules/privacy/consent-store.js";
 import { registerPrecheckinRoutes } from "./modules/precheckin/http.js";
 import { createInMemorySubmissionStore } from "./modules/precheckin/submission-store.js";
-import type { PrecheckinDocumentStorePort, PrecheckinSubmissionStore } from "./modules/precheckin/ports.js";
+import type {
+  PrecheckinDocumentStorePort,
+  PrecheckinHandoffPort,
+  PrecheckinSubmissionStore,
+} from "./modules/precheckin/ports.js";
 import { createPrecheckinDocumentStoreStub } from "./adapters/precheckin-document-store/stub.js";
+import { createPrecheckinHandoffStub } from "./adapters/precheckin-handoff/stub.js";
 import { createKmsStub } from "./infra/crypto/kms-stub.js";
 import type { KeyManagementPort } from "./infra/crypto/key-management-port.js";
+import { createInMemoryPiiAccessAudit, type PiiAccessAuditPort } from "./infra/audit/pii-access-audit.js";
+import { registerHandoffJob, PRECHECKIN_HANDOFF_QUEUE } from "./modules/precheckin/handoff-job.js";
+import { registerPurgeJob, PRECHECKIN_PURGE_QUEUE } from "./modules/precheckin/purge-job.js";
+import { resolveRetentionConfig, type RetentionConfig } from "./modules/precheckin/retention.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -108,9 +117,11 @@ export interface BuildAppOptions {
    */
   precheckin?: {
     submissionStore?: PrecheckinSubmissionStore;
-    documentStore?: PrecheckinDocumentStorePort;
+    documentStore?: Pick<PrecheckinDocumentStorePort, "put" | "delete">;
     kms?: KeyManagementPort;
     keyId?: string;
+    /** `purge_after` computation config (task 8.5); defaults to the dev/non-production fallback when omitted. */
+    retention?: RetentionConfig;
   };
 }
 
@@ -212,6 +223,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     documentStore: precheckinOptions.documentStore ?? createPrecheckinDocumentStoreStub(),
     kms: precheckinOptions.kms ?? createKmsStub(),
     keyId: precheckinOptions.keyId ?? DEFAULT_PRECHECKIN_KEY_ID,
+    retention: precheckinOptions.retention ?? resolveRetentionConfig({}),
     ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
   });
 
@@ -228,7 +240,44 @@ export interface StartWorkerOptions {
   queueClient: QueueClient;
   /** Executor for the sample job (task 3.4). Defaults to a no-op — later work units' real jobs bring their own executors and registration calls. */
   sampleJobExecutor?: SampleJobExecutor;
+  /**
+   * Pre check-in handoff/purge job wiring (task 8.5). Registering these jobs
+   * is opt-in via this option (omitted entirely, `startWorker` behaves
+   * exactly as before this task); `main-worker.ts` always passes it so the
+   * real worker process always runs the go-live guard and registers both
+   * jobs.
+   */
+  precheckin?: {
+    submissionStore?: PrecheckinSubmissionStore;
+    documentStore?: Pick<PrecheckinDocumentStorePort, "get" | "delete">;
+    kms?: KeyManagementPort;
+    keyId?: string;
+    handoffPort?: PrecheckinHandoffPort;
+    piiAccessAudit?: PiiAccessAuditPort;
+    retention?: RetentionConfig;
+    /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard (config/go-live-guards.ts). Defaults to `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_PRECHECKIN_HANDOFF` (env.ts); defaults to `"stub"`. The go-live guard refuses `precheckin.production_collection: true` in production/staging while this stays `"stub"`. */
+    adapterPrecheckinHandoff?: string;
+    retentionPolicyId?: string;
+    consentTextVersion?: string;
+    kmsKeyConfigured?: boolean;
+    now?: () => Date;
+  };
 }
+
+const INERT_GO_LIVE_ADAPTERS: GoLiveContext["adapters"] = {
+  precheckinHandoff: "stub",
+  webPush: "stub",
+  staffAlert: "stub",
+  payment: "stub",
+  receipt: "stub",
+  sirPos: "stub",
+  wifiEntitlement: "stub",
+  content: "stub",
+};
 
 const noopSampleJobExecutor: SampleJobExecutor = {
   async execute() {
@@ -247,5 +296,48 @@ const noopSampleJobExecutor: SampleJobExecutor = {
 export async function startWorker(options: StartWorkerOptions): Promise<WorkerBootResult> {
   await options.queueClient.start();
   await registerSampleJob(options.queueClient, options.sampleJobExecutor ?? noopSampleJobExecutor);
-  return { jobsRegistered: [SAMPLE_JOB_QUEUE] };
+  const jobsRegistered: string[] = [SAMPLE_JOB_QUEUE];
+
+  if (options.precheckin) {
+    const p = options.precheckin;
+    const flags = p.flags ?? FLAG_DEFAULTS;
+    const nodeEnv = p.nodeEnv ?? "development";
+
+    // Design Decision 13's go-live guard, wired to this module (task 8.5):
+    // the worker refuses to boot its precheckin jobs if
+    // `precheckin.production_collection` is enabled in production/staging
+    // without its declared prerequisites (real handoff adapter, retention
+    // policy/days, approved consent text version, a real KMS key).
+    assertGoLiveGuard("precheckin.production_collection", flags["precheckin.production_collection"], {
+      nodeEnv,
+      adapters: { ...INERT_GO_LIVE_ADAPTERS, precheckinHandoff: p.adapterPrecheckinHandoff ?? "stub" },
+      precheckin: {
+        ...(p.retentionPolicyId ? { retentionPolicyId: p.retentionPolicyId } : {}),
+        ...(p.retention?.retentionDays ? { retentionDays: p.retention.retentionDays } : {}),
+        ...(p.consentTextVersion ? { consentTextVersion: p.consentTextVersion } : {}),
+        kmsKeyConfigured: p.kmsKeyConfigured ?? false,
+      },
+      push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+      pulseStaffAlerts: {},
+    });
+
+    const jobDeps = {
+      submissionStore: p.submissionStore ?? createInMemorySubmissionStore(),
+      documentStore: p.documentStore ?? createPrecheckinDocumentStoreStub(),
+      kms: p.kms ?? createKmsStub(),
+      keyId: p.keyId ?? DEFAULT_PRECHECKIN_KEY_ID,
+      piiAccessAudit: p.piiAccessAudit ?? createInMemoryPiiAccessAudit(),
+      retention: p.retention ?? resolveRetentionConfig({}),
+      ...(p.now ? { now: p.now } : {}),
+    };
+
+    await registerHandoffJob(options.queueClient, {
+      ...jobDeps,
+      handoffPort: p.handoffPort ?? createPrecheckinHandoffStub(),
+    });
+    await registerPurgeJob(options.queueClient, jobDeps);
+    jobsRegistered.push(PRECHECKIN_HANDOFF_QUEUE, PRECHECKIN_PURGE_QUEUE);
+  }
+
+  return { jobsRegistered };
 }

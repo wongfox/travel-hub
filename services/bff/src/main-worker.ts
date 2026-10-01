@@ -4,11 +4,34 @@
 import { startWorker } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
 import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
+import { FLAG_DEFAULTS } from "./config/flags.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
   const queueClient = createPgBossQueueClient(env.DATABASE_URL);
-  const result = await startWorker({ queueClient });
+  const result = await startWorker({
+    queueClient,
+    precheckin: {
+      // Task 8.5: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this worker's real boot-time configuration, not a stub.
+      flags: FLAG_DEFAULTS,
+      nodeEnv: env.NODE_ENV,
+      adapterPrecheckinHandoff: env.ADAPTER_PRECHECKIN_HANDOFF,
+      ...(env.PRECHECKIN_RETENTION_POLICY_ID ? { retentionPolicyId: env.PRECHECKIN_RETENTION_POLICY_ID } : {}),
+      ...(env.PRECHECKIN_RETENTION_DAYS
+        ? {
+            retention: {
+              retentionDays: env.PRECHECKIN_RETENTION_DAYS,
+              handoffGraceMs: (env.PRECHECKIN_HANDOFF_GRACE_DAYS ?? 7) * 24 * 60 * 60 * 1000,
+            },
+          }
+        : {}),
+      ...(env.PRECHECKIN_CONSENT_TEXT_VERSION ? { consentTextVersion: env.PRECHECKIN_CONSENT_TEXT_VERSION } : {}),
+      kmsKeyConfigured: Boolean(env.PRECHECKIN_KMS_KEY_ID),
+      ...(env.PRECHECKIN_KMS_KEY_ID ? { keyId: env.PRECHECKIN_KMS_KEY_ID } : {}),
+    },
+  });
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
 }
 

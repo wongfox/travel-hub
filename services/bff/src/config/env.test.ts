@@ -47,4 +47,34 @@ describe("loadEnv", () => {
 
     expect(env.INTERNAL_LINKS_API_KEY).toBe("a-real-service-secret");
   });
+
+  it("defaults ADAPTER_PRECHECKIN_HANDOFF to 'stub' and leaves the other task 8.5 go-live fields undefined", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.ADAPTER_PRECHECKIN_HANDOFF).toBe("stub");
+    expect(env.PRECHECKIN_RETENTION_POLICY_ID).toBeUndefined();
+    expect(env.PRECHECKIN_RETENTION_DAYS).toBeUndefined();
+    expect(env.PRECHECKIN_CONSENT_TEXT_VERSION).toBeUndefined();
+    expect(env.PRECHECKIN_KMS_KEY_ID).toBeUndefined();
+    expect(env.PRECHECKIN_HANDOFF_GRACE_DAYS).toBeUndefined();
+  });
+
+  it("passes through explicitly configured task 8.5 go-live/retention fields, coercing numeric ones", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      ADAPTER_PRECHECKIN_HANDOFF: "s3",
+      PRECHECKIN_RETENTION_POLICY_ID: "policy-1",
+      PRECHECKIN_RETENTION_DAYS: "30",
+      PRECHECKIN_CONSENT_TEXT_VERSION: "v1",
+      PRECHECKIN_KMS_KEY_ID: "arn:aws:kms:us-east-1:123:key/abc",
+      PRECHECKIN_HANDOFF_GRACE_DAYS: "3",
+    });
+
+    expect(env.ADAPTER_PRECHECKIN_HANDOFF).toBe("s3");
+    expect(env.PRECHECKIN_RETENTION_POLICY_ID).toBe("policy-1");
+    expect(env.PRECHECKIN_RETENTION_DAYS).toBe(30);
+    expect(env.PRECHECKIN_CONSENT_TEXT_VERSION).toBe("v1");
+    expect(env.PRECHECKIN_KMS_KEY_ID).toBe("arn:aws:kms:us-east-1:123:key/abc");
+    expect(env.PRECHECKIN_HANDOFF_GRACE_DAYS).toBe(3);
+  });
 });

@@ -40,4 +40,23 @@ describe("createPrecheckinDocumentStoreStub", () => {
 
     await expect(store.delete("never-stored")).resolves.toBeUndefined();
   });
+
+  it("get returns a previously put ciphertext (task 8.5's HandoffJob read-back)", async () => {
+    const store = createPrecheckinDocumentStoreStub();
+    await store.put("obj-3", Buffer.from("ciphertext-bytes"));
+
+    const result = await store.get("obj-3");
+
+    expect(result).toEqual(Buffer.from("ciphertext-bytes"));
+  });
+
+  it("get throws for a key that was never stored or was already deleted", async () => {
+    const store = createPrecheckinDocumentStoreStub();
+
+    await expect(store.get("never-stored")).rejects.toThrow(/never-stored/);
+
+    await store.put("obj-4", Buffer.from("x"));
+    await store.delete("obj-4");
+    await expect(store.get("obj-4")).rejects.toThrow(/obj-4/);
+  });
 });

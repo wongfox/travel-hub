@@ -21,10 +21,45 @@ describe("getPrecheckinStatusForPassenger", () => {
       photo: { objectKey: "k1", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
       idFront: { objectKey: "k2", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
       idBack: null,
+      purgeAfter: "2026-06-01T00:00:00.000Z",
     });
 
     expect(await getPrecheckinStatusForPassenger("RES-1001", "PAX-1", { submissionStore })).toBe("received");
     // A different passenger on the same reservation is unaffected (triangulation on a distinct code path).
     expect(await getPrecheckinStatusForPassenger("RES-1001", "PAX-2", { submissionStore })).toBe("none");
+  });
+
+  it("still returns \"received\" once the submission has been handed off (task 8.5) — handoff is an internal processing step, not passenger-visible", async () => {
+    const submissionStore = createInMemorySubmissionStore();
+    const created = await submissionStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      docType: "DNI",
+      consentRecordId: "consent-1",
+      photo: { objectKey: "k1", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
+      idFront: { objectKey: "k2", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
+      idBack: null,
+      purgeAfter: "2026-06-01T00:00:00.000Z",
+    });
+    await submissionStore.markHandedOff(created.id, "2026-01-02T00:00:00.000Z", "2026-01-09T00:00:00.000Z");
+
+    expect(await getPrecheckinStatusForPassenger("RES-1001", "PAX-1", { submissionStore })).toBe("received");
+  });
+
+  it("returns \"unavailable\" once the submission has been purged (task 8.5)", async () => {
+    const submissionStore = createInMemorySubmissionStore();
+    const created = await submissionStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      docType: "DNI",
+      consentRecordId: "consent-1",
+      photo: { objectKey: "k1", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
+      idFront: { objectKey: "k2", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
+      idBack: null,
+      purgeAfter: "2026-01-01T00:00:00.000Z",
+    });
+    await submissionStore.markPurged(created.id, "2026-06-01T00:00:00.000Z");
+
+    expect(await getPrecheckinStatusForPassenger("RES-1001", "PAX-1", { submissionStore })).toBe("unavailable");
   });
 });

@@ -32,6 +32,14 @@ export function createPrecheckinDocumentStoreStub(): PrecheckinDocumentStoreStub
       contents.set(key, ciphertext);
     },
 
+    async get(key: string): Promise<Buffer> {
+      const value = contents.get(key);
+      if (!value) {
+        throw new Error(`No object stored under key "${key}"`);
+      }
+      return value;
+    },
+
     async delete(key: string): Promise<void> {
       contents.delete(key);
     },

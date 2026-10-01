@@ -9,6 +9,8 @@ import { FLAG_DEFAULTS, type FlagKey } from "../../config/flags.js";
 import { resolveScopedPassengerByOrdinal } from "./resolve-scoped-passenger.js";
 import { getPrecheckinStatusForPassenger } from "./get-precheckin-status.js";
 import { submitPrecheckin, type PrecheckinImageRole } from "./submit-precheckin.js";
+import { resolveRetentionConfig, type RetentionConfig } from "./retention.js";
+import { resolveTripEndLocal } from "../trip/resolve-trip-end.js";
 import {
   AlreadySubmittedError,
   PassengerNotInScopeError,
@@ -21,12 +23,19 @@ export interface PrecheckinRouteDeps extends ResolveSessionDeps {
   sirBooking: Pick<SirBookingPort, "getReservation">;
   consentStore: Pick<ConsentStore, "findLatest">;
   submissionStore: Pick<PrecheckinSubmissionStore, "findByPassenger" | "create">;
-  documentStore: PrecheckinDocumentStorePort;
+  documentStore: Pick<PrecheckinDocumentStorePort, "put" | "delete">;
   kms: KeyManagementPort;
   /** KMS key identifier for every pre check-in envelope (design Security section). */
   keyId: string;
   /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
   flags?: Record<FlagKey, boolean>;
+  /**
+   * `purge_after` computation config (task 8.5); defaults to the dev/non-production
+   * fallback (`retention.ts`'s `resolveRetentionConfig({})`) when omitted. Enabling
+   * `precheckin.production_collection` in production requires a real,
+   * Legal-approved value via the go-live guard (config/go-live-guards.ts).
+   */
+  retention?: RetentionConfig;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
   sessionCookieName?: string;
 }
@@ -130,6 +139,8 @@ export function registerPrecheckinRoutes(app: FastifyInstance, deps: PrecheckinR
             documentStore: deps.documentStore,
             kms: deps.kms,
             keyId: deps.keyId,
+            tripEndLocal: resolveTripEndLocal(reservation.legs),
+            retention: deps.retention ?? resolveRetentionConfig({}),
           },
         );
       } catch (error) {
