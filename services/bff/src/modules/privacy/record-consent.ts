@@ -22,11 +22,14 @@ export interface RecordConsentDeps {
    * call — not deferred to the next scheduled purge run. Optional so every
    * caller that predates task 12.3 keeps working unchanged (e.g. the
    * `pulse`/`precheckin_biometric`/`analytics` purposes never touch this
-   * dependency at all). This cascade touches exactly ONE store, so there is
-   * no multi-store partial-failure state to compensate for; a deletion
-   * failure propagates as an error from `recordConsent` itself rather than
-   * being silently swallowed, since "the subscription is gone right after
-   * withdrawal" is the acceptance guarantee this function makes.
+   * dependency at all). The consent withdrawal itself is already durably
+   * recorded before this cascade runs (see below), so a deletion failure
+   * here is caught and audited distinctly (`action: "purge_failed"`) rather
+   * than thrown — surfacing it as an HTTP error would mask the already-
+   * successful consent recording behind a failure the client has no reason
+   * to retry. There is no automated reconciliation scan for a failed
+   * cascade yet (only `listExpired`-driven purging exists); an operator
+   * reconciles from the audit trail until one lands.
    */
   pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByReservation">;
   /** `pii_access_audit` write point for this cascade's deletion (task 12.3). */
@@ -53,13 +56,22 @@ export async function recordConsent(
   });
 
   if (input.purpose === "push" && !input.granted && deps.pushSubscriptionStore) {
-    await deps.pushSubscriptionStore.deleteByReservation(input.reservationRef);
-    await deps.piiAccessAudit?.record({
-      actor: WITHDRAWAL_ACTOR,
-      action: "purge",
-      subjectType: "push_subscription",
-      subjectId: input.reservationRef,
-    });
+    try {
+      await deps.pushSubscriptionStore.deleteByReservation(input.reservationRef);
+      await deps.piiAccessAudit?.record({
+        actor: WITHDRAWAL_ACTOR,
+        action: "purge",
+        subjectType: "push_subscription",
+        subjectId: input.reservationRef,
+      });
+    } catch {
+      await deps.piiAccessAudit?.record({
+        actor: WITHDRAWAL_ACTOR,
+        action: "purge_failed",
+        subjectType: "push_subscription",
+        subjectId: input.reservationRef,
+      });
+    }
   }
 
   return {

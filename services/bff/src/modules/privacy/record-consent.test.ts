@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryConsentStore } from "./consent-store.js";
 import { createInMemoryPushSubscriptionStore } from "../notifications/push-subscription-store.js";
+import { createInMemoryPiiAccessAudit } from "../../infra/audit/pii-access-audit.js";
 import { recordConsent } from "./record-consent.js";
 
 describe("recordConsent", () => {
@@ -119,6 +120,29 @@ describe("recordConsent", () => {
         { consentStore: store, pushSubscriptionStore },
       ),
     ).resolves.toBeTruthy();
+  });
+
+  it("still succeeds and returns the already-recorded withdrawal when the cascade deletion itself fails, auditing the failure distinctly (R4-consent-cascade-partial-failure)", async () => {
+    const store = createInMemoryConsentStore();
+    const piiAccessAudit = createInMemoryPiiAccessAudit();
+    const explodingPushSubscriptionStore = {
+      async deleteByReservation(): Promise<void> {
+        throw new Error("simulated transient store failure");
+      },
+    };
+
+    const result = await recordConsent(
+      { linkId: "link-1", reservationRef: "RES-1001", purpose: "push", textVersion: "v1", granted: false },
+      { consentStore: store, pushSubscriptionStore: explodingPushSubscriptionStore, piiAccessAudit },
+    );
+
+    // The withdrawal itself is already durably recorded — a deletion failure
+    // must not mask that behind an HTTP error the client has no reason to retry.
+    expect(result.granted).toBe(false);
+    expect(await store.findLatest("RES-1001", null, "push")).not.toBeNull();
+    const failureEntries = piiAccessAudit.entries.filter((e) => e.action === "purge_failed");
+    expect(failureEntries).toHaveLength(1);
+    expect(failureEntries[0]?.subjectType).toBe("push_subscription");
   });
 
   it("still records the consent withdrawal even when pushSubscriptionStore is omitted (backward compatible)", async () => {

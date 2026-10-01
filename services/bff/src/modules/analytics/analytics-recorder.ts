@@ -1,6 +1,7 @@
 import type { AnalyticsEventName } from "contracts";
 import { computeTripHash } from "./trip-hash.js";
 import type { AnalyticsEventStore } from "./ports.js";
+import type { ConsentStore } from "../privacy/consent-store.js";
 
 export interface RecordAnalyticsEventInput {
   reservationRef: string;
@@ -12,15 +13,15 @@ export interface RecordAnalyticsEventInput {
 /**
  * The reusable "record one server-side analytics event" seam any task
  * 12.2 call site (WiFi funnel, TFE click-out, push opt-in, pulse
- * response/dispatch) depends on. Deliberately NOT consent-gated — unlike
- * `POST /api/events` (task 12.1's `recordAnalyticsEvents`, below), these are
- * first-party operational funnel events about an action the passenger just
- * took through an already-authorized, already-gated route (e.g. a WiFi
- * order can only be created by an authenticated session; the funnel event
- * records that the order happened, it does not add new tracking the
- * passenger did not already cause). This is a deliberate, documented scope
- * split, not an oversight — see `sdd/travel-hub-mvp/apply-progress`'s WU22
- * entry.
+ * response/dispatch) depends on. Consent-gated the same way `POST
+ * /api/events` (task 12.1's `recordAnalyticsEvents`, below) is: `record()`
+ * checks the reservation's `analytics` consent before persisting anything,
+ * so withdrawing `analytics` consent actually stops server-side funnel
+ * instrumentation too, not only the client-driven queue. A missing/withdrawn
+ * consent is a silent no-op here (never a thrown `ConsentRequiredError`) —
+ * this seam instruments an action the passenger already took through an
+ * independently-gated route; its only job is to respect consent, not to gate
+ * the action itself.
  *
  * `reservationRef` is pseudonymized via `computeTripHash` BEFORE it ever
  * reaches `AnalyticsEventStore.create` (task 12.1 acceptance): this
@@ -34,6 +35,7 @@ export interface AnalyticsRecorder {
 
 export interface CreateAnalyticsRecorderDeps {
   analyticsEventStore: Pick<AnalyticsEventStore, "create">;
+  consentStore: Pick<ConsentStore, "findLatest">;
   secret: string;
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
@@ -62,6 +64,9 @@ export async function recordAnalyticsBestEffort(
 export function createAnalyticsRecorder(deps: CreateAnalyticsRecorderDeps): AnalyticsRecorder {
   return {
     async record(input: RecordAnalyticsEventInput): Promise<void> {
+      const consent = await deps.consentStore.findLatest(input.reservationRef, null, "analytics");
+      if (!consent?.granted) return;
+
       const tripHash = computeTripHash(input.reservationRef, deps.secret);
       await deps.analyticsEventStore.create({
         name: input.name,
