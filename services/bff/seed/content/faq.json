@@ -1,0 +1,56 @@
+{
+  "es": [
+    {
+      "id": "faq-boarding",
+      "question": "¿Cómo abordo el tren?",
+      "answer": "Preséntate en el andén al menos 30 minutos antes de la salida con tu pase de embarque y documento de identidad."
+    },
+    {
+      "id": "faq-luggage",
+      "question": "¿Cuánto equipaje puedo llevar?",
+      "answer": "Puedes llevar una maleta de hasta 20kg y un bolso de mano por pasajero."
+    },
+    {
+      "id": "faq-documents",
+      "question": "¿Qué documentos necesito?",
+      "answer": "Necesitas tu documento de identidad original (DNI o pasaporte) y tu boleto de tren."
+    },
+    {
+      "id": "faq-bus",
+      "question": "¿Cómo llego del tren a Machu Picchu?",
+      "answer": "El bus Consettur sale desde la estación de Machu Picchu Pueblo y te lleva hasta la entrada de la ciudadela."
+    },
+    {
+      "id": "faq-connectivity",
+      "question": "¿Hay WiFi a bordo?",
+      "answer": "Sí, puedes comprar un paquete de WiFi para usar durante tu viaje desde la sección de conectividad."
+    }
+  ],
+  "en": [
+    {
+      "id": "faq-boarding",
+      "question": "How do I board the train?",
+      "answer": "Arrive at the platform at least 30 minutes before departure with your boarding pass and ID document."
+    },
+    {
+      "id": "faq-luggage",
+      "question": "How much luggage can I bring?",
+      "answer": "You may bring one suitcase up to 20kg and one carry-on bag per passenger."
+    },
+    {
+      "id": "faq-documents",
+      "question": "What documents do I need?",
+      "answer": "You need your original ID document (national ID or passport) and your train ticket."
+    },
+    {
+      "id": "faq-bus",
+      "question": "How do I get from the train to Machu Picchu?",
+      "answer": "The Consettur bus departs from Machu Picchu Pueblo station and takes you to the citadel entrance."
+    },
+    {
+      "id": "faq-connectivity",
+      "question": "Is there WiFi on board?",
+      "answer": "Yes, you can purchase a WiFi package to use during your trip from the connectivity section."
+    }
+  ]
+}

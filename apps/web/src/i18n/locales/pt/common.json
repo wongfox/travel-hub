@@ -80,7 +80,10 @@
   "nav": {
     "home": "Viagem",
     "itinerary": "Itinerário",
-    "documents": "Documentos"
+    "documents": "Documentos",
+    "help": "Ajuda",
+    "menu": "Cardápio",
+    "destination": "Destino"
   },
   "precheckin": {
     "consent": {
@@ -110,5 +113,18 @@
         "poor_exposure": "A imagem está muito escura ou muito clara."
       }
     }
+  },
+  "help": {
+    "heading": "Ajuda",
+    "whatsapp": "Fale conosco pelo WhatsApp"
+  },
+  "menu": {
+    "heading": "Cardápio de bordo"
+  },
+  "destination": {
+    "heading": "Machu Picchu Pueblo",
+    "poiMapHeading": "Mapa de pontos de interesse",
+    "howToGetThereHeading": "Como chegar",
+    "circuitsHeading": "Circuitos"
   }
 }

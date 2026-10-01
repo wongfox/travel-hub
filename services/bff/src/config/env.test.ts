@@ -77,4 +77,19 @@ describe("loadEnv", () => {
     expect(env.PRECHECKIN_KMS_KEY_ID).toBe("arn:aws:kms:us-east-1:123:key/abc");
     expect(env.PRECHECKIN_HANDOFF_GRACE_DAYS).toBe(3);
   });
+
+  it("defaults ADAPTER_CONTENT to 'stub' (task 9.1 go-live prerequisite)", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.ADAPTER_CONTENT).toBe("stub");
+  });
+
+  it("passes through an explicitly configured ADAPTER_CONTENT", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      ADAPTER_CONTENT: "headless-cms",
+    });
+
+    expect(env.ADAPTER_CONTENT).toBe("headless-cms");
+  });
 });

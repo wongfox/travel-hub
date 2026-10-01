@@ -35,6 +35,13 @@ const EnvSchema = z.object({
   PRECHECKIN_KMS_KEY_ID: z.string().min(1).optional(),
   /** `HANDOFF_GRACE` window (days) in task 8.5's `purge_after` formula; dev/test-only default (`retention.ts`) when unset. */
   PRECHECKIN_HANDOFF_GRACE_DAYS: z.coerce.number().int().positive().optional(),
+  /**
+   * `ContentPort` adapter selection (design Decision 6,
+   * `ADAPTER_<PORT>=stub|<vendor>`). Task 9.1's go-live guard
+   * (`config/go-live-guards.ts`) refuses to enable `menu.enabled` or
+   * `destination.enabled` in production/staging while this stays `"stub"`.
+   */
+  ADAPTER_CONTENT: z.string().min(1).default("stub"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

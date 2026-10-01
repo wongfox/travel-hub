@@ -44,6 +44,9 @@ import { createInMemoryPiiAccessAudit, type PiiAccessAuditPort } from "./infra/a
 import { registerHandoffJob, PRECHECKIN_HANDOFF_QUEUE } from "./modules/precheckin/handoff-job.js";
 import { registerPurgeJob, PRECHECKIN_PURGE_QUEUE } from "./modules/precheckin/purge-job.js";
 import { resolveRetentionConfig, type RetentionConfig } from "./modules/precheckin/retention.js";
+import { registerContentRoutes } from "./modules/content/http.js";
+import type { ContentPort } from "./modules/content/ports.js";
+import { createContentStub } from "./adapters/content/stub.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -122,6 +125,20 @@ export interface BuildAppOptions {
     keyId?: string;
     /** `purge_after` computation config (task 8.5); defaults to the dev/non-production fallback when omitted. */
     retention?: RetentionConfig;
+  };
+  /**
+   * `content` module wiring (tasks 9.1-9.4: help-center, onboard-menu,
+   * destination-content). Shares `trip`'s `flags`/`sirBooking` by default —
+   * `menu.enabled`'s tier resolution needs the same reservation `trip`
+   * already reads.
+   */
+  content?: {
+    contentPort?: ContentPort;
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `trip-access`'s `nodeEnv`, then `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_CONTENT` (env.ts); defaults to `"stub"`. The go-live guard refuses `menu.enabled`/`destination.enabled: true` in production/staging while this stays `"stub"`. */
+    adapterContent?: string;
   };
 }
 
@@ -225,6 +242,33 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     keyId: precheckinOptions.keyId ?? DEFAULT_PRECHECKIN_KEY_ID,
     retention: precheckinOptions.retention ?? resolveRetentionConfig({}),
     ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
+  });
+
+  const contentOptions = options.content ?? {};
+  const contentFlags = contentOptions.flags ?? tripOptions.flags ?? FLAG_DEFAULTS;
+  const contentNodeEnv = contentOptions.nodeEnv ?? tripAccessOptions.nodeEnv ?? "development";
+  const adapterContent = contentOptions.adapterContent ?? "stub";
+
+  // Design Decision 13's go-live guard, wired to this module (task 9.1): the
+  // api process refuses to serve real menu/destination content in
+  // production/staging while only a stub ContentPort adapter is declared,
+  // the same pattern as `startWorker`'s precheckin guard above.
+  const contentGoLiveContext: GoLiveContext = {
+    nodeEnv: contentNodeEnv,
+    adapters: { ...INERT_GO_LIVE_ADAPTERS, content: adapterContent },
+    precheckin: { kmsKeyConfigured: false },
+    push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+    pulseStaffAlerts: {},
+  };
+  assertGoLiveGuard("menu.enabled", contentFlags["menu.enabled"], contentGoLiveContext);
+  assertGoLiveGuard("destination.enabled", contentFlags["destination.enabled"], contentGoLiveContext);
+
+  registerContentRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
+    content: contentOptions.contentPort ?? createContentStub(),
+    flags: contentFlags,
   });
 
   return app;

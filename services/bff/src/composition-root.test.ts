@@ -500,6 +500,86 @@ describe("buildApp — pre check-in submission, status, and trip wiring (task 8.
   });
 });
 
+describe("buildApp — content routes (task 9.1-9.4)", () => {
+  it("registers GET /api/content/faq end to end against the default (stub ContentPort) wiring", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({ tripAccess: { accessLinkStore, sessionStore } });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/content/faq",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { data: unknown[] };
+    expect(body.data.length).toBeGreaterThan(0);
+  });
+
+  it("throws GoLiveGuardError at build time when menu.enabled is true in production without a non-stub ContentPort adapter", () => {
+    expect(() =>
+      buildApp({
+        trip: { flags: { ...FLAG_DEFAULTS, "menu.enabled": true } as never },
+        content: { nodeEnv: "production" },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("throws GoLiveGuardError at build time when destination.enabled is true in production without a non-stub ContentPort adapter", () => {
+    expect(() =>
+      buildApp({
+        trip: { flags: { ...FLAG_DEFAULTS, "destination.enabled": true } as never },
+        content: { nodeEnv: "production" },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("allows menu.enabled/destination.enabled true in production once a non-stub content adapter is declared", () => {
+    expect(() =>
+      buildApp({
+        trip: {
+          flags: {
+            ...FLAG_DEFAULTS,
+            "menu.enabled": true,
+            "destination.enabled": true,
+          } as never,
+        },
+        content: { nodeEnv: "production", adapterContent: "headless-cms" },
+      }),
+    ).not.toThrow();
+  });
+
+  it("always allows menu.enabled/destination.enabled against the stub outside production/staging", () => {
+    expect(() =>
+      buildApp({
+        trip: {
+          flags: {
+            ...FLAG_DEFAULTS,
+            "menu.enabled": true,
+            "destination.enabled": true,
+          } as never,
+        },
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("startWorker", () => {
   it("starts the given queue client and registers the sample job on it (task 3.4)", async () => {
     const queueClient = createInMemoryQueueClient();

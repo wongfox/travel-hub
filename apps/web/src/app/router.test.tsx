@@ -151,6 +151,96 @@ describe("trip-home, trip-itinerary, and travel-documents routes (task 6.5)", ()
   });
 });
 
+describe("help, menu, and destination routes (tasks 9.2-9.4)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the FAQ content at /trip/help", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture(),
+        "/api/content/faq": {
+          data: [{ id: "f1", question: "How do I board?", answer: "Arrive early." }],
+          locale: "en",
+          fallbackLocale: false,
+          fallbackTier: false,
+          etag: "x",
+        },
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/help"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByText("How do I board?")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /whatsapp/i })).toBeInTheDocument();
+  });
+
+  it("renders the onboard menu at /trip/menu with no purchase control", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture(),
+        "/api/content/menu": {
+          data: [{ id: "s1", title: "Snacks", items: [{ id: "i1", name: "Cookie" }] }],
+          locale: "en",
+          fallbackLocale: false,
+          fallbackTier: false,
+          etag: "x",
+        },
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/menu"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByText("Cookie")).toBeInTheDocument();
+    // The only buttons on the page are the shell-wide language switcher
+    // (AppShell, task 7.3) — never a purchase/order control on a menu item.
+    for (const button of screen.getAllByRole("button")) {
+      expect(button).not.toHaveTextContent(/add|order|buy|cart/i);
+    }
+  });
+
+  it("renders the destination content at /trip/destination", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture(),
+        "/api/content/destination/poi_map": {
+          data: { title: "POI map", body: "MEDIA-POI-MAP" },
+          locale: "en",
+          fallbackLocale: false,
+          fallbackTier: false,
+          etag: "x",
+        },
+        "/api/content/destination/how_to_get_there": {
+          data: { title: "How to get there", body: "Walk to the bus stop." },
+          locale: "en",
+          fallbackLocale: false,
+          fallbackTier: false,
+          etag: "x",
+        },
+        "/api/content/destination/circuits": {
+          data: { title: "Circuits", body: "Check your entry ticket." },
+          locale: "en",
+          fallbackLocale: false,
+          fallbackTier: false,
+          etag: "x",
+        },
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/destination"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByRole("img", { name: "POI map" })).toBeInTheDocument();
+    expect(screen.getByText("Walk to the bus stop.")).toBeInTheDocument();
+  });
+});
+
 /**
  * task 7.3's own acceptance criterion, verbatim: "switching to Portuguese
  * renders every Phase 4–6 screen fully in Portuguese" — driven through the

@@ -6,6 +6,9 @@ import { LinkLandingPage } from "../features/trip-access/link-landing-page.js";
 import { TripHomePage } from "../features/home/trip-home-page.js";
 import { ItineraryPage } from "../features/itinerary/itinerary-page.js";
 import { DocumentsPage } from "../features/documents/documents-page.js";
+import { HelpPage } from "../features/help/help-page.js";
+import { MenuPage } from "../features/menu/menu-page.js";
+import { DestinationPage } from "../features/destination/destination-page.js";
 
 /**
  * Code-based route tree stub (task 4.2). File-based routing/codegen is not
@@ -67,6 +70,22 @@ function TripDocumentsRoute() {
   return <DocumentsPage apiClient={defaultApiClient} />;
 }
 
+/**
+ * `help-center`, `onboard-menu`, and `destination-content` (tasks 9.2-9.4):
+ * separate sibling routes, same convention as `itinerary`/`documents`.
+ */
+function HelpRoute() {
+  return <HelpPage apiClient={defaultApiClient} />;
+}
+
+function MenuRoute() {
+  return <MenuPage apiClient={defaultApiClient} />;
+}
+
+function DestinationRoute() {
+  return <DestinationPage apiClient={defaultApiClient} />;
+}
+
 const tripAccessLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/t",
@@ -91,10 +110,31 @@ const tripDocumentsRoute = createRoute({
   component: TripDocumentsRoute,
 });
 
+const tripHelpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/help",
+  component: HelpRoute,
+});
+
+const tripMenuRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/menu",
+  component: MenuRoute,
+});
+
+const tripDestinationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/destination",
+  component: DestinationRoute,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   tripAccessLandingRoute,
   tripHomeRoute,
   tripItineraryRoute,
   tripDocumentsRoute,
+  tripHelpRoute,
+  tripMenuRoute,
+  tripDestinationRoute,
 ]);

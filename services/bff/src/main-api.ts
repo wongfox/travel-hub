@@ -12,6 +12,13 @@ async function main(): Promise<void> {
       nodeEnv: env.NODE_ENV,
       ...(env.INTERNAL_LINKS_API_KEY ? { internalApiKey: env.INTERNAL_LINKS_API_KEY } : {}),
     },
+    content: {
+      // Task 9.1: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this api process's real boot-time configuration, not a stub.
+      nodeEnv: env.NODE_ENV,
+      adapterContent: env.ADAPTER_CONTENT,
+    },
   });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
