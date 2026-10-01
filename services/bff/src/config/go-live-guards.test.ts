@@ -21,6 +21,7 @@ function baseContext(overrides: Partial<GoLiveContext> = {}): GoLiveContext {
     },
     precheckin: { kmsKeyConfigured: false },
     push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+    pulseCapture: {},
     pulseStaffAlerts: {},
     ...overrides,
   };
@@ -72,6 +73,27 @@ describe("evaluateGoLiveGuard — push.enabled", () => {
     });
 
     expect(evaluateGoLiveGuard("push.enabled", ctx)).toEqual({ allowed: true, missing: [] });
+  });
+});
+
+describe("evaluateGoLiveGuard — pulse.capture", () => {
+  it("refuses in production without an approved consent text version", () => {
+    const result = evaluateGoLiveGuard("pulse.capture", baseContext());
+
+    expect(result.allowed).toBe(false);
+    expect(result.missing).toEqual(["PULSE_CONSENT_TEXT_VERSION"]);
+  });
+
+  it("allows in production once the consent text version is declared", () => {
+    const ctx = baseContext({ pulseCapture: { consentTextVersion: "v1" } });
+
+    expect(evaluateGoLiveGuard("pulse.capture", ctx)).toEqual({ allowed: true, missing: [] });
+  });
+
+  it("allows in non-production regardless of consent text version", () => {
+    const ctx = baseContext({ nodeEnv: "development" });
+
+    expect(evaluateGoLiveGuard("pulse.capture", ctx)).toEqual({ allowed: true, missing: [] });
   });
 });
 

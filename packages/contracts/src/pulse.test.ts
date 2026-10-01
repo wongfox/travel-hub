@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StaffAlertPayloadSchema, SubmitPulseRequestSchema } from "./pulse.js";
+import { PulsePromptRequestSchema, StaffAlertPayloadSchema, SubmitPulseRequestSchema } from "./pulse.js";
 
 const validStaffAlertPayload = {
   alertId: "alert_01",
@@ -26,6 +26,17 @@ describe("SubmitPulseRequestSchema", () => {
 
   it("rejects a score outside the faces-scale range", () => {
     expect(() => SubmitPulseRequestSchema.parse({ legId: "leg_01", score: 9 })).toThrow();
+  });
+});
+
+describe("PulsePromptRequestSchema", () => {
+  it("accepts a `POST /api/pulse/prompt` request naming a legId", () => {
+    const body = { legId: "leg_01" };
+    expect(PulsePromptRequestSchema.parse(body)).toEqual(body);
+  });
+
+  it("rejects an empty legId", () => {
+    expect(() => PulsePromptRequestSchema.parse({ legId: "" })).toThrow();
   });
 });
 

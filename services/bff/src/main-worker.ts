@@ -55,6 +55,17 @@ async function main(): Promise<void> {
       alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
       ...(env.PUSH_CONSENT_TEXT_VERSION ? { pushConsentTextVersion: env.PUSH_CONSENT_TEXT_VERSION } : {}),
     },
+    pulse: {
+      // Task 11.5: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this worker's real boot-time configuration, not a stub.
+      flags: FLAG_DEFAULTS,
+      nodeEnv: env.NODE_ENV,
+      adapterStaffAlert: env.ADAPTER_STAFF_ALERT,
+      ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),
+      ...(env.STAFF_ALERT_PROTOCOL_REF ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF } : {}),
+      ...(env.STAFF_ALERT_RETENTION_DAYS ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS } : {}),
+    },
   });
   // The scan jobs only run when something enqueues them; nothing else does
   // (the payment webhook just marks the order PAID), so schedule them here.

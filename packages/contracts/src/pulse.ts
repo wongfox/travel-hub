@@ -20,6 +20,18 @@ export const SubmitPulseRequestSchema = z.object({
 export type SubmitPulseRequest = z.infer<typeof SubmitPulseRequestSchema>;
 
 /**
+ * `POST /api/pulse/prompt` request body (task 11.6): requests best-effort
+ * push delivery of the in-trip pulse prompt for one leg. This is its own,
+ * independent delivery path — deliberately not a `DELAY`/`RELOCATION`/
+ * `INCIDENT` journey event, so it never goes through `dispatchJourneyEvents`'s
+ * `AlertSourcePolicy`/dedupe pipeline.
+ */
+export const PulsePromptRequestSchema = z.object({
+  legId: z.string().min(1),
+});
+export type PulsePromptRequest = z.infer<typeof PulsePromptRequestSchema>;
+
+/**
  * D4a minimal staff-alert payload (design-interfaces `StaffAlertPayload`).
  * `.strict()` is load-bearing: it is the mechanism that enforces "no
  * passenger name, email, phone, document number, or free text" at the type

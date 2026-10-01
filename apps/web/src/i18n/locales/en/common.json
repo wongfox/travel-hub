@@ -85,7 +85,8 @@
     "menu": "Menu",
     "destination": "Destination",
     "wifi": "WiFi",
-    "push": "Notifications"
+    "push": "Notifications",
+    "pulse": "How was your trip?"
   },
   "precheckin": {
     "consent": {
@@ -158,5 +159,20 @@
     "subscribed": "Notifications are enabled.",
     "a2hsExplainer": "To receive notifications, add this app to your home screen and try again from there.",
     "unavailable": "Push notifications are not available right now."
+  },
+  "pulse": {
+    "heading": "How was your trip?",
+    "unavailable": "This survey is not available right now.",
+    "noMoment": "There's nothing to answer yet — check back after your next leg.",
+    "thanks": "Thanks for your feedback!",
+    "submitError": "We couldn't record your answer. Please try again.",
+    "prompt": {
+      "question": "How was your trip?",
+      "face1": "Very bad",
+      "face2": "Bad",
+      "face3": "Okay",
+      "face4": "Good",
+      "face5": "Very good"
+    }
   }
 }

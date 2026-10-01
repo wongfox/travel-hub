@@ -9,6 +9,7 @@ export type GuardedFlagKey = Extract<
   FlagKey,
   | "precheckin.production_collection"
   | "push.enabled"
+  | "pulse.capture"
   | "pulse.staff_alerts"
   | "wifi.checkout"
   | "menu.enabled"
@@ -41,6 +42,9 @@ export interface GoLiveContext {
   push: {
     vapidConfigured: boolean;
     alertSourcePolicyComplete: boolean;
+    consentTextVersion?: string;
+  };
+  pulseCapture: {
     consentTextVersion?: string;
   };
   pulseStaffAlerts: {
@@ -91,6 +95,12 @@ function checkPushEnabled(ctx: GoLiveContext): GoLiveGuardResult {
   return { allowed: missing.length === 0, missing };
 }
 
+function checkPulseCapture(ctx: GoLiveContext): GoLiveGuardResult {
+  const missing: string[] = [];
+  if (!ctx.pulseCapture.consentTextVersion) missing.push("PULSE_CONSENT_TEXT_VERSION");
+  return { allowed: missing.length === 0, missing };
+}
+
 function checkPulseStaffAlerts(ctx: GoLiveContext): GoLiveGuardResult {
   const missing: string[] = [];
   if (!isNonStub(ctx.adapters.staffAlert)) missing.push("non-stub StaffAlertPort adapter");
@@ -118,6 +128,7 @@ function checkNonStubContent(ctx: GoLiveContext): GoLiveGuardResult {
 const GUARD_CHECKS: Record<GuardedFlagKey, (ctx: GoLiveContext) => GoLiveGuardResult> = {
   "precheckin.production_collection": checkPrecheckinProductionCollection,
   "push.enabled": checkPushEnabled,
+  "pulse.capture": checkPulseCapture,
   "pulse.staff_alerts": checkPulseStaffAlerts,
   "wifi.checkout": checkWifiCheckout,
   "menu.enabled": checkNonStubContent,
