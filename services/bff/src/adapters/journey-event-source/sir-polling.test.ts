@@ -140,6 +140,26 @@ describe("createSirPollingJourneyEventAdapter", () => {
     expect(events).toHaveLength(1);
   });
 
+  it("one reservation's SIR lookup failure does not drop events for every other reservation in the same scan (R3-003)", async () => {
+    const accessLinkStore = buildAccessLinkStore([{ reservationRef: "RES-UNREACHABLE" }, { reservationRef: "RES-1001" }]);
+    // buildSirBooking's getReservation throws for any ref not in this map —
+    // RES-UNREACHABLE models a reservation cancelled/unreachable in SIR
+    // since its access link was issued.
+    const sirBooking = buildSirBooking(
+      { "RES-1001": buildReservation() },
+      { "RES-1001": [{ legRef: "L1", recordedAt: "2026-10-30T12:00:00.000Z" }] },
+    );
+    const adapter = createSirPollingJourneyEventAdapter({ accessLinkStore, sirBooking });
+
+    const events = await adapter.pollActive({
+      from: new Date("2026-11-01T00:00:00Z"),
+      to: new Date("2026-11-04T00:00:00Z"),
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.reservationRef).toBe("RES-1001");
+  });
+
   it("returns no events for a reservation with no relocations", async () => {
     const accessLinkStore = buildAccessLinkStore([{ reservationRef: "RES-1001" }]);
     const sirBooking = buildSirBooking({ "RES-1001": buildReservation() }, { "RES-1001": [] });

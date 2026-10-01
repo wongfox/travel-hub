@@ -7,7 +7,7 @@ import type { CreatePushSubscriptionInput, PushSubscriptionRecord, PushSubscript
  * testable without a live Postgres instance until a Drizzle-backed adapter
  * over the design's `push_subscription` table lands.
  */
-export function createInMemoryPushSubscriptionStore(): PushSubscriptionStore {
+export function createInMemoryPushSubscriptionStore(now: () => Date = () => new Date()): PushSubscriptionStore {
   const byId = new Map<string, PushSubscriptionRecord>();
 
   return {
@@ -34,7 +34,10 @@ export function createInMemoryPushSubscriptionStore(): PushSubscriptionStore {
     },
 
     async findActiveByReservation(reservationRef: string): Promise<PushSubscriptionRecord[]> {
-      return [...byId.values()].filter((record) => record.reservationRef === reservationRef);
+      const asOf = now().getTime();
+      return [...byId.values()].filter(
+        (record) => record.reservationRef === reservationRef && new Date(record.expiresAt).getTime() > asOf,
+      );
     },
 
     async deleteById(id: string): Promise<void> {
