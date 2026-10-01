@@ -135,4 +135,14 @@ describe("createPaymentGatewayStub", () => {
 
     expect(result.refundRef).toBeTruthy();
   });
+
+  it("refund is idempotent: a repeated idempotencyKey returns the same refundRef, not a second refund (R4-002)", async () => {
+    const gateway = createPaymentGatewayStub();
+
+    const first = await gateway.refund("payment-ref-2", 500, "idem-refund-dup");
+    const second = await gateway.refund("payment-ref-2", 500, "idem-refund-dup");
+
+    expect(second.refundRef).toBe(first.refundRef);
+    expect(gateway.refundCalls).toHaveLength(2);
+  });
 });

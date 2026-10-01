@@ -58,15 +58,22 @@ export interface PaymentGatewayStub extends PaymentGatewayPort {
 
 /**
  * Deterministic, in-memory `PaymentGatewayPort` stub (design Decision 6).
- * `createHostedSession` is idempotent per `idempotencyKey` (returns the same
- * session on replay, matching how a real hosted-checkout gateway's own
- * idempotency key works). `parseWebhook` verifies an HMAC-SHA256 signature
+ * `createHostedSession` and `refund` are both idempotent per their
+ * `idempotencyKey` (each returns the same result on replay, matching how a
+ * real gateway's own idempotency key works — a retried refund after an
+ * ambiguous/lost response must never issue a second refund). `parseWebhook`
+ * verifies an HMAC-SHA256 signature
  * over the exact raw bytes and throws `InvalidWebhookSignatureError`
  * otherwise — the same "verifies signature or throws" contract
  * design-interfaces documents for the real port.
  */
+interface RefundRecord {
+  refundRef: string;
+}
+
 export function createPaymentGatewayStub(): PaymentGatewayStub {
   const sessionsByIdempotencyKey = new Map<string, HostedSessionRecord>();
+  const refundsByIdempotencyKey = new Map<string, RefundRecord>();
   const createdSessions: { orderId: string; idempotencyKey: string }[] = [];
   const refundCalls: { paymentRef: string; amountMinor: number; idempotencyKey: string }[] = [];
   let failNext = false;
@@ -114,7 +121,13 @@ export function createPaymentGatewayStub(): PaymentGatewayStub {
     async refund(paymentRef: string, amountMinor: number, idempotencyKey: string) {
       consumeFailureInjection();
       refundCalls.push({ paymentRef, amountMinor, idempotencyKey });
-      return { refundRef: randomUUID() };
+
+      const existing = refundsByIdempotencyKey.get(idempotencyKey);
+      if (existing) return existing;
+
+      const record: RefundRecord = { refundRef: randomUUID() };
+      refundsByIdempotencyKey.set(idempotencyKey, record);
+      return record;
     },
 
     buildWebhookRequest({

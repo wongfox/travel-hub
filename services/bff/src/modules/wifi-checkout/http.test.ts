@@ -209,6 +209,28 @@ describe("POST /api/wifi/orders", () => {
 });
 
 describe("GET /api/wifi/orders/:id", () => {
+  it("returns 403 feature_disabled when wifi.checkout is off (R2-001)", async () => {
+    const { app, accessLinkStore, sessionStore, orderStore } = await buildTestApp({ "wifi.checkout": false });
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+    const order = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "WIFI-60",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-disabled-1",
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/wifi/orders/${order.id}`,
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: "feature_disabled" });
+  });
+
   it("returns the order status end to end", async () => {
     const { app, accessLinkStore, sessionStore } = await buildTestApp({ "wifi.checkout": true });
     const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
@@ -310,6 +332,46 @@ describe("POST /webhooks/payments/:provider", () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+
+  it("propagates (never masks as 400) a genuine internal failure on a validly signed webhook, so the gateway keeps retrying (R4-001)", async () => {
+    const paymentGateway = createPaymentGatewayStub();
+    const realOrderStore = createInMemoryWifiOrderStore();
+    const explodingOrderStore: WifiOrderStore = {
+      ...realOrderStore,
+      async findByIdempotencyKey() {
+        throw new Error("simulated transient store failure");
+      },
+    };
+    const app = Fastify();
+    await app.register(cookie);
+    registerWifiCheckoutRoutes(app, {
+      accessLinkStore: createInMemoryAccessLinkStore(),
+      sessionStore: createInMemorySessionStore(),
+      sirBooking: fakeSirBooking(),
+      orderStore: explodingOrderStore,
+      packageStore: createWifiPackageStub(),
+      paymentGateway,
+      flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+    });
+    await app.ready();
+
+    const { rawBody, headers } = paymentGateway.buildWebhookRequest({
+      type: "payment_succeeded",
+      providerRef: "provider-ref-internal-error",
+      orderIdempotencyKey: "idem-does-not-matter",
+      amountMinor: 1500,
+      currency: "PEN",
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/webhooks/payments/stub-provider",
+      headers: { "content-type": "application/json", ...headers },
+      payload: rawBody,
+    });
+
+    expect(response.statusCode).toBe(500);
   });
 
   it("transitions the order to PAID end to end on a validly signed payment_succeeded event", async () => {

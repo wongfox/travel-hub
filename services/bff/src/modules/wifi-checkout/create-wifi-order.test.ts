@@ -110,6 +110,39 @@ describe("createWifiOrder", () => {
     expect(second.redirectUrl).toBe(first.redirectUrl);
   });
 
+  it("a crashed/failed attempt (gateway throws after the order row exists) succeeds on retry instead of getting stuck at CREATED (R3-gateway-retry-untested)", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const paymentGateway = fakePaymentGateway();
+    const failingGateway: typeof paymentGateway = {
+      ...paymentGateway,
+      async createHostedSession() {
+        throw new Error("simulated gateway timeout");
+      },
+    };
+
+    await expect(
+      createWifiOrder(baseInput(), {
+        orderStore,
+        packageStore: packageStoreOf([PACKAGE]),
+        paymentGateway: failingGateway,
+      }),
+    ).rejects.toThrow(/simulated gateway timeout/);
+
+    const stuck = await orderStore.findByIdempotencyKey("idem-key-1");
+    expect(stuck?.status).toBe("CREATED");
+
+    const retried = await createWifiOrder(baseInput(), {
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      paymentGateway,
+    });
+
+    expect(retried.order.id).toBe(stuck?.id);
+    expect(retried.order.status).toBe("PAYMENT_PENDING");
+    const events = await orderStore.listEventsForOrder(retried.order.id);
+    expect(events).toHaveLength(1);
+  });
+
   it("throws WifiPackageNotFoundError for an unknown packageId", async () => {
     const orderStore = createInMemoryWifiOrderStore();
     const paymentGateway = fakePaymentGateway();

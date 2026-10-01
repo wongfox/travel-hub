@@ -60,5 +60,15 @@ export const paymentGatewayContract: ConformanceSpec<PaymentGatewayPort> = {
         }
       },
     },
+    {
+      name: "refund is idempotent: a repeated idempotencyKey returns the same refundRef, not a second refund",
+      async run(port) {
+        const first = await port.refund("payment-ref-contract-2", 500, "idem-contract-refund-2");
+        const second = await port.refund("payment-ref-contract-2", 500, "idem-contract-refund-2");
+        if (first.refundRef !== second.refundRef) {
+          throw new Error("refund issued a second refundRef for a repeated idempotencyKey");
+        }
+      },
+    },
   ],
 };

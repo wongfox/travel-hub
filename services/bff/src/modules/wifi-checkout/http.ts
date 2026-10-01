@@ -9,7 +9,7 @@ import { selectNextMilestone } from "../trip/select-next-milestone.js";
 import { listWifiPackages } from "./list-wifi-packages.js";
 import { createWifiOrder } from "./create-wifi-order.js";
 import { handlePaymentWebhook } from "./handle-payment-webhook.js";
-import { WifiOrderNotFoundError, WifiPackageNotFoundError } from "./errors.js";
+import { InvalidWebhookSignatureError, WifiOrderNotFoundError, WifiPackageNotFoundError } from "./errors.js";
 import type { PaymentGatewayPort, WifiOrderRecord, WifiOrderStore, WifiPackageStore } from "./ports.js";
 
 export interface WifiCheckoutRouteDeps extends ResolveSessionDeps {
@@ -141,6 +141,9 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
   });
 
   app.get<{ Params: { id: string } }>("/api/wifi/orders/:id", async (request, reply) => {
+    if (!flags["wifi.checkout"]) {
+      return reply.code(403).send({ code: "feature_disabled", requestId: request.id });
+    }
     const session = await requireSession(request);
     if (!session) {
       return reply.code(401).send({ code: "link_expired", requestId: request.id });
@@ -170,10 +173,16 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
         if (error instanceof WifiOrderNotFoundError) {
           return reply.code(404).send({ code: "not_found", requestId: request.id });
         }
-        // Signature verification failure (`InvalidWebhookSignatureError`) and
-        // any other `parseWebhook` rejection: reject without ever touching
-        // order state (task 10.2's RED-worthy acceptance criterion).
-        return reply.code(400).send({ code: "invalid_request", requestId: request.id });
+        if (error instanceof InvalidWebhookSignatureError) {
+          // RED-worthy acceptance (task 10.2): rejected without ever
+          // touching order state.
+          return reply.code(400).send({ code: "invalid_request", requestId: request.id });
+        }
+        // Any other failure (a transient store error, etc.) is NOT the
+        // client's fault: a 4xx tells the gateway to stop retrying a payment
+        // confirmation it should keep retrying, so this propagates to
+        // Fastify's default 500 instead of masquerading as invalid_request.
+        throw error;
       }
     });
   });
