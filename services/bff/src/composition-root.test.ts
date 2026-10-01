@@ -1,6 +1,9 @@
 import { Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp, startWorker } from "./composition-root.js";
+import * as pulseResponseStoreModule from "./modules/pulse/pulse-response-store.js";
+import * as staffAlertStoreModule from "./modules/pulse/staff-alert-store.js";
+import { ANALYTICS_FORWARD_QUEUE } from "./modules/analytics/forward-analytics-events-job.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { createInMemoryQueueClient } from "./infra/queue/queue-client.js";
 import { SAMPLE_JOB_QUEUE } from "./infra/queue/sample-job.js";
@@ -1283,17 +1286,16 @@ describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
     ).not.toThrow();
   });
 
-  it("threads a configured staffAlertRetentionDays into the default pulse_response/staff_alert stores, not just the go-live guard check (R3-002)", async () => {
-    const pulseResponseStoreModule = await import("./modules/pulse/pulse-response-store.js");
-    const staffAlertStoreModule = await import("./modules/pulse/staff-alert-store.js");
+  it("threads a configured staffAlertRetentionDays into the default pulse_response/staff_alert stores (R3-003)", () => {
     const pulseResponseSpy = vi.spyOn(pulseResponseStoreModule, "createInMemoryPulseResponseStore");
     const staffAlertSpy = vi.spyOn(staffAlertStoreModule, "createInMemoryStaffAlertStore");
 
-    buildApp({ pulse: { staffAlertRetentionDays: 5 } });
+    buildApp({
+      pulse: { flags: { ...FLAG_DEFAULTS, "pulse.capture": true } as never, staffAlertRetentionDays: 5 },
+    });
 
     expect(pulseResponseSpy).toHaveBeenCalledWith(undefined, { retentionDays: 5 });
     expect(staffAlertSpy).toHaveBeenCalledWith(undefined, { retentionDays: 5 });
-
     pulseResponseSpy.mockRestore();
     staffAlertSpy.mockRestore();
   });
@@ -1377,30 +1379,28 @@ describe("startWorker — pulse staff-alert dispatch job wiring (task 11.5)", ()
 });
 
 describe("startWorker — usage-analytics forward job wiring (task 12.1)", () => {
-  it("throws when ADAPTER_ANALYTICS_SINK names a non-stub adapter but no shared analyticsEventStore is wired in (R4-analytics-store-process-split)", async () => {
-    const { createAnalyticsSinkStub } = await import("./adapters/analytics-sink/stub.js");
+  it("throws when ADAPTER_ANALYTICS_SINK names a non-stub adapter but no shared analyticsEventStore is wired in (R4)", async () => {
     const queueClient = createInMemoryQueueClient();
 
     await expect(
       startWorker({
         queueClient,
-        analytics: { adapterAnalyticsSink: "a-real-vendor", analyticsSink: createAnalyticsSinkStub() },
+        analytics: { adapterAnalyticsSink: "a-real-sink", analyticsSink: { async forward() {} } },
       }),
     ).rejects.toThrow(/analyticsEventStore/);
   });
 
-  it("boots cleanly against a non-stub sink once a shared analyticsEventStore is explicitly provided", async () => {
+  it("boots cleanly when a shared analyticsEventStore is explicitly wired in alongside a non-stub sink", async () => {
+    const queueClient = createInMemoryQueueClient();
     const { createInMemoryAnalyticsEventStore } = await import("./modules/analytics/analytics-event-store.js");
     const analyticsEventStore = createInMemoryAnalyticsEventStore();
-    const { createAnalyticsSinkStub } = await import("./adapters/analytics-sink/stub.js");
-    const queueClient = createInMemoryQueueClient();
 
     const result = await startWorker({
       queueClient,
-      analytics: { adapterAnalyticsSink: "a-real-vendor", analyticsSink: createAnalyticsSinkStub(), analyticsEventStore },
+      analytics: { adapterAnalyticsSink: "a-real-sink", analyticsSink: { async forward() {} }, analyticsEventStore },
     });
 
-    expect(result.jobsRegistered).toContain("analytics-forward");
+    expect(result.jobsRegistered).toContain(ANALYTICS_FORWARD_QUEUE);
   });
 });
 
@@ -1430,8 +1430,6 @@ describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
       expiresAt: "2099-01-01T00:00:00.000Z",
       issueChannel: "email",
     });
-    // Consent-gated (R1-001): the recorder is a silent no-op for every
-    // funnel event below without a granted `analytics` consent on file.
     await consentStore.record({
       linkId: link.id,
       reservationRef: "RES-1001",
@@ -1562,8 +1560,6 @@ describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
       textVersion: "v1",
       granted: true,
     });
-    // Consent-gated (R1-001): without this, recordAnalyticsBestEffort is a
-    // silent no-op and the assertion below would see zero events.
     await consentStore.record({
       linkId: link.id,
       reservationRef: "RES-1001",

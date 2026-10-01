@@ -10,25 +10,7 @@ export interface RecordAnalyticsEventInput {
   props?: Record<string, unknown>;
 }
 
-/**
- * The reusable "record one server-side analytics event" seam any task
- * 12.2 call site (WiFi funnel, TFE click-out, push opt-in, pulse
- * response/dispatch) depends on. Consent-gated the same way `POST
- * /api/events` (task 12.1's `recordAnalyticsEvents`, below) is: `record()`
- * checks the reservation's `analytics` consent before persisting anything,
- * so withdrawing `analytics` consent actually stops server-side funnel
- * instrumentation too, not only the client-driven queue. A missing/withdrawn
- * consent is a silent no-op here (never a thrown `ConsentRequiredError`) —
- * this seam instruments an action the passenger already took through an
- * independently-gated route; its only job is to respect consent, not to gate
- * the action itself.
- *
- * `reservationRef` is pseudonymized via `computeTripHash` BEFORE it ever
- * reaches `AnalyticsEventStore.create` (task 12.1 acceptance): this
- * function's own parameter type is the only place in this module set a raw
- * `reservationRef` is accepted for an analytics purpose, and it is never
- * forwarded past the `computeTripHash` call below.
- */
+/** Consent-gated like `recordAnalyticsEvents` below (R1-001): silent no-op when `analytics` consent is missing/withdrawn. */
 export interface AnalyticsRecorder {
   record(input: RecordAnalyticsEventInput): Promise<void>;
 }

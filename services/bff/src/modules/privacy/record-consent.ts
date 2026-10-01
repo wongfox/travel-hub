@@ -15,22 +15,7 @@ export interface RecordConsentUseCaseInput {
 
 export interface RecordConsentDeps {
   consentStore: Pick<ConsentStore, "record">;
-  /**
-   * `personal-data-protection`'s consent-withdrawal cascade (task 12.3):
-   * when `purpose === "push"` and `granted === false`, every push
-   * subscription for this reservation is deleted IMMEDIATELY, in this same
-   * call — not deferred to the next scheduled purge run. Optional so every
-   * caller that predates task 12.3 keeps working unchanged (e.g. the
-   * `pulse`/`precheckin_biometric`/`analytics` purposes never touch this
-   * dependency at all). The consent withdrawal itself is already durably
-   * recorded before this cascade runs (see below), so a deletion failure
-   * here is caught and audited distinctly (`action: "purge_failed"`) rather
-   * than thrown — surfacing it as an HTTP error would mask the already-
-   * successful consent recording behind a failure the client has no reason
-   * to retry. There is no automated reconciliation scan for a failed
-   * cascade yet (only `listExpired`-driven purging exists); an operator
-   * reconciles from the audit trail until one lands.
-   */
+  /** Consent-withdrawal cascade (task 12.3): deletes push subscriptions immediately on withdrawal; a deletion failure is audited as `"purge_failed"`, never thrown (R4), since the consent itself is already recorded. */
   pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByReservation">;
   /** `pii_access_audit` write point for this cascade's deletion (task 12.3). */
   piiAccessAudit?: PiiAccessAuditPort;
@@ -56,21 +41,21 @@ export async function recordConsent(
   });
 
   if (input.purpose === "push" && !input.granted && deps.pushSubscriptionStore) {
+    let action: "purge" | "purge_failed" = "purge";
     try {
       await deps.pushSubscriptionStore.deleteByReservation(input.reservationRef);
+    } catch {
+      action = "purge_failed";
+    }
+    try {
       await deps.piiAccessAudit?.record({
         actor: WITHDRAWAL_ACTOR,
-        action: "purge",
+        action,
         subjectType: "push_subscription",
         subjectId: input.reservationRef,
       });
     } catch {
-      await deps.piiAccessAudit?.record({
-        actor: WITHDRAWAL_ACTOR,
-        action: "purge_failed",
-        subjectType: "push_subscription",
-        subjectId: input.reservationRef,
-      });
+      // Swallowed intentionally — see doc comment above: audit-write failure must not surface as an HTTP error either.
     }
   }
 

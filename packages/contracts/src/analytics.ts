@@ -27,29 +27,13 @@ export const AnalyticsEventNameSchema = z.enum([
 ]);
 export type AnalyticsEventName = z.infer<typeof AnalyticsEventNameSchema>;
 
-/**
- * `props`' own enforcement of the "no PII" rule below: values are restricted
- * to short primitives (never nested objects/arrays, where PII could hide
- * from any shape-level check) and key names resembling a PII field are
- * rejected outright — a real technical control, not just a doc comment the
- * client is trusted to honor.
- */
+/** `props` enforcement: primitives only (no nested objects/arrays hiding PII) and no PII-shaped key names — a real control, not just a comment. */
 const ANALYTICS_PROP_VALUE_MAX_LENGTH = 200;
 const DISALLOWED_PROP_KEY_PATTERN = /reservation|passenger|email|phone|document|dni|passport|^name$/i;
 
 const AnalyticsPropValueSchema = z.union([z.string().max(ANALYTICS_PROP_VALUE_MAX_LENGTH), z.number(), z.boolean()]);
 
-/**
- * One event as submitted by a client (web `shared/analytics` queue, task
- * 12.1). `occurredAt` is client-supplied (the moment the interaction
- * happened, which may predate the network call when the queue was offline);
- * the server never trusts it for anything beyond display/ordering — no
- * authorization decision depends on it. `props` carries non-PII event
- * context only (e.g. package id, placement): `trip_hash` pseudonymization
- * only replaces the reservation reference itself, never arbitrary prop
- * content, so this schema itself rejects PII-shaped keys and restricts
- * every value to a short primitive.
- */
+/** One event as submitted by a client (web `shared/analytics` queue, task 12.1). */
 export const AnalyticsEventSchema = z.object({
   name: AnalyticsEventNameSchema,
   occurredAt: z.string().min(1).optional(),

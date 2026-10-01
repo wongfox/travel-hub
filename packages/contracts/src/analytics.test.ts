@@ -21,27 +21,12 @@ describe("AnalyticsEventSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects a props key that resembles a PII field (R1-002)", () => {
-    const result = AnalyticsEventSchema.safeParse({
-      name: "wifi_package_selected",
-      props: { reservationRef: "RES-1001" },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a nested object/array value in props, where PII could hide from a shape-level check (R1-002)", () => {
-    const result = AnalyticsEventSchema.safeParse({
-      name: "wifi_package_selected",
-      props: { metadata: { email: "ana@example.com" } },
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects an overlong string value in props (R1-002)", () => {
-    const result = AnalyticsEventSchema.safeParse({
-      name: "wifi_package_selected",
-      props: { note: "x".repeat(201) },
-    });
+  it.each([
+    ["a PII-shaped key name", { reservationRef: "RES-1001" }],
+    ["a nested object value, where PII could hide from a shape-level check", { metadata: { email: "ana@example.com" } }],
+    ["an overlong string value", { note: "x".repeat(201) }],
+  ])("rejects props with %s (R1-002)", (_label, props) => {
+    const result = AnalyticsEventSchema.safeParse({ name: "wifi_package_selected", props });
     expect(result.success).toBe(false);
   });
 

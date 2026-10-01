@@ -78,7 +78,7 @@ describe("flushAnalyticsQueue", () => {
     expect(remaining).toHaveLength(0);
   });
 
-  it("a later batch's failure leaves only that batch (and any after it) queued — an earlier batch's removal is not undone", async () => {
+  it("isolates a later batch's send failure: an earlier batch's already-confirmed removal is not undone (R3-002)", async () => {
     const marker = crypto.randomUUID();
     for (let i = 0; i < 55; i += 1) {
       await enqueueAnalyticsEvent({ name: "screen_view", props: { marker, i } });
@@ -93,7 +93,7 @@ describe("flushAnalyticsQueue", () => {
     await expect(flushAnalyticsQueue({ apiClient, sendBeacon: () => false })).rejects.toThrow();
 
     const remaining = (await listQueuedAnalyticsEvents()).filter((e) => e.props?.marker === marker);
-    expect(remaining).toHaveLength(5); // 55 - first successful 50-event batch
+    expect(remaining).toHaveLength(5);
   });
 
   it("leaves the queue intact when the apiClient.post fallback fails — never drops an unsent event", async () => {
