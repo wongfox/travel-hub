@@ -15,9 +15,11 @@ import { openDB, type IDBPDatabase } from "idb";
  * added since, with no error surfaced anywhere it's read.
  */
 export const DB_NAME = "travelhub";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const SNAPSHOTS_STORE = "snapshots";
 export const PREFS_STORE = "prefs";
+/** `usage-analytics` offline queue (task 12.1, design Data Model "Client-side": "analyticsQueue (consented events awaiting network)"). Keyed by each queued record's own `id` field (`keyPath`), not an external key, since the queue needs to list/delete individual entries, unlike `snapshots`/`prefs`' single-value-per-external-key stores. */
+export const ANALYTICS_QUEUE_STORE = "analyticsQueue";
 
 /**
  * A new connection is opened per call rather than cached at module scope:
@@ -34,6 +36,9 @@ export async function getTravelHubDb(): Promise<IDBPDatabase> {
       }
       if (!db.objectStoreNames.contains(PREFS_STORE)) {
         db.createObjectStore(PREFS_STORE);
+      }
+      if (!db.objectStoreNames.contains(ANALYTICS_QUEUE_STORE)) {
+        db.createObjectStore(ANALYTICS_QUEUE_STORE, { keyPath: "id" });
       }
     },
   });

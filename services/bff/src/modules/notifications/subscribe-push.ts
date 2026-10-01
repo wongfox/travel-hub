@@ -2,10 +2,14 @@ import type { Locale } from "contracts";
 import { assertConsentGranted } from "../privacy/consent-guard.js";
 import type { ConsentStore } from "../privacy/consent-store.js";
 import type { PushSubscriptionRecord, PushSubscriptionStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
+import { recordAnalyticsBestEffort } from "../analytics/analytics-recorder.js";
 
 export interface SubscribePushDeps {
   consentStore: Pick<ConsentStore, "findLatest">;
   subscriptionStore: Pick<PushSubscriptionStore, "create">;
+  /** `usage-analytics` push opt-in instrumentation (task 12.2); omitted entirely, this use case behaves exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
 }
 
 export interface SubscribePushInput {
@@ -35,7 +39,7 @@ export async function subscribePush(
 ): Promise<PushSubscriptionRecord> {
   const consent = await assertConsentGranted(deps, input.reservationRef, null, "push");
 
-  return deps.subscriptionStore.create({
+  const subscription = await deps.subscriptionStore.create({
     linkId: input.linkId,
     reservationRef: input.reservationRef,
     passengerScope: input.passengerScope,
@@ -46,4 +50,8 @@ export async function subscribePush(
     consentRecordId: consent.id,
     expiresAt: input.expiresAt,
   });
+
+  await recordAnalyticsBestEffort(deps.analytics, { reservationRef: input.reservationRef, name: "push_opt_in" });
+
+  return subscription;
 }

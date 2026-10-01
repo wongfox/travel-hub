@@ -1,6 +1,8 @@
 import type { Locale } from "contracts";
 import { WifiPackageNotFoundError } from "./errors.js";
 import type { PaymentGatewayPort, WifiOrderRecord, WifiOrderStore, WifiPackageStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
+import { recordAnalyticsBestEffort } from "../analytics/analytics-recorder.js";
 
 export interface CreateWifiOrderInput {
   reservationRef: string;
@@ -19,6 +21,8 @@ export interface CreateWifiOrderDeps {
   orderStore: Pick<WifiOrderStore, "create" | "transition">;
   packageStore: Pick<WifiPackageStore, "findById">;
   paymentGateway: Pick<PaymentGatewayPort, "createHostedSession">;
+  /** `usage-analytics` funnel instrumentation (task 12.2); omitted entirely, this use case behaves exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
 }
 
 export interface CreateWifiOrderResult {
@@ -58,6 +62,13 @@ export async function createWifiOrder(
     buyerEmail: input.buyerEmail ?? "",
   });
 
+  // Funnel event 2/5 (task 12.2): a package was just selected for this order.
+  await recordAnalyticsBestEffort(deps.analytics, {
+    reservationRef: input.reservationRef,
+    name: "wifi_package_selected",
+    props: { packageId: pkg.id },
+  });
+
   const session = await deps.paymentGateway.createHostedSession({
     orderId: order.id,
     amountMinor: order.amountMinor,
@@ -65,6 +76,14 @@ export async function createWifiOrder(
     returnUrl: input.returnUrl,
     locale: input.locale,
     idempotencyKey: input.idempotencyKey,
+  });
+
+  // Funnel event 3/5 (task 12.2): the passenger is being redirected to the
+  // gateway's hosted page — a payment attempt has begun.
+  await recordAnalyticsBestEffort(deps.analytics, {
+    reservationRef: input.reservationRef,
+    name: "wifi_payment_attempted",
+    props: { packageId: pkg.id },
   });
 
   const resolvedOrder =
