@@ -368,6 +368,129 @@ describe("buildApp — privacy consent capture (task 8.1)", () => {
   });
 });
 
+describe("buildApp — pre check-in submission, status, and trip wiring (task 8.3/8.4)", () => {
+  async function establishSessionWithFlags(flags: Record<string, boolean>): Promise<{
+    app: ReturnType<typeof buildApp>;
+    cookieValue: string;
+  }> {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore },
+      trip: { flags: flags as never },
+    });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+    return { app, cookieValue };
+  }
+
+  function submissionForm(): FormData {
+    const form = new FormData();
+    form.append("docType", "DNI");
+    form.append("consentRecordId", "consent-1");
+    form.append("photo", new Blob([Buffer.from("photo-bytes")], { type: "image/jpeg" }), "photo.jpg");
+    form.append("id_front", new Blob([Buffer.from("id-front-bytes")], { type: "image/jpeg" }), "id-front.jpg");
+    return form;
+  }
+
+  it("shares one consent store between /api/consents and the pre check-in submission guard", async () => {
+    const { FLAG_DEFAULTS } = await import("./config/flags.js");
+    const { app, cookieValue } = await establishSessionWithFlags({
+      ...FLAG_DEFAULTS,
+      "precheckin.production_collection": true,
+    });
+
+    // Without consent, submission must be rejected end to end against the real composition-root wiring.
+    const beforeConsent = await app.inject({
+      method: "POST",
+      url: "/api/precheckin/1",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: submissionForm(),
+    });
+    expect(beforeConsent.statusCode).toBe(403);
+    expect(beforeConsent.json()).toMatchObject({ code: "consent_required" });
+
+    const consentResponse = await app.inject({
+      method: "POST",
+      url: "/api/consents",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: { purpose: "precheckin_biometric", textVersion: "v1", granted: true },
+    });
+    expect(consentResponse.statusCode).toBe(201);
+
+    const afterConsent = await app.inject({
+      method: "POST",
+      url: "/api/precheckin/1",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: submissionForm(),
+    });
+
+    expect(afterConsent.statusCode).toBe(201);
+    expect(afterConsent.json()).toMatchObject({ passengerOrdinal: 1, status: "received" });
+  });
+
+  it("reflects a real pre check-in submission in GET /api/trip's precheckinStatus, end to end", async () => {
+    const { FLAG_DEFAULTS } = await import("./config/flags.js");
+    const { app, cookieValue } = await establishSessionWithFlags({
+      ...FLAG_DEFAULTS,
+      "precheckin.production_collection": true,
+      "precheckin.capture_ui": true,
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/consents",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: { purpose: "precheckin_biometric", textVersion: "v1", granted: true },
+    });
+
+    const beforeTrip = await app.inject({
+      method: "GET",
+      url: "/api/trip",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    const beforeBody = beforeTrip.json() as { passengers: Array<{ ordinal: number; precheckinStatus: string }> };
+    expect(beforeBody.passengers.find((p) => p.ordinal === 1)?.precheckinStatus).toBe("none");
+
+    const submitResponse = await app.inject({
+      method: "POST",
+      url: "/api/precheckin/1",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: submissionForm(),
+    });
+    expect(submitResponse.statusCode).toBe(201);
+
+    const afterTrip = await app.inject({
+      method: "GET",
+      url: "/api/trip",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    const afterBody = afterTrip.json() as { passengers: Array<{ ordinal: number; precheckinStatus: string }> };
+    expect(afterBody.passengers.find((p) => p.ordinal === 1)?.precheckinStatus).toBe("received");
+
+    const statusResponse = await app.inject({
+      method: "GET",
+      url: "/api/precheckin/status",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    expect(statusResponse.json()).toContainEqual({ passengerOrdinal: 1, status: "received" });
+    // Never re-displays the submitted bytes anywhere in the status response.
+    expect(JSON.stringify(statusResponse.json())).not.toContain("photo-bytes");
+  });
+});
+
 describe("startWorker", () => {
   it("starts the given queue client and registers the sample job on it (task 3.4)", async () => {
     const queueClient = createInMemoryQueueClient();

@@ -8,11 +8,20 @@ import { buildRelocationAlerts } from "./build-relocation-alerts.js";
 import { maskReservationRef } from "./mask-reservation-ref.js";
 import { buildBoardingPasses } from "./build-boarding-passes.js";
 import { buildDocuments } from "./build-documents.js";
+import { getPrecheckinStatusForPassenger } from "../precheckin/get-precheckin-status.js";
+import type { PrecheckinSubmissionStore } from "../precheckin/ports.js";
 
 export interface GetTripOverviewDeps {
   sirBooking: Pick<SirBookingPort, "getReservation" | "getRelocations">;
   /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
   flags?: Record<FlagKey, boolean>;
+  /**
+   * Task 8.4 wiring: when provided, `passengers[].precheckinStatus` reflects
+   * each scoped passenger's real completion state instead of the WU9-era
+   * hardcoded `"none"`. Optional so existing callers/tests that predate
+   * Phase 8 keep their prior (pre-check-in-unaware) behavior unchanged.
+   */
+  precheckinSubmissionStore?: Pick<PrecheckinSubmissionStore, "findByPassenger">;
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
 }
@@ -45,15 +54,24 @@ export async function getTripOverview(
       ? reservation.passengers
       : reservation.passengers.filter((passenger) => accessLink.passengerScope.includes(passenger.passengerRef));
 
+  const precheckinStore = deps.precheckinSubmissionStore;
+  const passengers = await Promise.all(
+    scopedPassengers.map(async (passenger) => ({
+      ordinal: passenger.ordinal,
+      displayName: passenger.displayName,
+      precheckinStatus: precheckinStore
+        ? await getPrecheckinStatusForPassenger(accessLink.reservationRef, passenger.passengerRef, {
+            submissionStore: precheckinStore,
+          })
+        : ("none" as const),
+    })),
+  );
+
   return {
     linkId: accessLink.id,
     reservationRefMasked: maskReservationRef(accessLink.reservationRef),
     expiresAt: accessLink.expiresAt,
-    passengers: scopedPassengers.map((passenger) => ({
-      ordinal: passenger.ordinal,
-      displayName: passenger.displayName,
-      precheckinStatus: "none",
-    })),
+    passengers,
     legs: reservation.legs.map((leg) => ({
       id: leg.legRef,
       origin: leg.origin,

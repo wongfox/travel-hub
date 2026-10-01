@@ -3,6 +3,7 @@ import { TripDTOSchema } from "contracts";
 import { getTripOverview } from "./get-trip-overview.js";
 import type { AccessLinkRecord } from "../trip-access/access-link-store.js";
 import type { SirBookingPort, SirReservation, SirRelocation } from "../booking/ports.js";
+import { createInMemorySubmissionStore } from "../precheckin/submission-store.js";
 
 function accessLink(overrides: Partial<AccessLinkRecord> = {}): AccessLinkRecord {
   return {
@@ -159,5 +160,34 @@ describe("getTripOverview", () => {
     expect(kinds).toEqual(["INC_ENTRY", "TRAIN"]);
     const incTicket = trip.documents.find((doc) => doc.kind === "INC_ENTRY");
     expect(incTicket).toMatchObject({ milestoneId: "L1", barcodePayload: "INC-1" });
+  });
+
+  it("defaults every passenger's precheckinStatus to \"none\" when no precheckin store is wired", async () => {
+    const trip = await getTripOverview(accessLink(), { sirBooking: fakeSirBooking(reservation) });
+
+    expect(trip.passengers.map((p) => p.precheckinStatus)).toEqual(["none", "none"]);
+  });
+
+  it("reflects a real per-passenger precheckin completion status when the store is wired (task 8.4)", async () => {
+    const submissionStore = createInMemorySubmissionStore();
+    await submissionStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "P1",
+      docType: "DNI",
+      consentRecordId: "consent-1",
+      photo: { objectKey: "k1", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
+      idFront: { objectKey: "k2", wrappedDataKey: Buffer.from("a"), iv: Buffer.from("b"), authTag: Buffer.from("c") },
+      idBack: null,
+    });
+
+    const trip = await getTripOverview(accessLink(), {
+      sirBooking: fakeSirBooking(reservation),
+      precheckinSubmissionStore: submissionStore,
+    });
+
+    const p1 = trip.passengers.find((p) => p.displayName === "Ana Torres");
+    const p2 = trip.passengers.find((p) => p.displayName === "Luis Torres");
+    expect(p1?.precheckinStatus).toBe("received");
+    expect(p2?.precheckinStatus).toBe("none");
   });
 });
