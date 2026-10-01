@@ -15,7 +15,7 @@ export interface PulseRetentionConfig {
 }
 
 export interface PulseRetentionEnv {
-  STAFF_ALERT_RETENTION_DAYS?: number;
+  STAFF_ALERT_RETENTION_DAYS?: number | undefined;
 }
 
 export function resolvePulseRetentionConfig(env: PulseRetentionEnv): PulseRetentionConfig {

@@ -30,35 +30,7 @@ function toWirePayload(events: QueuedAnalyticsEvent[]): { events: { name: string
   };
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-}
-
-/**
- * Sends every currently queued event to `POST /api/events` (task 12.1), in
- * batches of at most `MAX_EVENTS_PER_REQUEST` (the server's own bound — an
- * oversized single request would be rejected, and clearing the queue
- * regardless would silently drop every event past the limit), removing each
- * batch from the queue ONLY after a send that the caller can be reasonably
- * confident succeeded — never before, so a failed/lost send leaves that
- * batch's events queued for the next flush attempt instead of silently
- * dropping them. A later batch's failure never discards an earlier batch's
- * already-confirmed removal.
- *
- * Prefers `navigator.sendBeacon` (fire-and-forget, survives page unload —
- * the whole reason `sendBeacon` exists) when available; `sendBeacon`'s
- * return value only indicates the browser ACCEPTED the request for
- * best-effort delivery, not that the server received it, so each batch's
- * queue entries are cleared optimistically in that path (consistent with how
- * every other `sendBeacon` integration behaves — there is no delivery
- * receipt to wait for). Falls back to the ordinary `apiClient.post`, awaiting
- * its actual response before clearing that batch, when `sendBeacon` is
- * unavailable or returns `false`.
- */
+/** Sends in ≤`MAX_EVENTS_PER_REQUEST`-event batches (R3-001), removing each only after a send it can trust succeeded. */
 export async function flushAnalyticsQueue(deps: FlushAnalyticsQueueDeps): Promise<FlushAnalyticsQueueResult> {
   const queued = await listQueuedAnalyticsEvents();
   if (queued.length === 0) {
@@ -72,7 +44,8 @@ export async function flushAnalyticsQueue(deps: FlushAnalyticsQueueDeps): Promis
       : undefined);
 
   let sent = 0;
-  for (const batch of chunk(queued, MAX_EVENTS_PER_REQUEST)) {
+  for (let i = 0; i < queued.length; i += MAX_EVENTS_PER_REQUEST) {
+    const batch = queued.slice(i, i + MAX_EVENTS_PER_REQUEST);
     const ids = batch.map((event) => event.id);
     const payload = toWirePayload(batch);
 

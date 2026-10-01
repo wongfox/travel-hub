@@ -593,14 +593,8 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   assertGoLiveGuard("pulse.capture", pulseFlags["pulse.capture"], pulseGoLiveContext);
   assertGoLiveGuard("pulse.staff_alerts", pulseFlags["pulse.staff_alerts"], pulseGoLiveContext);
 
-  // Threaded into the default stores below (R3-002) so a configured
-  // STAFF_ALERT_RETENTION_DAYS actually reaches the purgeAfter computed at
-  // `POST /api/pulse` creation time, not just the go-live guard check above.
-  const pulseRetention = resolvePulseRetentionConfig({
-    ...(pulseOptions.staffAlertRetentionDays !== undefined
-      ? { STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays }
-      : {}),
-  });
+  // R3-002: so a configured STAFF_ALERT_RETENTION_DAYS reaches purgeAfter.
+  const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays });
 
   registerPulseRoutes(app, {
     accessLinkStore,
@@ -983,12 +977,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     const flags = p.flags ?? FLAG_DEFAULTS;
     const nodeEnv = p.nodeEnv ?? "development";
     const adapterStaffAlert = p.adapterStaffAlert ?? "stub";
-    // Threaded into every default pulse_response/staff_alert store below so
-    // a configured STAFF_ALERT_RETENTION_DAYS actually reaches purgeAfter,
-    // not just the go-live guard check further down.
-    const pulseRetention = resolvePulseRetentionConfig({
-      ...(p.staffAlertRetentionDays !== undefined ? { STAFF_ALERT_RETENTION_DAYS: p.staffAlertRetentionDays } : {}),
-    });
+    // R3-002: see buildApp's identical comment above.
+    const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: p.staffAlertRetentionDays });
     const pulseNow = p.now ?? (() => new Date());
 
     // Same defense-in-depth check as precheckin's `handoffPort`/wifiCheckout's/
@@ -1062,11 +1052,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
           'startWorker\'s analytics.analyticsSink must be provided, or ADAPTER_ANALYTICS_SINK must stay "stub".',
       );
     }
-    // A fresh default `analyticsEventStore` here is a separate process's
-    // in-memory map from the `api` process's — with a real sink configured,
-    // that split would make this job silently forward nothing, forever,
-    // with no error (the exact failure the queue's own success signal would
-    // otherwise mask). Only safe to default when the sink is also the stub.
+    // R4: a default store here is a separate process's map from api's own —
+    // with a real sink that silently forwards nothing forever, no error.
     if (adapterAnalyticsSink !== "stub" && !a.analyticsEventStore) {
       throw new Error(
         `ADAPTER_ANALYTICS_SINK="${adapterAnalyticsSink}" has no shared analyticsEventStore wired in; ` +

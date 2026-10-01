@@ -136,13 +136,28 @@ describe("recordConsent", () => {
       { consentStore: store, pushSubscriptionStore: explodingPushSubscriptionStore, piiAccessAudit },
     );
 
-    // The withdrawal itself is already durably recorded — a deletion failure
-    // must not mask that behind an HTTP error the client has no reason to retry.
     expect(result.granted).toBe(false);
     expect(await store.findLatest("RES-1001", null, "push")).not.toBeNull();
     const failureEntries = piiAccessAudit.entries.filter((e) => e.action === "purge_failed");
     expect(failureEntries).toHaveLength(1);
     expect(failureEntries[0]?.subjectType).toBe("push_subscription");
+  });
+
+  it("still succeeds and returns the withdrawal when deletion succeeds but the audit write itself fails (R3-001)", async () => {
+    const store = createInMemoryConsentStore();
+    const pushSubscriptionStore = createInMemoryPushSubscriptionStore();
+    const explodingPiiAccessAudit = {
+      async record(): Promise<never> {
+        throw new Error("simulated audit-store outage");
+      },
+    };
+
+    const result = await recordConsent(
+      { linkId: "link-1", reservationRef: "RES-1001", purpose: "push", textVersion: "v1", granted: false },
+      { consentStore: store, pushSubscriptionStore, piiAccessAudit: explodingPiiAccessAudit },
+    );
+
+    expect(result.granted).toBe(false);
   });
 
   it("still records the consent withdrawal even when pushSubscriptionStore is omitted (backward compatible)", async () => {

@@ -83,17 +83,9 @@ describe("createAnalyticsRecorder", () => {
     expect(await store.list()).toHaveLength(0);
   });
 
-  it("is a no-op, recording nothing, when analytics consent was withdrawn (R1-001)", async () => {
+  it("is a no-op, recording nothing, when analytics consent was granted and then withdrawn (R3-005)", async () => {
     const store = createInMemoryAnalyticsEventStore();
-    const consentStore = createInMemoryConsentStore();
-    await consentStore.record({
-      linkId: "link-1",
-      reservationRef: "RES-1001",
-      passengerRef: null,
-      purpose: "analytics",
-      textVersion: "v1",
-      granted: true,
-    });
+    const consentStore = await consentedStore();
     await consentStore.record({
       linkId: "link-1",
       reservationRef: "RES-1001",
