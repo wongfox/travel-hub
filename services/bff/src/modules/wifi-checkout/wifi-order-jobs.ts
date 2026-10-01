@@ -95,12 +95,16 @@ async function attemptSirRegistration(
   if (order.sirRegisteredAt) return "already";
   if (order.sirReconciliationRequired) return "skipped";
 
-  const pkg = await deps.packageStore.findById(order.packageId);
-  if (!pkg) {
-    throw new WifiPackageNotFoundError(order.packageId);
-  }
-
   try {
+    const pkg = await deps.packageStore.findById(order.packageId);
+    if (!pkg) {
+      // An unresolvable package is exactly as unrecoverable-by-retry as a
+      // SIR outage from this job's perspective — both MUST count toward
+      // SIR_REGISTRATION_RETRY_LIMIT so the order can still reach the
+      // sirReconciliationRequired escape hatch instead of retrying forever.
+      throw new WifiPackageNotFoundError(order.packageId);
+    }
+
     const { saleRef } = await deps.sirPos.registerSale(
       {
         reservationRef: order.reservationRef,

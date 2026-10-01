@@ -223,6 +223,40 @@ describe("runSirAndReceiptJob", () => {
     expect(alwaysFailingSirPos.registerCalls).toHaveLength(callsBefore);
   });
 
+  it("an unresolvable package also counts toward SIR retry exhaustion, reaching reconciliation instead of retrying forever (R3-sir-reconciliation-escape-gap)", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const created = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "RETIRED-PACKAGE",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-unresolvable-package",
+      legRef: "LEG-1",
+      buyerEmail: "ana@example.com",
+    });
+    await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    const sirPos = createSirPosStub();
+    const eReceipt = createEReceiptStub();
+
+    for (let attempt = 0; attempt <= SIR_REGISTRATION_RETRY_LIMIT; attempt += 1) {
+      await runSirAndReceiptJob({
+        orderStore,
+        // The package was never seeded, so every lookup resolves null —
+        // this must count as a failed attempt, not throw past the tracking.
+        packageStore: packageStoreOf([]),
+        entitlement: createWifiEntitlementStub(),
+        sirPos,
+        eReceipt,
+      });
+    }
+
+    const order = await orderStore.findById(created.id);
+    expect(order?.sirReconciliationRequired).toBe(true);
+    expect(order?.sirRegistrationAttempts).toBeGreaterThan(SIR_REGISTRATION_RETRY_LIMIT);
+    expect(sirPos.registerCalls).toHaveLength(0);
+  });
+
   it("one order's SIR/receipt failure never blocks another order's processing", async () => {
     const orderStore = createInMemoryWifiOrderStore();
     const failing = await orderStore.create({
