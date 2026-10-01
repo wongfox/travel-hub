@@ -81,9 +81,26 @@ export async function submitPrecheckin(
     throw new Error("submitPrecheckin requires at least a 'photo' and an 'id_front' image");
   }
 
-  const photo = await encryptAndStore(photoInput, input.reservationRef, input.passengerRef, deps);
-  const idFront = await encryptAndStore(idFrontInput, input.reservationRef, input.passengerRef, deps);
-  const idBack = idBackInput ? await encryptAndStore(idBackInput, input.reservationRef, input.passengerRef, deps) : null;
+  // Tracks every image whose ciphertext has already been persisted in this
+  // call, so a later image's failure can clean up the earlier ones rather
+  // than leaving orphaned, untrackable encrypted objects in the document
+  // store (no submission record is ever created on this path, so nothing
+  // else would ever reference — or be able to purge — those objects).
+  const stored: StoredPrecheckinImage[] = [];
+  let photo: StoredPrecheckinImage;
+  let idFront: StoredPrecheckinImage;
+  let idBack: StoredPrecheckinImage | null;
+  try {
+    photo = await encryptAndStore(photoInput, input.reservationRef, input.passengerRef, deps);
+    stored.push(photo);
+    idFront = await encryptAndStore(idFrontInput, input.reservationRef, input.passengerRef, deps);
+    stored.push(idFront);
+    idBack = idBackInput ? await encryptAndStore(idBackInput, input.reservationRef, input.passengerRef, deps) : null;
+    if (idBack) stored.push(idBack);
+  } catch (error) {
+    await Promise.allSettled(stored.map((image) => deps.documentStore.delete(image.objectKey)));
+    throw error;
+  }
 
   return deps.submissionStore.create({
     reservationRef: input.reservationRef,

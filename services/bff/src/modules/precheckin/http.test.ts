@@ -209,6 +209,22 @@ describe("POST /api/precheckin/:passengerOrdinal", () => {
     expect(response.json()).toMatchObject({ passengerOrdinal: 1, status: "received" });
   });
 
+  it("drains an unrecognized file field instead of hanging the request", async () => {
+    const { app, accessLinkStore, sessionStore } = await buildTestApp();
+    const sessionId = await seedSessionCookie(accessLinkStore, sessionStore);
+    const form = buildSubmissionForm();
+    form.append("extra_unexpected_file", new Blob([Buffer.from("junk-bytes")], { type: "image/jpeg" }), "junk.jpg");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/precheckin/1",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      payload: form,
+    });
+
+    expect(response.statusCode).toBe(201);
+  }, 2000);
+
   it("rejects a second submission for the same passenger with already_submitted", async () => {
     const { app, accessLinkStore, sessionStore } = await buildTestApp();
     const sessionId = await seedSessionCookie(accessLinkStore, sessionStore);

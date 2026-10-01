@@ -96,8 +96,13 @@ export function registerPrecheckinRoutes(app: FastifyInstance, deps: PrecheckinR
       const images: { role: PrecheckinImageRole; contentType: string; bytes: Buffer }[] = [];
       for await (const part of request.parts()) {
         if (part.type === "file") {
+          // Always drain the file stream, even for an unrecognized fieldname:
+          // @fastify/multipart's busboy-backed iterator will not advance to
+          // the next part until the current file's stream is consumed, so
+          // skipping `toBuffer()` here would hang the request indefinitely.
+          const bytes = await part.toBuffer();
           if (isKnownImageRole(part.fieldname)) {
-            images.push({ role: part.fieldname, contentType: part.mimetype, bytes: await part.toBuffer() });
+            images.push({ role: part.fieldname, contentType: part.mimetype, bytes });
           }
         } else if (typeof part.value === "string") {
           fields[part.fieldname] = part.value;

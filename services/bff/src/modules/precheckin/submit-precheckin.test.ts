@@ -3,7 +3,28 @@ import { submitPrecheckin } from "./submit-precheckin.js";
 import { createInMemorySubmissionStore } from "./submission-store.js";
 import { createPrecheckinDocumentStoreStub } from "../../adapters/precheckin-document-store/stub.js";
 import { createKmsStub } from "../../infra/crypto/kms-stub.js";
-import { AlreadySubmittedError } from "./ports.js";
+import { AlreadySubmittedError, type PrecheckinDocumentStorePort } from "./ports.js";
+
+/** Wraps a real stub so the Nth `put` call rejects, to test partial-failure cleanup. */
+function failPutOnCall(
+  documentStore: PrecheckinDocumentStorePort & { contents: Map<string, Buffer> },
+  failOnCallNumber: number,
+): PrecheckinDocumentStorePort & { contents: Map<string, Buffer> } {
+  let callCount = 0;
+  return {
+    contents: documentStore.contents,
+    async put(key, ciphertext) {
+      callCount += 1;
+      if (callCount === failOnCallNumber) {
+        throw new Error("simulated put failure on call " + String(callCount));
+      }
+      await documentStore.put(key, ciphertext);
+    },
+    async delete(key) {
+      await documentStore.delete(key);
+    },
+  };
+}
 
 const KEY_ID = "precheckin-test-key";
 
@@ -94,6 +115,22 @@ describe("submitPrecheckin", () => {
     // Retry succeeds — no re-consent needed at this layer (consent is checked by the HTTP route, not this use case).
     const record = await submitPrecheckin(baseInput(), deps);
     expect(record.reservationRef).toBe("RES-1001");
+  });
+
+  it("deletes the already-stored photo ciphertext when the id_front upload fails afterward, leaving no orphan", async () => {
+    const realDocumentStore = createPrecheckinDocumentStoreStub();
+    const deps = {
+      submissionStore: createInMemorySubmissionStore(),
+      documentStore: failPutOnCall(realDocumentStore, 2),
+      kms: createKmsStub(),
+      keyId: KEY_ID,
+    };
+
+    await expect(submitPrecheckin(baseInput(), deps)).rejects.toThrow(/simulated put failure/);
+
+    // The photo's `put` (call 1) succeeded before id_front's `put` (call 2) failed;
+    // the orphaned photo ciphertext must be cleaned up, not left stranded forever.
+    expect(realDocumentStore.contents.size).toBe(0);
   });
 
   it("allows different passengers on the same reservation to each submit independently", async () => {
