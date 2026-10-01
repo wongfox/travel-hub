@@ -88,6 +88,10 @@ async function handOffOne(submission: PrecheckinSubmissionRecord, now: Date, dep
     passengerRef: submission.passengerRef,
     docType: submission.docType,
     images,
+    // Stable across retries (ports.ts): protects against re-delivering
+    // already-handed-off PII if markHandedOff below fails after this
+    // deliver() already succeeded.
+    idempotencyKey: submission.id,
   });
 
   await deps.piiAccessAudit.record({

@@ -8,6 +8,7 @@ function fakePackage(overrides: Partial<Parameters<ReturnType<typeof createPrech
     passengerRef: "PAX-1",
     docType: "DNI" as const,
     images: [{ role: "photo" as const, contentType: "image/jpeg", bytes: Buffer.from("plaintext-photo") }],
+    idempotencyKey: "sub-1",
     ...overrides,
   };
 }
@@ -34,5 +35,24 @@ describe("createPrecheckinHandoffStub", () => {
     const result = await stub.deliver(fakePackage());
     expect(result.handoffRef).toEqual(expect.any(String));
     expect(stub.deliveries).toHaveLength(1);
+  });
+
+  it("treats a repeated idempotencyKey as a no-op, returning the same handoffRef without a second delivery", async () => {
+    const stub = createPrecheckinHandoffStub();
+
+    const first = await stub.deliver(fakePackage({ idempotencyKey: "sub-dup" }));
+    const second = await stub.deliver(fakePackage({ idempotencyKey: "sub-dup" }));
+
+    expect(second.handoffRef).toBe(first.handoffRef);
+    expect(stub.deliveries).toHaveLength(1);
+  });
+
+  it("delivers independently for distinct idempotencyKeys", async () => {
+    const stub = createPrecheckinHandoffStub();
+
+    await stub.deliver(fakePackage({ idempotencyKey: "sub-a" }));
+    await stub.deliver(fakePackage({ idempotencyKey: "sub-b" }));
+
+    expect(stub.deliveries).toHaveLength(2);
   });
 });

@@ -163,6 +163,40 @@ describe("runHandoffJob", () => {
     expect(result.failed).toBe(1);
   });
 
+  it("does not re-deliver to the downstream consumer when markHandedOff fails after a successful deliver, and recovers on retry (R3-handoff-dup-delivery)", async () => {
+    const deps = buildDeps();
+    await seedSubmission(deps.submissionStore, deps.documentStore, deps.kms);
+
+    let markHandedOffCallCount = 0;
+    const realMarkHandedOff = deps.submissionStore.markHandedOff;
+    const flakySubmissionStore: typeof deps.submissionStore = {
+      ...deps.submissionStore,
+      async markHandedOff(id, handedOffAt, purgeAfter) {
+        markHandedOffCallCount += 1;
+        if (markHandedOffCallCount === 1) {
+          throw new Error("simulated persistence failure after a successful deliver");
+        }
+        return realMarkHandedOff(id, handedOffAt, purgeAfter);
+      },
+    };
+
+    const firstRun = await runHandoffJob({ ...deps, submissionStore: flakySubmissionStore });
+    expect(firstRun).toEqual({ processed: 1, handedOff: 0, failed: 1 });
+    // deliver() already succeeded once before markHandedOff threw.
+    expect(deps.handoffPort.deliveries).toHaveLength(1);
+
+    // The submission is still "received" (the persist failed), so the next
+    // run picks it up again and calls deliver() with the same idempotencyKey.
+    const secondRun = await runHandoffJob({ ...deps, submissionStore: flakySubmissionStore });
+    expect(secondRun).toEqual({ processed: 1, handedOff: 1, failed: 0 });
+
+    // The stub's idempotency dedupe (same submission.id key) must keep this
+    // at exactly one real delivery — never a duplicate PII delivery.
+    expect(deps.handoffPort.deliveries).toHaveLength(1);
+    const updated = await deps.submissionStore.findByPassenger("RES-1001", "PAX-1");
+    expect(updated?.status).toBe("handed_off");
+  });
+
   it("does nothing when there are no pending submissions", async () => {
     const deps = buildDeps();
 

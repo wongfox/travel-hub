@@ -35,6 +35,16 @@ export interface PrecheckinHandoffPort {
     passengerRef: string;
     docType: DocumentType;
     images: { role: "photo" | "id_front" | "id_back"; contentType: string; bytes: Buffer }[];
+    /**
+     * Stable per-submission key (`HandoffJob` passes `submission.id`). A real
+     * adapter MUST treat a repeated `idempotencyKey` as a no-op returning the
+     * same `handoffRef`: `HandoffJob` persists `handedOffAt` only *after*
+     * `deliver` resolves, so a crash or store failure between a successful
+     * `deliver` and that persist causes the next run to call `deliver` again
+     * for the same submission — without this guarantee that retry would
+     * re-deliver already-handed-off PII to the downstream consumer.
+     */
+    idempotencyKey: string;
   }): Promise<{ handoffRef: string }>;
 }
 

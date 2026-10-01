@@ -20,6 +20,7 @@ export interface PrecheckinHandoffStub extends PrecheckinHandoffPort {
  */
 export function createPrecheckinHandoffStub(): PrecheckinHandoffStub {
   const deliveries: PrecheckinHandoffDeliveryPackage[] = [];
+  const handoffRefsByIdempotencyKey = new Map<string, string>();
   let failNext = false;
 
   return {
@@ -34,8 +35,17 @@ export function createPrecheckinHandoffStub(): PrecheckinHandoffStub {
         failNext = false;
         throw new Error("simulated PrecheckinHandoffPort delivery failure");
       }
+      // Models the idempotency contract documented on PrecheckinHandoffPort
+      // (ports.ts): a retried idempotencyKey (e.g. after HandoffJob's
+      // post-deliver persist step fails) is a no-op, never a second delivery.
+      const existingHandoffRef = handoffRefsByIdempotencyKey.get(pkg.idempotencyKey);
+      if (existingHandoffRef) {
+        return { handoffRef: existingHandoffRef };
+      }
       deliveries.push(pkg);
-      return { handoffRef: randomUUID() };
+      const handoffRef = randomUUID();
+      handoffRefsByIdempotencyKey.set(pkg.idempotencyKey, handoffRef);
+      return { handoffRef };
     },
   };
 }
