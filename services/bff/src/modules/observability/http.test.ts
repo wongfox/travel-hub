@@ -66,6 +66,25 @@ describe("registerObservabilityRoutes", () => {
     expect(response.statusCode).toBe(200);
   });
 
+  it("surfaces a 500 (never a silent partial report) when the queueClient itself rejects", async () => {
+    const app = Fastify();
+    registerObservabilityRoutes(app, {
+      queueClient: {
+        async getQueueDepth() {
+          throw new Error("simulated queue-store outage");
+        },
+        async getDeadLetterCount() {
+          return 0;
+        },
+      },
+      knownQueues: [{ queueName: "sample-job" }],
+    });
+
+    const response = await app.inject({ method: "GET", url: "/metrics" });
+
+    expect(response.statusCode).toBe(500);
+  });
+
   it("does not notify when every dead-letter count is zero", async () => {
     const app = Fastify();
     const notify = vi.fn().mockResolvedValue(undefined);
