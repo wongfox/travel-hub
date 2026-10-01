@@ -206,6 +206,25 @@ describe("POST /api/wifi/orders", () => {
     expect(secondBody.order.id).toBe(firstBody.order.id);
     expect(await orderStore.findByIdempotencyKey("same-key")).not.toBeNull();
   });
+
+  it("resolves legRef from the reservation's next milestone and buyerEmail from its email contact (task 10.3)", async () => {
+    const { app, accessLinkStore, sessionStore, orderStore } = await buildTestApp({ "wifi.checkout": true });
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/wifi/orders",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+      headers: { "idempotency-key": "idem-legref" },
+      payload: { packageId: "WIFI-60" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = response.json() as { order: { id: string } };
+    const stored = await orderStore.findById(body.order.id);
+    expect(stored?.legRef).toBe("L1");
+    expect(stored?.buyerEmail).toBe("ana@example.com");
+  });
 });
 
 describe("GET /api/wifi/orders/:id", () => {
@@ -252,6 +271,40 @@ describe("GET /api/wifi/orders/:id", () => {
 
     expect(statusResponse.statusCode).toBe(200);
     expect(statusResponse.json()).toMatchObject({ id: order.id, status: "PAYMENT_PENDING" });
+  });
+
+  it("reflects the order's real entitlement/SIR/receipt fields once activated (task 10.3)", async () => {
+    const { app, accessLinkStore, sessionStore, orderStore } = await buildTestApp({ "wifi.checkout": true });
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+    const order = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "WIFI-60",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-active-1",
+    });
+    await orderStore.transition(order.id, "ENTITLEMENT_ACTIVE", {
+      entitlementRef: "ENT-1",
+      entitlementExpiresAt: "2026-01-02T00:00:00.000Z",
+      sirRegisteredAt: "2026-01-01T12:00:00.000Z",
+      receiptIssuedAt: "2026-01-01T12:05:00.000Z",
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/wifi/orders/${order.id}`,
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "ENTITLEMENT_ACTIVE",
+      entitlementRef: "ENT-1",
+      entitlementExpiresAt: "2026-01-02T00:00:00.000Z",
+      sirRegistered: true,
+      receiptIssued: true,
+    });
   });
 
   it("returns 404 for an order belonging to a different reservation", async () => {

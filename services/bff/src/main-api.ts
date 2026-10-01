@@ -20,11 +20,14 @@ async function main(): Promise<void> {
       adapterContent: env.ADAPTER_CONTENT,
     },
     wifiCheckout: {
-      // Task 10.1: real env-sourced config, so the go-live guard
+      // Tasks 10.1/10.3: real env-sourced config, so the go-live guard
       // (config/go-live-guards.ts) actually enforces its prerequisites
       // against this api process's real boot-time configuration, not a stub.
       nodeEnv: env.NODE_ENV,
       adapterPayment: env.ADAPTER_PAYMENT,
+      adapterReceipt: env.ADAPTER_RECEIPT,
+      adapterSirPos: env.ADAPTER_SIR_POS,
+      adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
     },
   });
 

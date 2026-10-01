@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
+import { QueryClient } from "@tanstack/react-query";
 import type { TripDTO } from "contracts";
 import { createAppRouter } from "./router.js";
 import { AppProviders } from "./providers.js";
@@ -238,6 +239,60 @@ describe("help, menu, and destination routes (tasks 9.2-9.4)", () => {
 
     expect(await screen.findByRole("img", { name: "POI map" })).toBeInTheDocument();
     expect(screen.getByText("Walk to the bus stop.")).toBeInTheDocument();
+  });
+
+  it("renders the WiFi package catalog at /trip/wifi (task 10.4)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture(),
+        "/api/wifi/packages": [
+          { id: "WIFI-60", code: "wifi-60", name: "WiFi 60 min", priceMinor: 1500, currency: "PEN", durationMinutes: 60 },
+        ],
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/wifi"] }) });
+
+    render(
+      <AppProviders
+        router={router}
+        i18n={createI18n({ initialLocale: "en" })}
+        queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      />,
+    );
+
+    expect(await screen.findByText("WiFi 60 min")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /buy/i })).toBeInTheDocument();
+  });
+
+  it("shows a disabled/unavailable state at /trip/wifi when wifi.checkout is off (403 feature_disabled) — acceptance", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === "/api/trip") {
+          return Promise.resolve(new Response(JSON.stringify(buildTripFixture()), { status: 200 }));
+        }
+        if (url === "/api/wifi/packages") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ code: "feature_disabled", requestId: "req-1" }), { status: 403 }),
+          );
+        }
+        return Promise.reject(new Error(`unexpected fetch to ${url}`));
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/wifi"] }) });
+
+    render(
+      <AppProviders
+        router={router}
+        i18n={createI18n({ initialLocale: "en" })}
+        queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      />,
+    );
+
+    expect(await screen.findByText(/not available/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /buy/i })).not.toBeInTheDocument();
   });
 });
 

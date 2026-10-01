@@ -32,13 +32,13 @@ function toWifiOrderDTO(order: WifiOrderRecord): WifiOrderDTO {
     status: order.status,
     amountMinor: order.amountMinor,
     currency: order.currency,
-    // Independent flags per design Decision 8; this work unit (tasks
-    // 10.1-10.2) never sets them true — SIR registration and e-receipt
-    // issuance are WU19's scope (tasks 10.3-10.5).
-    sirRegistered: false,
-    receiptIssued: false,
-    entitlementRef: null,
-    entitlementExpiresAt: null,
+    // Independent flags per design Decision 8 (task 10.3): reflect the
+    // order's own entitlement/SIR/receipt fields, driven by
+    // `wifi-order-jobs.ts`'s activation/SIR-registration/e-receipt scans.
+    sirRegistered: order.sirRegisteredAt !== null,
+    receiptIssued: order.receiptIssuedAt !== null,
+    entitlementRef: order.entitlementRef,
+    entitlementExpiresAt: order.entitlementExpiresAt,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
@@ -119,6 +119,12 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
       return reply.code(403).send({ code: "out_of_scope", requestId: request.id });
     }
 
+    // The leg this WiFi entitlement binds to (task 10.3): same next-milestone
+    // leg already used for the catalog's tier resolution above.
+    const orderNextMilestone = selectNextMilestone(reservation.legs);
+    const legRef = orderNextMilestone?.legId ?? "";
+    const buyerEmail = reservation.contact.kind === "email" ? reservation.contact.address : "";
+
     try {
       const { order, redirectUrl } = await createWifiOrder(
         {
@@ -128,6 +134,8 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
           idempotencyKey,
           locale: session.locale,
           returnUrl: buildReturnUrl(idempotencyKey),
+          legRef,
+          buyerEmail,
         },
         { orderStore: deps.orderStore, packageStore: deps.packageStore, paymentGateway: deps.paymentGateway },
       );

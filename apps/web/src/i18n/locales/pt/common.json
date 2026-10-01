@@ -83,7 +83,8 @@
     "documents": "Documentos",
     "help": "Ajuda",
     "menu": "Cardápio",
-    "destination": "Destino"
+    "destination": "Destino",
+    "wifi": "WiFi"
   },
   "precheckin": {
     "consent": {
@@ -126,5 +127,27 @@
     "poiMapHeading": "Mapa de pontos de interesse",
     "howToGetThereHeading": "Como chegar",
     "circuitsHeading": "Circuitos"
+  },
+  "wifi": {
+    "heading": "WiFi a bordo",
+    "noPackages": "Nenhum pacote de WiFi disponível no momento.",
+    "duration": "Duração: {minutes} minutos",
+    "buy": "Comprar",
+    "unavailable": "A compra de WiFi não está disponível no momento.",
+    "checkoutError": "Não foi possível iniciar sua compra. Tente novamente.",
+    "redirecting": "Redirecionando para a página de pagamento…",
+    "orderStatus": {
+      "checking": "Verificando o status da sua compra…",
+      "paymentPending": "Aguardando confirmação do pagamento…",
+      "paid": "Pagamento confirmado, ativando seu WiFi…",
+      "active": "Seu WiFi está ativo",
+      "activeUntil": "Válido até {time}",
+      "failed": "Não foi possível processar seu pagamento.",
+      "refunded": "Seu pagamento foi reembolsado.",
+      "notFound": "Não encontramos seu pedido. Volte ao catálogo e tente novamente."
+    }
+  },
+  "tfe": {
+    "cta": "Descubra mais experiências"
   }
 }

@@ -31,6 +31,17 @@ async function main(): Promise<void> {
       kmsKeyConfigured: Boolean(env.PRECHECKIN_KMS_KEY_ID),
       ...(env.PRECHECKIN_KMS_KEY_ID ? { keyId: env.PRECHECKIN_KMS_KEY_ID } : {}),
     },
+    wifiCheckout: {
+      // Task 10.3: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this worker's real boot-time configuration, not a stub.
+      flags: FLAG_DEFAULTS,
+      nodeEnv: env.NODE_ENV,
+      adapterPayment: env.ADAPTER_PAYMENT,
+      adapterReceipt: env.ADAPTER_RECEIPT,
+      adapterSirPos: env.ADAPTER_SIR_POS,
+      adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
+    },
   });
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
 }

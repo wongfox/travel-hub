@@ -9,6 +9,7 @@ import { DocumentsPage } from "../features/documents/documents-page.js";
 import { HelpPage } from "../features/help/help-page.js";
 import { MenuPage } from "../features/menu/menu-page.js";
 import { DestinationPage } from "../features/destination/destination-page.js";
+import { WifiPage } from "../features/wifi/wifi-page.js";
 
 /**
  * Code-based route tree stub (task 4.2). File-based routing/codegen is not
@@ -86,6 +87,16 @@ function DestinationRoute() {
   return <DestinationPage apiClient={defaultApiClient} />;
 }
 
+/**
+ * `wifi-package-checkout` (task 10.4): one route handles both the catalog
+ * and the return-URL landing view (`?order=<idempotencyKey>`, see
+ * `WifiPage`'s own doc comment) — `buildReturnUrl` (`wifi-checkout/http.ts`)
+ * already points back at this exact path.
+ */
+function WifiRoute() {
+  return <WifiPage apiClient={defaultApiClient} />;
+}
+
 const tripAccessLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/t",
@@ -128,6 +139,12 @@ const tripDestinationRoute = createRoute({
   component: DestinationRoute,
 });
 
+const tripWifiRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/wifi",
+  component: WifiRoute,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   tripAccessLandingRoute,
@@ -137,4 +154,5 @@ export const routeTree = rootRoute.addChildren([
   tripHelpRoute,
   tripMenuRoute,
   tripDestinationRoute,
+  tripWifiRoute,
 ]);

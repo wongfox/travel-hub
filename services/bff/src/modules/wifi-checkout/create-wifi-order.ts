@@ -9,6 +9,10 @@ export interface CreateWifiOrderInput {
   idempotencyKey: string;
   locale: Locale;
   returnUrl: string;
+  /** The leg this WiFi entitlement will apply to (task 10.3's `WifiEntitlementPort.grant`); optional for backward compatibility with callers that predate task 10.3. */
+  legRef?: string;
+  /** The buyer's contact email (task 10.3's `EReceiptPort.issue`); optional for backward compatibility with callers that predate task 10.3. */
+  buyerEmail?: string;
 }
 
 export interface CreateWifiOrderDeps {
@@ -50,6 +54,8 @@ export async function createWifiOrder(
     amountMinor: pkg.priceMinor,
     currency: pkg.currency,
     idempotencyKey: input.idempotencyKey,
+    legRef: input.legRef ?? "",
+    buyerEmail: input.buyerEmail ?? "",
   });
 
   const session = await deps.paymentGateway.createHostedSession({
