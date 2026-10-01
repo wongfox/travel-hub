@@ -12,5 +12,12 @@ describe("createPgBossQueueClient", () => {
     expect(typeof client.createQueue).toBe("function");
     expect(typeof client.sendIdempotent).toBe("function");
     expect(typeof client.work).toBe("function");
+    // Task 13.3 (observability): present on the real adapter too, same as
+    // every other QueueClient method — real behavior against a live
+    // Postgres instance is an environmental gap in this sandbox (no Docker
+    // available), same limitation already recorded for this file's other
+    // methods (see sdd/travel-hub-mvp/apply-progress).
+    expect(typeof client.getQueueDepth).toBe("function");
+    expect(typeof client.getDeadLetterCount).toBe("function");
   });
 });

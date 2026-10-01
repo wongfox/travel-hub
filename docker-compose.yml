@@ -1,0 +1,106 @@
+# Task 13.1 (local stack): wires `web`, `bff-api`, `bff-worker`, and
+# `postgres` so `docker-compose up` brings up a stack where a link issued via
+# `POST /internal/links` can be opened end to end through to trip home,
+# entirely against stub adapters (design Decision 6) — no real vendor
+# credentials required.
+#
+# Quick walkthrough once the stack is healthy:
+#   1. curl -s -X POST http://localhost:3000/internal/links \
+#        -H "Authorization: Bearer ${INTERNAL_LINKS_API_KEY:-local-dev-internal-links-key}" \
+#        -H "Content-Type: application/json" \
+#        -d '{"reservationRef":"RES-1001"}'
+#      -> returns { "linkUrl": "https://app.travel-hub.local/t#<token>", ... }
+#   2. Open http://localhost:8080/t#<token> in a browser (the web service's
+#      exposed port) to land on trip home, proxied same-origin to bff-api.
+#
+# `POST /internal/links` is called directly against `bff-api`'s own exposed
+# port (3000), never through `web`'s nginx — design-interfaces documents it
+# as "service-authenticated... not internet-exposed via CDN" (see
+# `apps/web/docker/nginx.conf`'s comment on the same point).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: travel_hub
+      POSTGRES_PASSWORD: travel_hub
+      POSTGRES_DB: travel_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - travel-hub-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travel_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bff-api:
+    build:
+      context: .
+      dockerfile: services/bff/Dockerfile
+    command: ["node", "dist/main-api.js"]
+    environment: &bff-env
+      NODE_ENV: development
+      PORT: "3000"
+      DATABASE_URL: postgres://travel_hub:travel_hub@postgres:5432/travel_hub
+      INTERNAL_LINKS_API_KEY: local-dev-internal-links-key
+      # Stub-adapter selection (design Decision 6): every external
+      # integration runs against its deterministic stub, so the stack boots
+      # and the acceptance scenario above works with no real vendor
+      # credentials. Swap any of these for a real adapter name once that
+      # integration exists — see each one's go-live guard
+      # (`services/bff/src/config/go-live-guards.ts`) for its prerequisites.
+      ADAPTER_CONTENT: stub
+      ADAPTER_PAYMENT: stub
+      ADAPTER_RECEIPT: stub
+      ADAPTER_SIR_POS: stub
+      ADAPTER_WIFI_ENTITLEMENT: stub
+      ADAPTER_WEB_PUSH: stub
+      ADAPTER_STAFF_ALERT: stub
+      ADAPTER_ANALYTICS_SINK: stub
+      ADAPTER_PRECHECKIN_HANDOFF: stub
+      # Task 13.3 (observability): structured JSON logs to stdout, picked up
+      # by Docker's own log driver locally (`docker-compose logs bff-api`).
+      LOG_SINK: stdout
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bff-worker:
+    build:
+      context: .
+      dockerfile: services/bff/Dockerfile
+    command: ["node", "dist/main-worker.js"]
+    environment: *bff-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      BFF_UPSTREAM: bff-api:3000
+      NGINX_ENVSUBST_FILTER: BFF_UPSTREAM
+    ports:
+      - "8080:80"
+    depends_on:
+      - bff-api
+
+volumes:
+  travel-hub-postgres-data:

@@ -158,4 +158,28 @@ describe("loadEnv", () => {
     expect(env.STAFF_ALERT_PROTOCOL_REF).toBe("proto-1");
     expect(env.STAFF_ALERT_RETENTION_DAYS).toBe(90);
   });
+
+  it("defaults LOG_SINK to 'stdout' and leaves LOG_SINK_FILE_PATH undefined (task 13.3)", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.LOG_SINK).toBe("stdout");
+    expect(env.LOG_SINK_FILE_PATH).toBeUndefined();
+  });
+
+  it("passes through an explicitly configured LOG_SINK=file and LOG_SINK_FILE_PATH (task 13.3)", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      LOG_SINK: "file",
+      LOG_SINK_FILE_PATH: "/var/log/bff.log",
+    });
+
+    expect(env.LOG_SINK).toBe("file");
+    expect(env.LOG_SINK_FILE_PATH).toBe("/var/log/bff.log");
+  });
+
+  it("throws when LOG_SINK is not one of the recognized sink kinds", () => {
+    expect(() =>
+      loadEnv({ DATABASE_URL: "postgres://x", LOG_SINK: "syslog" }),
+    ).toThrow();
+  });
 });

@@ -13,8 +13,10 @@ import { assertGoLiveGuard, isProductionLike, type GoLiveContext } from "./confi
 import type { NodeEnvName } from "./config/env.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { registerSecurityPlugins } from "./infra/http/security-plugins.js";
-import type { QueueClient } from "./infra/queue/queue-client.js";
+import { createInMemoryQueueClient, type QueueClient } from "./infra/queue/queue-client.js";
 import { registerSampleJob, SAMPLE_JOB_QUEUE, type SampleJobExecutor } from "./infra/queue/sample-job.js";
+import { registerObservabilityRoutes } from "./modules/observability/http.js";
+import type { DeadLetterAlertPort } from "./modules/observability/ports.js";
 import { createInMemoryAccessLinkStore, type AccessLinkStore } from "./modules/trip-access/access-link-store.js";
 import { createInMemorySessionStore, type SessionStore } from "./modules/trip-access/session-store.js";
 import { createInMemoryRateLimiter, type RateLimiter } from "./modules/trip-access/rate-limiter.js";
@@ -322,6 +324,27 @@ export interface BuildAppOptions {
     /** `NODE_ENV` (env.ts); production-like environments refuse the dev-only secret. */
     nodeEnv?: NodeEnvName;
   };
+  /**
+   * `GET /metrics` wiring (task 13.3, observability): queue depth + dead-
+   * letter count beyond `GET /healthz`. Defaults to a fresh, never-used
+   * in-memory `QueueClient` (reports depth/dead-letter count 0 for every
+   * known queue) so the route stays registered and backward compatible even
+   * when this option is omitted entirely.
+   */
+  observability?: {
+    /**
+     * Read-only here — only `getQueueDepth`/`getDeadLetterCount` are called,
+     * never `sendIdempotent`/`work`. In production (`main-api.ts`) this is a
+     * SEPARATE `createPgBossQueueClient(DATABASE_URL)` instance from the one
+     * `startWorker` registers jobs on (the api and worker are separate
+     * processes per design Decision 2), but pg-boss persists queue state in
+     * Postgres, so both instances read the exact same underlying tables.
+     */
+    queueClient?: Pick<QueueClient, "getQueueDepth" | "getDeadLetterCount">;
+    /** Best-effort "alerting hook for dead-letter jobs" (task 13.3); omitted entirely, `/metrics` still reports dead-letter counts, it just never notifies anything. */
+    deadLetterAlert?: Pick<DeadLetterAlertPort, "notify">;
+    now?: () => Date;
+  };
 }
 
 /**
@@ -352,6 +375,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/healthz", async () => {
     return { status: "ok" as const };
+  });
+
+  // Task 13.3 (observability): `GET /metrics`, beyond `GET /healthz` above.
+  const observabilityOptions = options.observability ?? {};
+  registerObservabilityRoutes(app, {
+    queueClient: observabilityOptions.queueClient ?? createInMemoryQueueClient(),
+    ...(observabilityOptions.deadLetterAlert ? { deadLetterAlert: observabilityOptions.deadLetterAlert } : {}),
+    ...(observabilityOptions.now ? { now: observabilityOptions.now } : {}),
   });
 
   const tripAccessOptions = options.tripAccess ?? {};

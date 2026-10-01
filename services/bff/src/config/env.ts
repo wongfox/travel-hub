@@ -121,6 +121,16 @@ const EnvSchema = z.object({
    * correlate historical `trip_hash` values for the same reservation.
    */
   ANALYTICS_TRIP_HASH_SECRET: z.string().min(1).optional(),
+  /**
+   * Task 13.3 (observability): selects the structured-log sink
+   * (`infra/logging/log-sink.ts`). `"stdout"` relies on the deployment
+   * platform to ship container stdout elsewhere (e.g. the AWS reference
+   * deployment's ECS `awslogs` driver to CloudWatch Logs); `"file"` writes
+   * directly to `LOG_SINK_FILE_PATH`.
+   */
+  LOG_SINK: z.enum(["stdout", "file"]).default("stdout"),
+  /** Required when `LOG_SINK=file`; enforced by `resolveLogSinkConfig`, not here (same "cross-field validation lives in its own resolver" convention as `PRECHECKIN_RETENTION_DAYS`/`resolveRetentionConfig`). */
+  LOG_SINK_FILE_PATH: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

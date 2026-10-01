@@ -4,11 +4,48 @@
 import { buildApp } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
+import { createLogDestination, resolveLogSinkConfig } from "./infra/logging/log-sink.js";
+import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
+import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
+import { createDeadLetterAlertLogOnlyAdapter } from "./adapters/dead-letter-alert/log-only.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
+
+  // Task 13.3 (observability): structured JSON logs to a configurable sink.
+  // "stdout" (the default) needs no destination override — pino's own
+  // default stream already satisfies "structured JSON logs", and shipping
+  // them elsewhere is the deployment platform's job (see infra/'s ECS
+  // `awslogs` driver / docker-compose's own log driver locally).
+  const logSinkConfig = resolveLogSinkConfig(env);
+  const logDestination = createLogDestination(logSinkConfig);
+  // Always build a real logger instance (never `buildApp`'s `logger: true`
+  // shortcut) so the SAME instance is also available below to log dead-letter
+  // alerts, consistent with whatever sink was configured.
+  const logger = createRedactingLogger({}, logDestination);
+
+  // Task 13.3: a SEPARATE, read-only QueueClient for `GET /metrics` — never
+  // used to send/work jobs (that stays the `worker` process's job per design
+  // Decision 2) — pointed at the same Postgres database the worker's own
+  // queueClient persists queue state to, so depth/dead-letter counts reflect
+  // the worker's real job activity. `.start()` is required before pg-boss
+  // will answer `getQueue` calls; this never calls `.work()`/`.sendIdempotent()`.
+  const observabilityQueueClient = createPgBossQueueClient(env.DATABASE_URL);
+  await observabilityQueueClient.start();
+
   const app = buildApp({
-    logger: true,
+    logger,
+    observability: {
+      queueClient: observabilityQueueClient,
+      // No alerting vendor is chosen (task 13.3's "alerting hook", same
+      // "not chosen yet" pattern as ContentPort/AnalyticsSinkPort and the
+      // pulse module's own D4a alert port) — log-only keeps a durable,
+      // auditable record of every dead-letter event via the same
+      // structured, redacted logger.
+      deadLetterAlert: createDeadLetterAlertLogOnlyAdapter({
+        log: (alert) => logger.warn({ ...alert }, "dead-letter jobs detected"),
+      }),
+    },
     tripAccess: {
       nodeEnv: env.NODE_ENV,
       ...(env.INTERNAL_LINKS_API_KEY ? { internalApiKey: env.INTERNAL_LINKS_API_KEY } : {}),

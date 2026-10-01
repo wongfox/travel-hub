@@ -6,7 +6,7 @@ import * as staffAlertStoreModule from "./modules/pulse/staff-alert-store.js";
 import { ANALYTICS_FORWARD_QUEUE } from "./modules/analytics/forward-analytics-events-job.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { createInMemoryQueueClient } from "./infra/queue/queue-client.js";
-import { SAMPLE_JOB_QUEUE } from "./infra/queue/sample-job.js";
+import { SAMPLE_JOB_DEAD_LETTER_QUEUE, SAMPLE_JOB_QUEUE } from "./infra/queue/sample-job.js";
 import { createInMemoryAccessLinkStore } from "./modules/trip-access/access-link-store.js";
 import { resolveAccessLinkByToken } from "./modules/trip-access/resolve-link.js";
 import { DEFAULT_SESSION_COOKIE_NAME } from "./modules/trip-access/http.js";
@@ -1669,5 +1669,77 @@ describe("buildApp — analytics trip_hash secret production guard", () => {
     expect(() => buildApp({ analytics: { nodeEnv: "development" } })).not.toThrow();
     expect(() => buildApp({ analytics: { nodeEnv: "test" } })).not.toThrow();
     expect(() => buildApp()).not.toThrow();
+  });
+});
+
+describe("GET /metrics (task 13.3 observability)", () => {
+  it("responds 200 with depth 0 for every known queue when no observability queueClient is wired (backward compatible)", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/metrics" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { queues: { queueName: string; depth: number }[] };
+    expect(body.queues.length).toBeGreaterThan(0);
+    expect(body.queues.every((queue) => queue.depth === 0)).toBe(true);
+    expect(body.queues.some((queue) => queue.queueName === SAMPLE_JOB_QUEUE)).toBe(true);
+  });
+
+  it("surfaces a job's dead-letter count once its retries are exhausted, sharing the SAME queueClient the worker registered its jobs on", async () => {
+    const queueClient = createInMemoryQueueClient();
+    await startWorker({
+      queueClient,
+      sampleJobExecutor: {
+        async execute() {
+          throw new Error("simulated downstream failure");
+        },
+      },
+    });
+
+    await queueClient.sendIdempotent(SAMPLE_JOB_QUEUE, "metrics-test-key", { message: "will exhaust retries" });
+    // SAMPLE_JOB_RETRY_POLICY.retryLimit = 5 -> initial attempt + 5 retries = 6 total attempts before exhaustion.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await queueClient.runPendingOnce(SAMPLE_JOB_QUEUE);
+    }
+
+    const app = buildApp({ observability: { queueClient } });
+    const response = await app.inject({ method: "GET", url: "/metrics" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      queues: { queueName: string; deadLetterQueueName?: string; deadLetterCount?: number }[];
+    };
+    const sampleJobMetric = body.queues.find((queue) => queue.queueName === SAMPLE_JOB_QUEUE);
+    expect(sampleJobMetric?.deadLetterQueueName).toBe(SAMPLE_JOB_DEAD_LETTER_QUEUE);
+    expect(sampleJobMetric?.deadLetterCount).toBe(1);
+  });
+
+  it("notifies the configured DeadLetterAlertPort once a dead-letter job is surfaced", async () => {
+    const queueClient = createInMemoryQueueClient();
+    await startWorker({
+      queueClient,
+      sampleJobExecutor: {
+        async execute() {
+          throw new Error("simulated downstream failure");
+        },
+      },
+    });
+    await queueClient.sendIdempotent(SAMPLE_JOB_QUEUE, "metrics-alert-key", { message: "will exhaust retries" });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await queueClient.runPendingOnce(SAMPLE_JOB_QUEUE);
+    }
+
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const app = buildApp({ observability: { queueClient, deadLetterAlert: { notify } } });
+
+    await app.inject({ method: "GET", url: "/metrics" });
+
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queueName: SAMPLE_JOB_QUEUE,
+        deadLetterQueueName: SAMPLE_JOB_DEAD_LETTER_QUEUE,
+        count: 1,
+      }),
+    );
   });
 });

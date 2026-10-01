@@ -50,5 +50,29 @@ export function createPgBossQueueClient(connectionString: string): QueueClient {
         }
       });
     },
+
+    // Task 13.3 (observability): `boss.getQueue(name)` returns `null` for a
+    // queue that does not exist yet rather than throwing, so both methods
+    // below stay resilient to a not-yet-registered queue name the same way
+    // `createInMemoryQueueClient`'s equivalents do.
+    async getQueueDepth(queueName: string) {
+      const queue = await boss.getQueue(queueName);
+      if (!queue) return 0;
+      // `readyCount` is pg-boss's own "true backlog" count (jobs ready to run
+      // now, excluding future-dated/deferred jobs); `activeCount` adds jobs a
+      // worker is currently processing, so "depth" reflects everything
+      // outstanding, not yet completed.
+      return queue.readyCount + queue.activeCount;
+    },
+
+    async getDeadLetterCount(deadLetterQueueName: string) {
+      const queue = await boss.getQueue(deadLetterQueueName);
+      if (!queue) return 0;
+      // A dead-letter queue is never worked (see `createQueue`'s dead-letter
+      // registration convention), so every job routed there just accumulates
+      // until an operator intervenes — `queuedCount` is the right "how many
+      // are sitting here" count, not just the subset ready to run.
+      return queue.queuedCount;
+    },
   };
 }
