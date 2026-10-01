@@ -96,6 +96,7 @@ import {
 } from "./modules/pulse/dispatch-staff-alerts-job.js";
 import { registerPushSubscriptionPurgeJob, PUSH_SUBSCRIPTION_PURGE_QUEUE } from "./modules/notifications/purge-job.js";
 import { registerPulsePurgeJob, PULSE_PURGE_QUEUE } from "./modules/pulse/purge-job.js";
+import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
 import { registerAnalyticsRoutes } from "./modules/analytics/http.js";
 import { createInMemoryAnalyticsEventStore } from "./modules/analytics/analytics-event-store.js";
 import { createAnalyticsRecorder, type AnalyticsRecorder } from "./modules/analytics/analytics-recorder.js";
@@ -434,6 +435,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const analyticsSecret = analyticsOptions.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET;
   const analyticsRecorder: AnalyticsRecorder = createAnalyticsRecorder({
     analyticsEventStore: sharedAnalyticsEventStore,
+    consentStore: sharedConsentStore,
     secret: analyticsSecret,
   });
   registerAnalyticsRoutes(app, {
@@ -607,13 +609,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   assertGoLiveGuard("pulse.capture", pulseFlags["pulse.capture"], pulseGoLiveContext);
   assertGoLiveGuard("pulse.staff_alerts", pulseFlags["pulse.staff_alerts"], pulseGoLiveContext);
 
+  // Threaded into the default stores below (R3-002) so a configured
+  // STAFF_ALERT_RETENTION_DAYS actually reaches the purgeAfter computed at
+  // `POST /api/pulse` creation time, not just the go-live guard check above.
+  const pulseRetention = resolvePulseRetentionConfig({
+    ...(pulseOptions.staffAlertRetentionDays !== undefined
+      ? { STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays }
+      : {}),
+  });
+
   registerPulseRoutes(app, {
     accessLinkStore,
     sessionStore,
     sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
     consentStore: sharedConsentStore,
-    pulseResponseStore: pulseOptions.pulseResponseStore ?? createInMemoryPulseResponseStore(),
-    staffAlertStore: pulseOptions.staffAlertStore ?? createInMemoryStaffAlertStore(),
+    pulseResponseStore: pulseOptions.pulseResponseStore ?? createInMemoryPulseResponseStore(undefined, pulseRetention),
+    staffAlertStore: pulseOptions.staffAlertStore ?? createInMemoryStaffAlertStore(undefined, pulseRetention),
     pulsePromptDeliveryStore: pulseOptions.pulsePromptDeliveryStore ?? createInMemoryPulsePromptDeliveryStore(),
     subscriptionStore: sharedPushSubscriptionStore,
     webPush: pulseOptions.webPush ?? createWebPushStub(),
@@ -998,6 +1009,13 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     const flags = p.flags ?? FLAG_DEFAULTS;
     const nodeEnv = p.nodeEnv ?? "development";
     const adapterStaffAlert = p.adapterStaffAlert ?? "stub";
+    // Threaded into every default pulse_response/staff_alert store below so
+    // a configured STAFF_ALERT_RETENTION_DAYS actually reaches purgeAfter,
+    // not just the go-live guard check further down.
+    const pulseRetention = resolvePulseRetentionConfig({
+      ...(p.staffAlertRetentionDays !== undefined ? { STAFF_ALERT_RETENTION_DAYS: p.staffAlertRetentionDays } : {}),
+    });
+    const pulseNow = p.now ?? (() => new Date());
 
     // Same defense-in-depth check as precheckin's `handoffPort`/wifiCheckout's/
     // notifications' adapter guards above: without it, declaring a non-stub
@@ -1032,8 +1050,11 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       },
     });
 
+    const sharedStaffAlertStore = p.staffAlertStore ?? createInMemoryStaffAlertStore(pulseNow, pulseRetention);
+    const sharedPulseResponseStore = p.pulseResponseStore ?? createInMemoryPulseResponseStore(pulseNow, pulseRetention);
+
     await registerStaffAlertDispatchJob(options.queueClient, {
-      staffAlertStore: p.staffAlertStore ?? createInMemoryStaffAlertStore(),
+      staffAlertStore: sharedStaffAlertStore,
       staffAlertPort: p.staffAlertPort ?? createStaffAlertStub(),
       ...(p.now ? { now: p.now } : {}),
     });
@@ -1043,8 +1064,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     // registered alongside the D4a dispatch job since both share this same
     // `pulse` options block.
     await registerPulsePurgeJob(options.queueClient, {
-      pulseResponseStore: p.pulseResponseStore ?? createInMemoryPulseResponseStore(),
-      staffAlertStore: p.staffAlertStore ?? createInMemoryStaffAlertStore(),
+      pulseResponseStore: sharedPulseResponseStore,
+      staffAlertStore: sharedStaffAlertStore,
       piiAccessAudit: p.piiAccessAudit ?? createInMemoryPiiAccessAudit(),
       ...(p.now ? { now: p.now } : {}),
     });
@@ -1065,6 +1086,18 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       throw new Error(
         `ADAPTER_ANALYTICS_SINK="${adapterAnalyticsSink}" has no real adapter wired in; ` +
           'startWorker\'s analytics.analyticsSink must be provided, or ADAPTER_ANALYTICS_SINK must stay "stub".',
+      );
+    }
+    // A fresh default `analyticsEventStore` here is a separate process's
+    // in-memory map from the `api` process's — with a real sink configured,
+    // that split would make this job silently forward nothing, forever,
+    // with no error (the exact failure the queue's own success signal would
+    // otherwise mask). Only safe to default when the sink is also the stub.
+    if (adapterAnalyticsSink !== "stub" && !a.analyticsEventStore) {
+      throw new Error(
+        `ADAPTER_ANALYTICS_SINK="${adapterAnalyticsSink}" has no shared analyticsEventStore wired in; ` +
+          "startWorker's analytics.analyticsEventStore must be the SAME instance the api process's " +
+          'buildApp({ analytics }) was given, or ADAPTER_ANALYTICS_SINK must stay "stub".',
       );
     }
 

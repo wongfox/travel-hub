@@ -1,5 +1,5 @@
 import { Writable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildApp, startWorker } from "./composition-root.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { createInMemoryQueueClient } from "./infra/queue/queue-client.js";
@@ -1282,6 +1282,21 @@ describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
       }),
     ).not.toThrow();
   });
+
+  it("threads a configured staffAlertRetentionDays into the default pulse_response/staff_alert stores, not just the go-live guard check (R3-002)", async () => {
+    const pulseResponseStoreModule = await import("./modules/pulse/pulse-response-store.js");
+    const staffAlertStoreModule = await import("./modules/pulse/staff-alert-store.js");
+    const pulseResponseSpy = vi.spyOn(pulseResponseStoreModule, "createInMemoryPulseResponseStore");
+    const staffAlertSpy = vi.spyOn(staffAlertStoreModule, "createInMemoryStaffAlertStore");
+
+    buildApp({ pulse: { staffAlertRetentionDays: 5 } });
+
+    expect(pulseResponseSpy).toHaveBeenCalledWith(undefined, { retentionDays: 5 });
+    expect(staffAlertSpy).toHaveBeenCalledWith(undefined, { retentionDays: 5 });
+
+    pulseResponseSpy.mockRestore();
+    staffAlertSpy.mockRestore();
+  });
 });
 
 describe("startWorker — pulse staff-alert dispatch job wiring (task 11.5)", () => {
@@ -1361,6 +1376,34 @@ describe("startWorker — pulse staff-alert dispatch job wiring (task 11.5)", ()
   });
 });
 
+describe("startWorker — usage-analytics forward job wiring (task 12.1)", () => {
+  it("throws when ADAPTER_ANALYTICS_SINK names a non-stub adapter but no shared analyticsEventStore is wired in (R4-analytics-store-process-split)", async () => {
+    const { createAnalyticsSinkStub } = await import("./adapters/analytics-sink/stub.js");
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        analytics: { adapterAnalyticsSink: "a-real-vendor", analyticsSink: createAnalyticsSinkStub() },
+      }),
+    ).rejects.toThrow(/analyticsEventStore/);
+  });
+
+  it("boots cleanly against a non-stub sink once a shared analyticsEventStore is explicitly provided", async () => {
+    const { createInMemoryAnalyticsEventStore } = await import("./modules/analytics/analytics-event-store.js");
+    const analyticsEventStore = createInMemoryAnalyticsEventStore();
+    const { createAnalyticsSinkStub } = await import("./adapters/analytics-sink/stub.js");
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      analytics: { adapterAnalyticsSink: "a-real-vendor", analyticsSink: createAnalyticsSinkStub(), analyticsEventStore },
+    });
+
+    expect(result.jobsRegistered).toContain("analytics-forward");
+  });
+});
+
 describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
   it("a full successful WiFi purchase produces all five funnel events in order, with trip_hash pseudonymization and no raw reservationRef anywhere", async () => {
     const accessLinkStore = createInMemoryAccessLinkStore();
@@ -1371,10 +1414,12 @@ describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
     const paymentGateway = createPaymentGatewayStub();
     const { createInMemoryAnalyticsEventStore } = await import("./modules/analytics/analytics-event-store.js");
     const analyticsEventStore = createInMemoryAnalyticsEventStore();
+    const consentStore = createInMemoryConsentStore();
 
     const app = buildApp({
       tripAccess: { accessLinkStore, sessionStore },
       wifiCheckout: { orderStore, packageStore, paymentGateway, flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } as never },
+      privacy: { consentStore },
       analytics: { analyticsEventStore },
     });
 
@@ -1384,6 +1429,16 @@ describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
       passengerScope: [],
       expiresAt: "2099-01-01T00:00:00.000Z",
       issueChannel: "email",
+    });
+    // Consent-gated (R1-001): the recorder is a silent no-op for every
+    // funnel event below without a granted `analytics` consent on file.
+    await consentStore.record({
+      linkId: link.id,
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "analytics",
+      textVersion: "v1",
+      granted: true,
     });
     const { generateAccessToken, hashAccessToken } = await import("./modules/trip-access/token.js");
     const sessionId = generateAccessToken();
@@ -1434,7 +1489,11 @@ describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
     // the exact same `analyticsEventStore` (and secret) as `buildApp` above
     // for this one combined event list to be meaningful.
     const { createAnalyticsRecorder } = await import("./modules/analytics/analytics-recorder.js");
-    const workerAnalyticsRecorder = createAnalyticsRecorder({ analyticsEventStore, secret: "dev-only-analytics-trip-hash-secret" });
+    const workerAnalyticsRecorder = createAnalyticsRecorder({
+      analyticsEventStore,
+      consentStore,
+      secret: "dev-only-analytics-trip-hash-secret",
+    });
     const queueClient = createInMemoryQueueClient();
     await startWorker({
       queueClient,
@@ -1500,6 +1559,16 @@ describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
       reservationRef: "RES-1001",
       passengerRef: null,
       purpose: "pulse",
+      textVersion: "v1",
+      granted: true,
+    });
+    // Consent-gated (R1-001): without this, recordAnalyticsBestEffort is a
+    // silent no-op and the assertion below would see zero events.
+    await consentStore.record({
+      linkId: link.id,
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "analytics",
       textVersion: "v1",
       granted: true,
     });

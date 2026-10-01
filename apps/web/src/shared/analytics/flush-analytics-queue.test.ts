@@ -57,6 +57,45 @@ describe("flushAnalyticsQueue", () => {
     expect(remaining).toHaveLength(0);
   });
 
+  it("chunks a queue over 50 events into multiple ≤50-event requests, never one oversized batch (R3-001)", async () => {
+    const marker = crypto.randomUUID();
+    for (let i = 0; i < 61; i += 1) {
+      await enqueueAnalyticsEvent({ name: "screen_view", props: { marker, i } });
+    }
+    const batchSizes: number[] = [];
+    const apiClient = fakeApiClient(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { events: unknown[] };
+      batchSizes.push(body.events.length);
+      return new Response(JSON.stringify({ status: "accepted" }), { status: 202 });
+    });
+
+    const result = await flushAnalyticsQueue({ apiClient, sendBeacon: () => false });
+
+    expect(batchSizes.every((size) => size <= 50)).toBe(true);
+    expect(batchSizes.reduce((sum, size) => sum + size, 0)).toBe(result.sent);
+    expect(batchSizes.length).toBeGreaterThan(1);
+    const remaining = (await listQueuedAnalyticsEvents()).filter((e) => e.props?.marker === marker);
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("a later batch's failure leaves only that batch (and any after it) queued — an earlier batch's removal is not undone", async () => {
+    const marker = crypto.randomUUID();
+    for (let i = 0; i < 55; i += 1) {
+      await enqueueAnalyticsEvent({ name: "screen_view", props: { marker, i } });
+    }
+    let callCount = 0;
+    const apiClient = fakeApiClient(async () => {
+      callCount += 1;
+      if (callCount === 2) throw new Error("simulated network failure on the second batch");
+      return new Response(JSON.stringify({ status: "accepted" }), { status: 202 });
+    });
+
+    await expect(flushAnalyticsQueue({ apiClient, sendBeacon: () => false })).rejects.toThrow();
+
+    const remaining = (await listQueuedAnalyticsEvents()).filter((e) => e.props?.marker === marker);
+    expect(remaining).toHaveLength(5); // 55 - first successful 50-event batch
+  });
+
   it("leaves the queue intact when the apiClient.post fallback fails — never drops an unsent event", async () => {
     const marker = crypto.randomUUID();
     await enqueueAnalyticsEvent({ name: "push_opt_in", props: { marker } });

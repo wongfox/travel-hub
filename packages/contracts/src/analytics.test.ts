@@ -20,6 +20,38 @@ describe("AnalyticsEventSchema", () => {
     const result = AnalyticsEventSchema.safeParse({ name: "not_a_real_event" });
     expect(result.success).toBe(false);
   });
+
+  it("rejects a props key that resembles a PII field (R1-002)", () => {
+    const result = AnalyticsEventSchema.safeParse({
+      name: "wifi_package_selected",
+      props: { reservationRef: "RES-1001" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a nested object/array value in props, where PII could hide from a shape-level check (R1-002)", () => {
+    const result = AnalyticsEventSchema.safeParse({
+      name: "wifi_package_selected",
+      props: { metadata: { email: "ana@example.com" } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an overlong string value in props (R1-002)", () => {
+    const result = AnalyticsEventSchema.safeParse({
+      name: "wifi_package_selected",
+      props: { note: "x".repeat(201) },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a short primitive prop value under a non-PII-shaped key", () => {
+    const result = AnalyticsEventSchema.safeParse({
+      name: "wifi_package_selected",
+      props: { packageId: "WIFI-60", durationMinutes: 60, isRenewal: false },
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("SendAnalyticsEventsRequestSchema", () => {
