@@ -92,4 +92,19 @@ describe("loadEnv", () => {
 
     expect(env.ADAPTER_CONTENT).toBe("headless-cms");
   });
+
+  it("defaults ADAPTER_PAYMENT to 'stub' (task 10.1 go-live prerequisite)", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.ADAPTER_PAYMENT).toBe("stub");
+  });
+
+  it("passes through an explicitly configured ADAPTER_PAYMENT", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      ADAPTER_PAYMENT: "a-real-gateway",
+    });
+
+    expect(env.ADAPTER_PAYMENT).toBe("a-real-gateway");
+  });
 });

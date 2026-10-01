@@ -19,6 +19,13 @@ async function main(): Promise<void> {
       nodeEnv: env.NODE_ENV,
       adapterContent: env.ADAPTER_CONTENT,
     },
+    wifiCheckout: {
+      // Task 10.1: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this api process's real boot-time configuration, not a stub.
+      nodeEnv: env.NODE_ENV,
+      adapterPayment: env.ADAPTER_PAYMENT,
+    },
   });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });

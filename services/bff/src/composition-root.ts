@@ -47,6 +47,11 @@ import { resolveRetentionConfig, type RetentionConfig } from "./modules/precheck
 import { registerContentRoutes } from "./modules/content/http.js";
 import type { ContentPort } from "./modules/content/ports.js";
 import { createContentStub } from "./adapters/content/stub.js";
+import { registerWifiCheckoutRoutes } from "./modules/wifi-checkout/http.js";
+import type { PaymentGatewayPort, WifiOrderStore, WifiPackageStore } from "./modules/wifi-checkout/ports.js";
+import { createInMemoryWifiOrderStore } from "./modules/wifi-checkout/wifi-order-store.js";
+import { createWifiPackageStub } from "./adapters/wifi-package/stub.js";
+import { createPaymentGatewayStub } from "./adapters/payment-gateway/stub.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -139,6 +144,29 @@ export interface BuildAppOptions {
     nodeEnv?: NodeEnvName;
     /** `ADAPTER_CONTENT` (env.ts); defaults to `"stub"`. The go-live guard refuses `menu.enabled`/`destination.enabled: true` in production/staging while this stays `"stub"`. */
     adapterContent?: string;
+  };
+  /**
+   * `wifi-package-checkout` wiring (tasks 10.1-10.2: saga core + payment
+   * webhook). Shares `trip`'s `flags`/`sirBooking` by default, the same
+   * pattern as `content` above.
+   */
+  wifiCheckout?: {
+    orderStore?: WifiOrderStore;
+    packageStore?: Pick<WifiPackageStore, "listActive" | "findById">;
+    paymentGateway?: PaymentGatewayPort;
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `content`'s/`trip-access`'s `nodeEnv`, then `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /**
+     * `ADAPTER_PAYMENT` (env.ts); defaults to `"stub"`. The go-live guard
+     * refuses `wifi.checkout: true` in production/staging while this stays
+     * `"stub"` — it also requires non-stub receipt/SIR-POS/entitlement
+     * adapters that stay `"stub"` regardless until WU19 wires them (tasks
+     * 10.3-10.5), so this flag cannot go live in production before that work
+     * lands either way.
+     */
+    adapterPayment?: string;
+    buildReturnUrl?: (idempotencyKey: string) => string;
   };
 }
 
@@ -269,6 +297,37 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
     content: contentOptions.contentPort ?? createContentStub(),
     flags: contentFlags,
+  });
+
+  const wifiCheckoutOptions = options.wifiCheckout ?? {};
+  const wifiCheckoutFlags = wifiCheckoutOptions.flags ?? tripOptions.flags ?? FLAG_DEFAULTS;
+  const wifiCheckoutNodeEnv = wifiCheckoutOptions.nodeEnv ?? contentNodeEnv;
+  const adapterPayment = wifiCheckoutOptions.adapterPayment ?? "stub";
+
+  // Design Decision 13's go-live guard, wired to this module (task 10.1): the
+  // api process refuses to allow real WiFi checkout in production/staging
+  // while only a stub PaymentGatewayPort adapter is declared — the same
+  // pattern as the content guard above. The receipt/SIR-POS/entitlement
+  // adapters stay stub via INERT_GO_LIVE_ADAPTERS regardless (WU19 wires
+  // those), so `checkWifiCheckout` keeps refusing production go-live either
+  // way until that work lands too.
+  assertGoLiveGuard("wifi.checkout", wifiCheckoutFlags["wifi.checkout"], {
+    nodeEnv: wifiCheckoutNodeEnv,
+    adapters: { ...INERT_GO_LIVE_ADAPTERS, payment: adapterPayment },
+    precheckin: { kmsKeyConfigured: false },
+    push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+    pulseStaffAlerts: {},
+  });
+
+  registerWifiCheckoutRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
+    orderStore: wifiCheckoutOptions.orderStore ?? createInMemoryWifiOrderStore(),
+    packageStore: wifiCheckoutOptions.packageStore ?? createWifiPackageStub(),
+    paymentGateway: wifiCheckoutOptions.paymentGateway ?? createPaymentGatewayStub(),
+    flags: wifiCheckoutFlags,
+    ...(wifiCheckoutOptions.buildReturnUrl ? { buildReturnUrl: wifiCheckoutOptions.buildReturnUrl } : {}),
   });
 
   return app;
