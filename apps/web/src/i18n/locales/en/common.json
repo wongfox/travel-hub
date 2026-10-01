@@ -84,7 +84,8 @@
     "help": "Help",
     "menu": "Menu",
     "destination": "Destination",
-    "wifi": "WiFi"
+    "wifi": "WiFi",
+    "push": "Notifications"
   },
   "precheckin": {
     "consent": {
@@ -149,5 +150,13 @@
   },
   "tfe": {
     "cta": "Discover more experiences"
+  },
+  "push": {
+    "heading": "Notifications",
+    "optIn": "Enable notifications",
+    "optInError": "We couldn't enable notifications. Please try again.",
+    "subscribed": "Notifications are enabled.",
+    "a2hsExplainer": "To receive notifications, add this app to your home screen and try again from there.",
+    "unavailable": "Push notifications are not available right now."
   }
 }

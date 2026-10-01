@@ -8,6 +8,7 @@ import { hashAccessToken } from "./token.js";
 import type { SessionStore } from "./session-store.js";
 import type { RateLimiter } from "./rate-limiter.js";
 import type { SirBookingPort } from "../booking/ports.js";
+import type { PushSubscriptionStore } from "../notifications/ports.js";
 
 const ContactChannelSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("email"), address: z.string().min(1) }),
@@ -60,6 +61,8 @@ export interface TripAccessRouteDeps extends IssueLinkDeps {
   reissueRateLimiter: RateLimiter;
   /** Overridable only for tests; production always uses `DEFAULT_SESSION_COOKIE_NAME`. */
   sessionCookieName?: string;
+  /** Task 11.1's reissue-invalidation acceptance; threaded straight through to `reissueAccessLink`. Optional so every caller that predates `push-notifications` keeps working unchanged. */
+  pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByLinkId">;
 }
 
 /**
@@ -165,6 +168,7 @@ export function registerTripAccessRoutes(app: FastifyInstance, deps: TripAccessR
       linkExpiryMs: deps.linkExpiryMs,
       buildLinkUrl: deps.buildLinkUrl,
       ...(deps.now ? { now: deps.now } : {}),
+      ...(deps.pushSubscriptionStore ? { pushSubscriptionStore: deps.pushSubscriptionStore } : {}),
     });
     // Always 202 with the same body, regardless of whether the verifier
     // matched a reservation — no enumeration signal (spec "Re-request with

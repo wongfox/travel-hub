@@ -107,4 +107,28 @@ describe("loadEnv", () => {
 
     expect(env.ADAPTER_PAYMENT).toBe("a-real-gateway");
   });
+
+  it("defaults ADAPTER_WEB_PUSH to 'stub' and leaves the other task 11.1 go-live fields undefined", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.ADAPTER_WEB_PUSH).toBe("stub");
+    expect(env.PUSH_VAPID_PUBLIC_KEY).toBeUndefined();
+    expect(env.PUSH_VAPID_PRIVATE_KEY).toBeUndefined();
+    expect(env.PUSH_CONSENT_TEXT_VERSION).toBeUndefined();
+  });
+
+  it("passes through explicitly configured task 11.1 go-live fields", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      ADAPTER_WEB_PUSH: "vapid",
+      PUSH_VAPID_PUBLIC_KEY: "a-real-public-key",
+      PUSH_VAPID_PRIVATE_KEY: "a-real-private-key",
+      PUSH_CONSENT_TEXT_VERSION: "v1",
+    });
+
+    expect(env.ADAPTER_WEB_PUSH).toBe("vapid");
+    expect(env.PUSH_VAPID_PUBLIC_KEY).toBe("a-real-public-key");
+    expect(env.PUSH_VAPID_PRIVATE_KEY).toBe("a-real-private-key");
+    expect(env.PUSH_CONSENT_TEXT_VERSION).toBe("v1");
+  });
 });

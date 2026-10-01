@@ -294,6 +294,27 @@ describe("help, menu, and destination routes (tasks 9.2-9.4)", () => {
     expect(await screen.findByText(/not available/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /buy/i })).not.toBeInTheDocument();
   });
+
+  it("renders a push-unavailable message at /trip/push when push.enabled is off (task 11.3)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture({ features: { pushEnabled: false } as TripDTO["features"] }),
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/push"] }) });
+
+    render(
+      <AppProviders
+        router={router}
+        i18n={createI18n({ initialLocale: "en" })}
+        queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      />,
+    );
+
+    expect(await screen.findByText(/not available/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /notification/i })).not.toBeInTheDocument();
+  });
 });
 
 /**
