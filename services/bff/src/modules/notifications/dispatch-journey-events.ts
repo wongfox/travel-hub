@@ -14,6 +14,7 @@ export interface DispatchJourneyEventsResult {
   pushed: number;
   skippedByPolicy: number;
   skippedDuplicate: number;
+  failed: number;
 }
 
 function buildDedupeKey(event: JourneyEvent): string {
@@ -101,13 +102,18 @@ export async function dispatchJourneyEvents(
   let pushed = 0;
   let skippedByPolicy = 0;
   let skippedDuplicate = 0;
+  let failed = 0;
 
   for (const event of events) {
-    const outcome = await dispatchOne(event, deps);
-    if (outcome === "pushed") pushed += 1;
-    else if (outcome === "skippedByPolicy") skippedByPolicy += 1;
-    else skippedDuplicate += 1;
+    try {
+      const outcome = await dispatchOne(event, deps);
+      if (outcome === "pushed") pushed += 1;
+      else if (outcome === "skippedByPolicy") skippedByPolicy += 1;
+      else skippedDuplicate += 1;
+    } catch {
+      failed += 1;
+    }
   }
 
-  return { processed: events.length, pushed, skippedByPolicy, skippedDuplicate };
+  return { processed: events.length, pushed, skippedByPolicy, skippedDuplicate, failed };
 }
