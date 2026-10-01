@@ -22,6 +22,13 @@ import {
 } from "./modules/wifi-checkout/wifi-order-jobs.js";
 import { createInMemoryWifiOrderStore } from "./modules/wifi-checkout/wifi-order-store.js";
 import { createWifiPackageStub } from "./adapters/wifi-package/stub.js";
+import { createInMemorySessionStore } from "./modules/trip-access/session-store.js";
+import { createInMemoryConsentStore } from "./modules/privacy/consent-store.js";
+import { createInMemoryPushSubscriptionStore } from "./modules/notifications/push-subscription-store.js";
+import { createInMemoryNotificationStore } from "./modules/notifications/notification-store.js";
+import { createWebPushStub } from "./adapters/web-push/stub.js";
+import { JOURNEY_POLL_QUEUE } from "./modules/notifications/journey-poll-job.js";
+import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 
 describe("buildApp", () => {
   it("responds 200 with an ok status on GET /healthz", async () => {
@@ -919,5 +926,184 @@ describe("startWorker — pre check-in handoff/purge wiring (task 8.5)", () => {
     expect(handoffPort.deliveries).toHaveLength(1);
     const updated = await submissionStore.findByPassenger("RES-1001", "PAX-1");
     expect(updated?.status).toBe("handed_off");
+  });
+});
+
+describe("buildApp — push subscription routes (task 11.1)", () => {
+  it("registers POST /api/push/subscriptions end to end, invalidating the prior subscription on reissue", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const sessionStore = createInMemorySessionStore();
+    const consentStore = createInMemoryConsentStore();
+    const subscriptionStore = createInMemoryPushSubscriptionStore();
+    const { createLinkDeliveryStub } = await import("./adapters/link-delivery/stub.js");
+    const linkDelivery = createLinkDeliveryStub();
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore, linkDelivery },
+      privacy: { consentStore },
+      notifications: { subscriptionStore, flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never },
+    });
+
+    const issueResponse = await app.inject({
+      method: "POST",
+      url: "/internal/links",
+      headers: { authorization: "Bearer dev-only-internal-links-key" },
+      payload: { reservationRef: "RES-1001", contact: { kind: "email", address: "ana@example.com" }, locale: "es" },
+    });
+    expect(issueResponse.statusCode).toBe(201);
+    const token = linkDelivery.deliveries[0]!.linkUrl.split("#")[1]!;
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+
+    await consentStore.record({
+      linkId: "unused",
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "push",
+      textVersion: "v1",
+      granted: true,
+    });
+
+    const subscribeResponse = await app.inject({
+      method: "POST",
+      url: "/api/push/subscriptions",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: { endpoint: "https://push.example.com/endpoint-1", keys: { p256dh: "p1", auth: "a1" }, locale: "es" },
+    });
+    expect(subscribeResponse.statusCode).toBe(201);
+    const { id } = subscribeResponse.json() as { id: string };
+
+    await app.inject({
+      method: "POST",
+      url: "/api/links/reissue",
+      payload: { reservationRef: "RES-1001", surname: "torres", locale: "es" },
+    });
+
+    expect(await subscriptionStore.findById(id)).toBeNull();
+  });
+
+  it("throws GoLiveGuardError at build time when push.enabled is true in production without VAPID keys/AlertSourcePolicy/consent text version", () => {
+    expect(() =>
+      buildApp({
+        notifications: { flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never, nodeEnv: "production" },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("allows push.enabled true in production once every prerequisite is declared", () => {
+    expect(() =>
+      buildApp({
+        notifications: {
+          flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never,
+          nodeEnv: "production",
+          vapidConfigured: true,
+          alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
+          pushConsentTextVersion: "v1",
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("always allows push.enabled against the stub outside production/staging", () => {
+    expect(() =>
+      buildApp({ notifications: { flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never } }),
+    ).not.toThrow();
+  });
+});
+
+describe("startWorker — journey-poll job wiring (task 11.2)", () => {
+  it("registers the journey-poll job when notifications options are given", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      notifications: { flags: { ...FLAG_DEFAULTS, "push.enabled": false } as never },
+    });
+
+    expect(result.jobsRegistered).toContain(JOURNEY_POLL_QUEUE);
+  });
+
+  it("does not register the journey-poll job when no notifications options are given (backward compatible)", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({ queueClient });
+
+    expect(result.jobsRegistered).toEqual([SAMPLE_JOB_QUEUE]);
+  });
+
+  it("throws GoLiveGuardError when push.enabled is true in production without prerequisites", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        notifications: { nodeEnv: "production", flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never },
+      }),
+    ).rejects.toThrow(GoLiveGuardError);
+  });
+
+  it("throws when ADAPTER_WEB_PUSH names a non-stub adapter but no real webPush is wired in", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        notifications: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never,
+          adapterWebPush: "a-real-push-service",
+          vapidConfigured: true,
+          alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
+          pushConsentTextVersion: "v1",
+        },
+      }),
+    ).rejects.toThrow(/ADAPTER_WEB_PUSH/);
+  });
+
+  it("actually runs the journey-poll job end to end when its queue is triggered", async () => {
+    const queueClient = createInMemoryQueueClient();
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    await accessLinkStore.create({
+      tokenHash: "hash-journey-poll",
+      reservationRef: "RES-2002",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const notificationStore = createInMemoryNotificationStore();
+    const subscriptionStore = createInMemoryPushSubscriptionStore();
+    await subscriptionStore.create({
+      linkId: "link-1",
+      reservationRef: "RES-2002",
+      passengerScope: [],
+      endpoint: "https://push.example.com/endpoint-1",
+      p256dh: "p1",
+      auth: "a1",
+      locale: "es",
+      consentRecordId: "c1",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    const webPush = createWebPushStub();
+
+    await startWorker({
+      queueClient,
+      notifications: {
+        accessLinkStore,
+        notificationStore,
+        subscriptionStore,
+        webPush,
+        // RES-2002's seed relocation (L1, departing 2026-11-03) must fall
+        // inside [now, now+pollWindowHours] — pin `now` just before it with
+        // a generous window so this test does not depend on the real clock.
+        pollWindowHours: 24 * 60,
+        now: () => new Date("2026-10-01T00:00:00.000Z"),
+      },
+    });
+    await queueClient.sendIdempotent(JOURNEY_POLL_QUEUE, "scan", {});
+    await queueClient.runPendingOnce(JOURNEY_POLL_QUEUE);
+
+    expect(webPush.sentPayloads.length).toBeGreaterThan(0);
   });
 });

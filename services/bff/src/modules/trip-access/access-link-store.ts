@@ -49,6 +49,15 @@ export interface AccessLinkStore {
   findActiveByReservation(reservationRef: string): Promise<AccessLinkRecord[]>;
   /** Marks a link revoked, recording which link superseded it (design Decision 4: "Re-issued link invalidates the previous one"). */
   revoke(id: string, supersededBy: string): Promise<void>;
+  /**
+   * Every not-yet-revoked link across all reservations (task 11.2's journey
+   * polling adapter: the worker only needs to check reservations that still
+   * have a live access link, not every reservation SIR has ever seen).
+   * Expiry is deliberately not filtered here — the same convention as
+   * `findActiveByReservation`, which only checks `revokedAt` — so a caller
+   * that cares about expiry filters it itself from `expiresAt`.
+   */
+  listActive(): Promise<AccessLinkRecord[]>;
 }
 
 export function createInMemoryAccessLinkStore(): AccessLinkStore {
@@ -98,6 +107,10 @@ export function createInMemoryAccessLinkStore(): AccessLinkStore {
           return;
         }
       }
+    },
+
+    async listActive(): Promise<AccessLinkRecord[]> {
+      return [...byTokenHash.values()].filter((record) => record.revokedAt === null);
     },
   };
 }

@@ -69,6 +69,20 @@ import {
 import type { SirPosPort } from "./modules/booking/ports.js";
 import { registerOutboundRoutes } from "./modules/outbound/http.js";
 import type { TfeRedirectConfig } from "./modules/outbound/resolve-tfe-redirect.js";
+import { registerNotificationRoutes } from "./modules/notifications/http.js";
+import { createInMemoryPushSubscriptionStore } from "./modules/notifications/push-subscription-store.js";
+import { createInMemoryNotificationStore } from "./modules/notifications/notification-store.js";
+import type {
+  JourneyEventSourcePort,
+  NotificationStore,
+  PushSubscriptionStore,
+  WebPushPort,
+} from "./modules/notifications/ports.js";
+import { createWebPushStub } from "./adapters/web-push/stub.js";
+import { createSirPollingJourneyEventAdapter } from "./adapters/journey-event-source/sir-polling.js";
+import { registerJourneyPollJob, JOURNEY_POLL_QUEUE } from "./modules/notifications/journey-poll-job.js";
+import { DEFAULT_ALERT_SOURCE_POLICY, isAlertSourcePolicyComplete } from "./config/alert-source-policy.js";
+import type { AlertSourcePolicy } from "contracts";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -214,6 +228,29 @@ export interface BuildAppOptions {
   outbound?: {
     tfeConfig?: TfeRedirectConfig;
   };
+  /**
+   * `push-notifications` subscription-lifecycle wiring (task 11.1). Shares
+   * `trip-access`'s `accessLinkStore`/`sessionStore` and `privacy`'s
+   * `consentStore` by default — a session created via `POST /api/session`
+   * and a consent recorded via `POST /api/consents` must both be visible
+   * here too. The resolved `subscriptionStore` is also threaded into
+   * `trip-access`'s reissue flow, so `POST /api/links/reissue` invalidates
+   * every subscription bound to a link it revokes (task 11.1 acceptance).
+   */
+  notifications?: {
+    subscriptionStore?: PushSubscriptionStore;
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `wifiCheckout`'s/`content`'s/`trip-access`'s `nodeEnv`, then `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_WEB_PUSH` (env.ts); defaults to `"stub"`. */
+    adapterWebPush?: string;
+    /** `push.enabled` go-live prerequisite: whether real VAPID keys are configured (env.ts's `PUSH_VAPID_PUBLIC_KEY`/`PUSH_VAPID_PRIVATE_KEY`). */
+    vapidConfigured?: boolean;
+    /** `push.enabled` go-live prerequisite: `AlertSourcePolicy` must declare every alert type. Defaults to `DEFAULT_ALERT_SOURCE_POLICY` (config/alert-source-policy.ts). */
+    alertSourcePolicy?: AlertSourcePolicy;
+    /** `push.enabled` go-live prerequisite: approved consent text version (env.ts's `PUSH_CONSENT_TEXT_VERSION`). */
+    pushConsentTextVersion?: string;
+  };
 }
 
 /**
@@ -259,6 +296,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const accessLinkStore = tripAccessOptions.accessLinkStore ?? createInMemoryAccessLinkStore();
   const sessionStore = tripAccessOptions.sessionStore ?? createInMemorySessionStore();
   const sharedSirBookingStub = createSirBookingStub();
+  // Shared with `registerNotificationRoutes` below (task 11.1): reissuing a
+  // link must invalidate every subscription bound to the link(s) it
+  // revokes, which only works if both routes share the exact same store
+  // instance — same convention as `sharedConsentStore`/`sharedSubmissionStore`.
+  const notificationsOptions = options.notifications ?? {};
+  const sharedPushSubscriptionStore = notificationsOptions.subscriptionStore ?? createInMemoryPushSubscriptionStore();
 
   registerTripAccessRoutes(app, {
     store: accessLinkStore,
@@ -274,6 +317,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       tripAccessOptions.sessionRateLimiter ?? createInMemoryRateLimiter(DEFAULT_SESSION_RATE_LIMIT),
     reissueRateLimiter:
       tripAccessOptions.reissueRateLimiter ?? createInMemoryRateLimiter(DEFAULT_REISSUE_RATE_LIMIT),
+    pushSubscriptionStore: sharedPushSubscriptionStore,
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 
@@ -388,6 +432,38 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     tfeConfig: outboundOptions.tfeConfig ?? DEFAULT_TFE_REDIRECT_CONFIG,
   });
 
+  const notificationsFlags = notificationsOptions.flags ?? wifiCheckoutFlags;
+  const notificationsNodeEnv = notificationsOptions.nodeEnv ?? wifiCheckoutNodeEnv;
+  const adapterWebPush = notificationsOptions.adapterWebPush ?? "stub";
+  const alertSourcePolicy = notificationsOptions.alertSourcePolicy ?? DEFAULT_ALERT_SOURCE_POLICY;
+
+  // Design Decision 13's go-live guard, wired to this module (task 11.1):
+  // the api process refuses to enable real push notifications in
+  // production/staging unless VAPID keys, a complete AlertSourcePolicy, and
+  // an approved consent text version are all declared — the same pattern as
+  // the content/wifi-checkout guards above.
+  assertGoLiveGuard("push.enabled", notificationsFlags["push.enabled"], {
+    nodeEnv: notificationsNodeEnv,
+    adapters: { ...INERT_GO_LIVE_ADAPTERS, webPush: adapterWebPush },
+    precheckin: { kmsKeyConfigured: false },
+    push: {
+      vapidConfigured: notificationsOptions.vapidConfigured ?? false,
+      alertSourcePolicyComplete: isAlertSourcePolicyComplete(alertSourcePolicy),
+      ...(notificationsOptions.pushConsentTextVersion
+        ? { consentTextVersion: notificationsOptions.pushConsentTextVersion }
+        : {}),
+    },
+    pulseStaffAlerts: {},
+  });
+
+  registerNotificationRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    consentStore: sharedConsentStore,
+    subscriptionStore: sharedPushSubscriptionStore,
+    flags: notificationsFlags,
+  });
+
   return app;
 }
 
@@ -452,6 +528,34 @@ export interface StartWorkerOptions {
     adapterSirPos?: string;
     /** `ADAPTER_WIFI_ENTITLEMENT` (env.ts); defaults to `"stub"`. */
     adapterWifiEntitlement?: string;
+    now?: () => Date;
+  };
+  /**
+   * Journey-poll job wiring (task 11.2). Same opt-in convention as
+   * `precheckin`/`wifiCheckout` above: omitted entirely, `startWorker`
+   * registers no journey-poll job; `main-worker.ts` always passes it so the
+   * real worker process always runs the go-live guard and registers the job.
+   */
+  notifications?: {
+    /** Overrides `accessLinkStore`/`sirBooking`-driven polling entirely; mainly for tests. */
+    journeyEventSource?: JourneyEventSourcePort;
+    /** Used to build the default `sir-polling` adapter when `journeyEventSource` is not given. Defaults to a fresh in-memory store (documented gap: a real deployment needs this to be the same store the `api` process writes to, pending a Drizzle-backed `access_link` adapter — see `sdd/travel-hub-mvp/apply-progress`). */
+    accessLinkStore?: Pick<AccessLinkStore, "listActive">;
+    sirBooking?: Pick<SirBookingPort, "getReservation" | "getRelocations">;
+    notificationStore?: NotificationStore;
+    subscriptionStore?: PushSubscriptionStore;
+    webPush?: WebPushPort;
+    alertSourcePolicy?: AlertSourcePolicy;
+    /** "Near-term departures" window width in hours (design Decision 11). Defaults to 48. */
+    pollWindowHours?: number;
+    /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_WEB_PUSH` (env.ts); defaults to `"stub"`. */
+    adapterWebPush?: string;
+    vapidConfigured?: boolean;
+    pushConsentTextVersion?: string;
     now?: () => Date;
   };
 }
@@ -604,6 +708,64 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       ...(w.now ? { now: w.now } : {}),
     });
     jobsRegistered.push(WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE);
+  }
+
+  if (options.notifications) {
+    const n = options.notifications;
+    const flags = n.flags ?? FLAG_DEFAULTS;
+    const nodeEnv = n.nodeEnv ?? "development";
+    const adapterWebPush = n.adapterWebPush ?? "stub";
+    const alertSourcePolicy = n.alertSourcePolicy ?? DEFAULT_ALERT_SOURCE_POLICY;
+
+    // Same defense-in-depth check as precheckin's `handoffPort`/wifiCheckout's
+    // adapter guards above: without it, declaring a non-stub
+    // ADAPTER_WEB_PUSH without also wiring a real `webPush` port would let
+    // the go-live guard pass while `registerJourneyPollJob` below silently
+    // falls back to `createWebPushStub()`, so no push notification would
+    // ever actually reach the declared adapter.
+    if (adapterWebPush !== "stub" && !n.webPush) {
+      throw new Error(
+        `ADAPTER_WEB_PUSH="${adapterWebPush}" has no real adapter wired in; ` +
+          'startWorker\'s notifications.webPush must be provided, or ADAPTER_WEB_PUSH must stay "stub".',
+      );
+    }
+
+    // Design Decision 13's go-live guard, wired to this module (task 11.2):
+    // the worker refuses to register the real journey-poll job against
+    // production/staging unless VAPID keys, a complete AlertSourcePolicy,
+    // and an approved consent text version are all declared — the same full
+    // `checkPushEnabled` check `buildApp()` runs for the api process,
+    // defense-in-depth against the worker process being booted with a
+    // production flag directly.
+    assertGoLiveGuard("push.enabled", flags["push.enabled"], {
+      nodeEnv,
+      adapters: { ...INERT_GO_LIVE_ADAPTERS, webPush: adapterWebPush },
+      precheckin: { kmsKeyConfigured: false },
+      push: {
+        vapidConfigured: n.vapidConfigured ?? false,
+        alertSourcePolicyComplete: isAlertSourcePolicyComplete(alertSourcePolicy),
+        ...(n.pushConsentTextVersion ? { consentTextVersion: n.pushConsentTextVersion } : {}),
+      },
+      pulseStaffAlerts: {},
+    });
+
+    const journeyEventSource =
+      n.journeyEventSource ??
+      createSirPollingJourneyEventAdapter({
+        accessLinkStore: n.accessLinkStore ?? createInMemoryAccessLinkStore(),
+        sirBooking: n.sirBooking ?? createSirBookingStub(),
+      });
+
+    await registerJourneyPollJob(options.queueClient, {
+      journeyEventSource,
+      notificationStore: n.notificationStore ?? createInMemoryNotificationStore(),
+      subscriptionStore: n.subscriptionStore ?? createInMemoryPushSubscriptionStore(),
+      webPush: n.webPush ?? createWebPushStub(),
+      alertSourcePolicy,
+      pollWindowHours: n.pollWindowHours ?? 48,
+      ...(n.now ? { now: n.now } : {}),
+    });
+    jobsRegistered.push(JOURNEY_POLL_QUEUE);
   }
 
   return { jobsRegistered };
