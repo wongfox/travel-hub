@@ -48,6 +48,15 @@ export interface PushSubscriptionStore {
    * for every link it revokes.
    */
   deleteByLinkId(linkId: string): Promise<void>;
+  /**
+   * Deletes every subscription bound to one reservation (task 12.3's
+   * consent-withdrawal cascade: withdrawing `push` consent deletes the
+   * subscription immediately — reservation-scoped, not link-scoped, since
+   * consent itself is recorded at reservation scope, not per-link).
+   */
+  deleteByReservation(reservationRef: string): Promise<void>;
+  /** Every subscription whose `expiresAt` has already passed (task 12.3's retention/purge scheduler scan). */
+  listExpired(now: Date): Promise<PushSubscriptionRecord[]>;
 }
 
 /**

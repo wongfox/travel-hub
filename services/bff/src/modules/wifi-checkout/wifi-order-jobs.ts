@@ -3,6 +3,7 @@ import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-clie
 import { activateWifiOrder } from "./activate-wifi-order.js";
 import { WifiPackageNotFoundError } from "./errors.js";
 import type { EReceiptPort, WifiEntitlementPort, WifiOrderRecord, WifiOrderStore, WifiPackageStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
 
 /**
  * Worker queues this module registers on (task 10.3), following the exact
@@ -39,6 +40,8 @@ export interface WifiOrderJobsDeps {
   eReceipt: Pick<EReceiptPort, "issue">;
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
+  /** `usage-analytics` funnel instrumentation (task 12.2); omitted entirely, this job behaves exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
 }
 
 export interface EntitlementActivationJobResult {
@@ -69,6 +72,7 @@ export async function runWifiEntitlementActivationJob(
         packageStore: deps.packageStore,
         entitlement: deps.entitlement,
         ...(deps.now ? { now: deps.now } : {}),
+        ...(deps.analytics ? { analytics: deps.analytics } : {}),
       });
       activated += 1;
     } catch {

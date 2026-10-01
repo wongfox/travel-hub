@@ -11,6 +11,8 @@ import { createWifiOrder } from "./create-wifi-order.js";
 import { handlePaymentWebhook } from "./handle-payment-webhook.js";
 import { InvalidWebhookSignatureError, WifiOrderNotFoundError, WifiPackageNotFoundError } from "./errors.js";
 import type { PaymentGatewayPort, WifiOrderRecord, WifiOrderStore, WifiPackageStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
+import { recordAnalyticsBestEffort } from "../analytics/analytics-recorder.js";
 
 export interface WifiCheckoutRouteDeps extends ResolveSessionDeps {
   sirBooking: Pick<SirBookingPort, "getReservation">;
@@ -19,6 +21,8 @@ export interface WifiCheckoutRouteDeps extends ResolveSessionDeps {
   paymentGateway: PaymentGatewayPort;
   /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
   flags?: Record<FlagKey, boolean>;
+  /** `usage-analytics` funnel instrumentation (task 12.2); omitted entirely, these routes behave exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
   /** Builds the return URL the passenger lands on after the gateway's hosted page; dev-only default when omitted. */
   buildReturnUrl?: (idempotencyKey: string) => string;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
@@ -88,6 +92,13 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
     const tier = resolveTripOverallTier(reservation.legs, nextMilestone?.legId ?? null);
 
     const packages = await listWifiPackages(tier, session.locale, { packageStore: deps.packageStore });
+
+    // Funnel event 1/5 (task 12.2): the passenger viewed the WiFi offer.
+    await recordAnalyticsBestEffort(deps.analytics, {
+      reservationRef: session.accessLink.reservationRef,
+      name: "wifi_offer_viewed",
+    });
+
     return reply.code(200).send(packages);
   });
 
@@ -143,7 +154,12 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
           legRef,
           buyerEmail,
         },
-        { orderStore: deps.orderStore, packageStore: deps.packageStore, paymentGateway: deps.paymentGateway },
+        {
+          orderStore: deps.orderStore,
+          packageStore: deps.packageStore,
+          paymentGateway: deps.paymentGateway,
+          ...(deps.analytics ? { analytics: deps.analytics } : {}),
+        },
       );
       return reply.code(201).send({ order: toWifiOrderDTO(order), redirectUrl });
     } catch (error) {
@@ -181,6 +197,7 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
         await handlePaymentWebhook(request.body as Buffer, normalizeHeaders(request.headers), {
           paymentGateway: deps.paymentGateway,
           orderStore: deps.orderStore,
+          ...(deps.analytics ? { analytics: deps.analytics } : {}),
         });
         return reply.code(200).send({ status: "ok" });
       } catch (error) {

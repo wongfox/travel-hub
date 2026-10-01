@@ -14,6 +14,8 @@ export interface PulseResponseRecord {
   score: number;
   locale: Locale;
   answeredAt: string;
+  /** `answeredAt + STAFF_ALERT_RETENTION_DAYS` (task 12.3, design Security section). */
+  purgeAfter: string;
 }
 
 export interface CreatePulseResponseInput {
@@ -55,6 +57,9 @@ export interface PulseResponseStore {
   findByComposite(reservationRef: string, passengerRef: string, legRef: string): Promise<PulseResponseRecord | null>;
   /** Every recorded response (task 11.4's reporting/export query). */
   list(): Promise<PulseResponseRecord[]>;
+  /** Every response whose `purgeAfter` has elapsed (task 12.3's retention/purge scheduler scan). */
+  listPastPurgeAfter(now: Date): Promise<PulseResponseRecord[]>;
+  deleteById(id: string): Promise<void>;
 }
 
 export type StaffAlertStatus = "pending" | "sent" | "failed" | "dead";
@@ -69,6 +74,8 @@ export interface StaffAlertRecord {
   lastError: string | null;
   dispatchedAt: string | null;
   createdAt: string;
+  /** `payload.answeredAt + STAFF_ALERT_RETENTION_DAYS` (task 12.3, design Security section). */
+  purgeAfter: string;
 }
 
 export interface CreateStaffAlertInput {
@@ -98,6 +105,9 @@ export interface StaffAlertStore {
     status: StaffAlertStatus,
     detail?: { attempts?: number; lastError?: string | null; dispatchedAt?: string | null },
   ): Promise<void>;
+  /** Every row whose `purgeAfter` has elapsed (task 12.3's retention/purge scheduler scan). */
+  listPastPurgeAfter(now: Date): Promise<StaffAlertRecord[]>;
+  deleteById(id: string): Promise<void>;
 }
 
 /** `StaffAlertPort` per `sdd/travel-hub-mvp/design-interfaces` (D4a, task 11.5). */

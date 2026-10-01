@@ -7,12 +7,15 @@ import type { ConsentStore } from "../privacy/consent-store.js";
 import { FLAG_DEFAULTS, type FlagKey } from "../../config/flags.js";
 import { subscribePush } from "./subscribe-push.js";
 import type { PushSubscriptionStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
 
 export interface NotificationRouteDeps extends ResolveSessionDeps {
   consentStore: Pick<ConsentStore, "findLatest">;
   subscriptionStore: PushSubscriptionStore;
   /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
   flags?: Record<FlagKey, boolean>;
+  /** `usage-analytics` push opt-in instrumentation (task 12.2); omitted entirely, these routes behave exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
   sessionCookieName?: string;
 }
@@ -56,7 +59,11 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
           locale: parsed.data.locale,
           expiresAt: session.accessLink.expiresAt,
         },
-        { consentStore: deps.consentStore, subscriptionStore: deps.subscriptionStore },
+        {
+          consentStore: deps.consentStore,
+          subscriptionStore: deps.subscriptionStore,
+          ...(deps.analytics ? { analytics: deps.analytics } : {}),
+        },
       );
       return reply.code(201).send({ id: subscription.id, expiresAt: subscription.expiresAt });
     } catch (error) {

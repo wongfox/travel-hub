@@ -105,4 +105,28 @@ describe("createInMemoryStaffAlertStore", () => {
 
     await expect(store.updateStatus("does-not-exist", "failed")).resolves.toBeUndefined();
   });
+
+  it("computes purgeAfter from payload.answeredAt + retentionDays, not createdAt (task 12.3)", async () => {
+    const store = createInMemoryStaffAlertStore(() => new Date("2026-11-05T00:00:00.000Z"), { retentionDays: 90 });
+
+    const record = await store.create({ pulseResponseId: "pr-1", payload: PAYLOAD });
+
+    expect(record.createdAt).toBe("2026-11-05T00:00:00.000Z");
+    expect(record.purgeAfter).toBe("2027-01-31T08:15:00.000Z");
+  });
+
+  it("listPastPurgeAfter / deleteById support the retention/purge scheduler scan (task 12.3)", async () => {
+    const store = createInMemoryStaffAlertStore(() => new Date(), { retentionDays: 1 });
+    const due = await store.create({
+      pulseResponseId: "pr-1",
+      payload: { ...PAYLOAD, answeredAt: "2026-01-01T00:00:00.000Z" },
+    });
+
+    expect(await store.listPastPurgeAfter(new Date("2026-01-03T00:00:00.000Z"))).toEqual([due]);
+    expect(await store.listPastPurgeAfter(new Date("2026-01-01T12:00:00.000Z"))).toEqual([]);
+
+    await store.deleteById(due.id);
+
+    expect(await store.findByPulseResponseId("pr-1")).toBeNull();
+  });
 });

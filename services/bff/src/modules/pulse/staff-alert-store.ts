@@ -6,6 +6,7 @@ import {
   type StaffAlertStatus,
   type StaffAlertStore,
 } from "./ports.js";
+import { computePulsePurgeAfter, resolvePulseRetentionConfig, type PulseRetentionConfig } from "./retention.js";
 
 /**
  * Deterministic, in-memory `StaffAlertStore` (task 11.5, design Decision 12):
@@ -18,7 +19,10 @@ import {
  * concurrent calls for the same `pulseResponseId` (task 11.5 acceptance:
  * "exactly one staff_alert row even under a simulated concurrent retry").
  */
-export function createInMemoryStaffAlertStore(now: () => Date = () => new Date()): StaffAlertStore {
+export function createInMemoryStaffAlertStore(
+  now: () => Date = () => new Date(),
+  retention: PulseRetentionConfig = resolvePulseRetentionConfig({}),
+): StaffAlertStore {
   const byPulseResponseId = new Map<string, StaffAlertRecord>();
   const byId = new Map<string, StaffAlertRecord>();
 
@@ -37,6 +41,12 @@ export function createInMemoryStaffAlertStore(now: () => Date = () => new Date()
         lastError: null,
         dispatchedAt: null,
         createdAt: now().toISOString(),
+        // `payload.answeredAt` (the pulse response's own answered time, task
+        // 12.3), not `createdAt` — the design names `answered_at +
+        // STAFF_ALERT_RETENTION_DAYS` for BOTH `pulse_response` and
+        // `staff_alert`, so the two purge times stay consistent even though
+        // this row is created slightly after the response.
+        purgeAfter: computePulsePurgeAfter(input.payload.answeredAt, retention),
       };
       byPulseResponseId.set(record.pulseResponseId, record);
       byId.set(record.id, record);
@@ -62,6 +72,19 @@ export function createInMemoryStaffAlertStore(now: () => Date = () => new Date()
       if (detail?.attempts !== undefined) record.attempts = detail.attempts;
       if (detail?.lastError !== undefined) record.lastError = detail.lastError;
       if (detail?.dispatchedAt !== undefined) record.dispatchedAt = detail.dispatchedAt;
+    },
+
+    async listPastPurgeAfter(asOf: Date): Promise<StaffAlertRecord[]> {
+      const asOfMs = asOf.getTime();
+      return [...byId.values()].filter((record) => new Date(record.purgeAfter).getTime() <= asOfMs);
+    },
+
+    async deleteById(id: string): Promise<void> {
+      const record = byId.get(id);
+      if (record) {
+        byId.delete(id);
+        byPulseResponseId.delete(record.pulseResponseId);
+      }
     },
   };
 }

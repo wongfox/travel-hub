@@ -1360,3 +1360,218 @@ describe("startWorker — pulse staff-alert dispatch job wiring (task 11.5)", ()
     expect((await staffAlertStore.findByPulseResponseId("pr-1"))?.status).toBe("sent");
   });
 });
+
+describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
+  it("a full successful WiFi purchase produces all five funnel events in order, with trip_hash pseudonymization and no raw reservationRef anywhere", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const sessionStore = createInMemorySessionStore();
+    const orderStore = createInMemoryWifiOrderStore();
+    const packageStore = createWifiPackageStub();
+    const { createPaymentGatewayStub } = await import("./adapters/payment-gateway/stub.js");
+    const paymentGateway = createPaymentGatewayStub();
+    const { createInMemoryAnalyticsEventStore } = await import("./modules/analytics/analytics-event-store.js");
+    const analyticsEventStore = createInMemoryAnalyticsEventStore();
+
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore },
+      wifiCheckout: { orderStore, packageStore, paymentGateway, flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } as never },
+      analytics: { analyticsEventStore },
+    });
+
+    const link = await accessLinkStore.create({
+      tokenHash: "hash-wifi-funnel-1",
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const { generateAccessToken, hashAccessToken } = await import("./modules/trip-access/token.js");
+    const sessionId = generateAccessToken();
+    await sessionStore.create(hashAccessToken(sessionId), {
+      linkId: link.id,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      locale: "es",
+    });
+
+    // 1/5: offer viewed.
+    const packagesResponse = await app.inject({
+      method: "GET",
+      url: "/api/wifi/packages",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+    });
+    expect(packagesResponse.statusCode).toBe(200);
+    const [firstPackage] = packagesResponse.json() as { id: string }[];
+
+    // 2/5 + 3/5: package selected + payment attempted (same call, in order).
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/api/wifi/orders",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      headers: { "idempotency-key": "wifi-funnel-order-1" },
+      payload: { packageId: firstPackage!.id },
+    });
+    expect(orderResponse.statusCode).toBe(201);
+    const { order } = orderResponse.json() as { order: { id: string } };
+
+    // 4/5: payment succeeded, via the real signed webhook.
+    const { rawBody, headers } = paymentGateway.buildWebhookRequest({
+      type: "payment_succeeded",
+      providerRef: "pay-ref-1",
+      orderIdempotencyKey: "wifi-funnel-order-1",
+      amountMinor: 1500,
+      currency: "PEN",
+    });
+    const webhookResponse = await app.inject({
+      method: "POST",
+      url: "/webhooks/payments/stub",
+      headers: { ...headers, "content-type": "application/json" },
+      payload: rawBody,
+    });
+    expect(webhookResponse.statusCode).toBe(200);
+
+    // 5/5: entitlement activated, via the real worker job sharing the same
+    // stores. The worker's own `wifiCheckout.analytics` recorder must share
+    // the exact same `analyticsEventStore` (and secret) as `buildApp` above
+    // for this one combined event list to be meaningful.
+    const { createAnalyticsRecorder } = await import("./modules/analytics/analytics-recorder.js");
+    const workerAnalyticsRecorder = createAnalyticsRecorder({ analyticsEventStore, secret: "dev-only-analytics-trip-hash-secret" });
+    const queueClient = createInMemoryQueueClient();
+    await startWorker({
+      queueClient,
+      wifiCheckout: {
+        orderStore,
+        packageStore,
+        flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } as never,
+        analytics: workerAnalyticsRecorder,
+      },
+    });
+    await queueClient.sendIdempotent(WIFI_ENTITLEMENT_ACTIVATION_QUEUE, "scan", {});
+    await queueClient.runPendingOnce(WIFI_ENTITLEMENT_ACTIVATION_QUEUE);
+    expect((await orderStore.findById(order.id))?.status).toBe("ENTITLEMENT_ACTIVE");
+
+    const events = await analyticsEventStore.list();
+    expect(events.map((event) => event.name)).toEqual([
+      "wifi_offer_viewed",
+      "wifi_package_selected",
+      "wifi_payment_attempted",
+      "wifi_payment_succeeded",
+      "wifi_entitlement_activated",
+    ]);
+    // trip_hash-never-raw-reservation_ref proof: every stored row only ever
+    // carries `tripHash`, identical across all five events for this one
+    // reservation, never the literal "RES-1001" reference.
+    for (const event of events) {
+      expect("reservationRef" in event).toBe(false);
+      expect(JSON.stringify(event)).not.toContain("RES-1001");
+    }
+    expect(new Set(events.map((event) => event.tripHash)).size).toBe(1);
+  });
+
+  it("a negative pulse response produces both a pulse-response event and a pulse-alert-dispatched event, in order", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const sessionStore = createInMemorySessionStore();
+    const consentStore = createInMemoryConsentStore();
+    const { createInMemoryAnalyticsEventStore } = await import("./modules/analytics/analytics-event-store.js");
+    const analyticsEventStore = createInMemoryAnalyticsEventStore();
+
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore },
+      privacy: { consentStore },
+      pulse: { flags: { ...FLAG_DEFAULTS, "pulse.capture": true, "pulse.staff_alerts": true } as never },
+      analytics: { analyticsEventStore },
+    });
+
+    const link = await accessLinkStore.create({
+      tokenHash: "hash-pulse-funnel-1",
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const { generateAccessToken, hashAccessToken } = await import("./modules/trip-access/token.js");
+    const sessionId = generateAccessToken();
+    await sessionStore.create(hashAccessToken(sessionId), {
+      linkId: link.id,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      locale: "es",
+    });
+    await consentStore.record({
+      linkId: link.id,
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "pulse",
+      textVersion: "v1",
+      granted: true,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/pulse",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      payload: { legId: "L1", score: 1 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const events = await analyticsEventStore.list();
+    expect(events.map((event) => event.name)).toEqual(["pulse_response_submitted", "pulse_alert_dispatched"]);
+  });
+});
+
+describe("personal-data-protection — consent-withdrawal cascade (task 12.3)", () => {
+  it("withdrawing push consent for an active subscription deletes it IMMEDIATELY via the withdrawal code path, before any purge job runs (RED-worthy acceptance)", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const sessionStore = createInMemorySessionStore();
+    const consentStore = createInMemoryConsentStore();
+    const subscriptionStore = createInMemoryPushSubscriptionStore();
+
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore },
+      privacy: { consentStore },
+      notifications: { subscriptionStore, flags: { ...FLAG_DEFAULTS, "push.enabled": true } as never },
+    });
+
+    const link = await accessLinkStore.create({
+      tokenHash: "hash-withdraw-push-1",
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const { generateAccessToken, hashAccessToken } = await import("./modules/trip-access/token.js");
+    const sessionId = generateAccessToken();
+    await sessionStore.create(hashAccessToken(sessionId), {
+      linkId: link.id,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      locale: "es",
+    });
+    await consentStore.record({
+      linkId: link.id,
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "push",
+      textVersion: "v1",
+      granted: true,
+    });
+    const subscribeResponse = await app.inject({
+      method: "POST",
+      url: "/api/push/subscriptions",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      payload: { endpoint: "https://push.example.com/endpoint-1", keys: { p256dh: "p256dh-1", auth: "auth-1" }, locale: "es" },
+    });
+    expect(subscribeResponse.statusCode).toBe(201);
+    const { id: subscriptionId } = subscribeResponse.json() as { id: string };
+    expect(await subscriptionStore.findById(subscriptionId)).not.toBeNull();
+
+    // The withdrawal itself — no purge job of any kind has run anywhere in
+    // this test, proving the deletion below is immediate, not "eventual".
+    const withdrawResponse = await app.inject({
+      method: "POST",
+      url: "/api/consents",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      payload: { purpose: "push", textVersion: "v1", granted: false },
+    });
+
+    expect(withdrawResponse.statusCode).toBe(201);
+    expect(await subscriptionStore.findById(subscriptionId)).toBeNull();
+  });
+});

@@ -5,6 +5,7 @@ import {
   type PulseResponseRecord,
   type PulseResponseStore,
 } from "./ports.js";
+import { computePulsePurgeAfter, resolvePulseRetentionConfig, type PulseRetentionConfig } from "./retention.js";
 
 /**
  * Deterministic, in-memory `PulseResponseStore` (task 11.4), same
@@ -12,8 +13,16 @@ import {
  * `PushSubscriptionStore`: `create()` throws on a composite-key collision,
  * the actual substitute for the design's real Postgres
  * `unique(reservation_ref, passenger_ref, leg_ref)` index.
+ *
+ * `retention` (task 12.3) defaults to the dev/non-production fallback so
+ * every caller that predates task 12.3 keeps working unchanged; `purgeAfter`
+ * is computed once at creation time from the SAME `answeredAt` this store
+ * stamps, so the two values are never inconsistent with each other.
  */
-export function createInMemoryPulseResponseStore(now: () => Date = () => new Date()): PulseResponseStore {
+export function createInMemoryPulseResponseStore(
+  now: () => Date = () => new Date(),
+  retention: PulseRetentionConfig = resolvePulseRetentionConfig({}),
+): PulseResponseStore {
   const records: PulseResponseRecord[] = [];
 
   function find(reservationRef: string, passengerRef: string, legRef: string): PulseResponseRecord | undefined {
@@ -31,6 +40,7 @@ export function createInMemoryPulseResponseStore(now: () => Date = () => new Dat
         throw new DuplicatePulseResponseError(input.reservationRef, input.passengerRef, input.legRef);
       }
 
+      const answeredAt = now().toISOString();
       const record: PulseResponseRecord = {
         id: randomUUID(),
         reservationRef: input.reservationRef,
@@ -38,7 +48,8 @@ export function createInMemoryPulseResponseStore(now: () => Date = () => new Dat
         legRef: input.legRef,
         score: input.score,
         locale: input.locale,
-        answeredAt: now().toISOString(),
+        answeredAt,
+        purgeAfter: computePulsePurgeAfter(answeredAt, retention),
       };
       records.push(record);
       return record;
@@ -54,6 +65,16 @@ export function createInMemoryPulseResponseStore(now: () => Date = () => new Dat
 
     async list(): Promise<PulseResponseRecord[]> {
       return [...records];
+    },
+
+    async listPastPurgeAfter(asOf: Date): Promise<PulseResponseRecord[]> {
+      const asOfMs = asOf.getTime();
+      return records.filter((record) => new Date(record.purgeAfter).getTime() <= asOfMs);
+    },
+
+    async deleteById(id: string): Promise<void> {
+      const index = records.findIndex((record) => record.id === id);
+      if (index !== -1) records.splice(index, 1);
     },
   };
 }
