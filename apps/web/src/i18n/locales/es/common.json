@@ -85,7 +85,8 @@
     "menu": "Menú",
     "destination": "Destino",
     "wifi": "WiFi",
-    "push": "Notificaciones"
+    "push": "Notificaciones",
+    "pulse": "¿Cómo estuvo tu viaje?"
   },
   "precheckin": {
     "consent": {
@@ -158,5 +159,20 @@
     "subscribed": "Las notificaciones están activadas.",
     "a2hsExplainer": "Para recibir notificaciones, agrega esta app a tu pantalla de inicio y vuelve a intentarlo desde ahí.",
     "unavailable": "Las notificaciones push no están disponibles por ahora."
+  },
+  "pulse": {
+    "heading": "¿Cómo estuvo tu viaje?",
+    "unavailable": "Esta encuesta no está disponible por ahora.",
+    "noMoment": "Todavía no hay nada que responder — vuelve a revisar después de tu próximo tramo.",
+    "thanks": "¡Gracias por tu respuesta!",
+    "submitError": "No pudimos registrar tu respuesta. Inténtalo de nuevo.",
+    "prompt": {
+      "question": "¿Cómo estuvo tu viaje?",
+      "face1": "Muy mal",
+      "face2": "Mal",
+      "face3": "Regular",
+      "face4": "Bien",
+      "face5": "Muy bien"
+    }
   }
 }

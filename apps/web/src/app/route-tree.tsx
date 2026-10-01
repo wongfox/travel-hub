@@ -11,6 +11,7 @@ import { MenuPage } from "../features/menu/menu-page.js";
 import { DestinationPage } from "../features/destination/destination-page.js";
 import { WifiPage } from "../features/wifi/wifi-page.js";
 import { PushPage } from "../features/push/push-page.js";
+import { PulsePage } from "../features/pulse/pulse-page.js";
 
 /**
  * Code-based route tree stub (task 4.2). File-based routing/codegen is not
@@ -103,6 +104,11 @@ function PushRoute() {
   return <PushPage apiClient={defaultApiClient} />;
 }
 
+/** `experience-pulse` (task 11.6): same sibling-route convention as `help`/`menu`/`destination`/`wifi`/`push`. */
+function PulseRoute() {
+  return <PulsePage apiClient={defaultApiClient} />;
+}
+
 const tripAccessLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/t",
@@ -157,6 +163,12 @@ const tripPushRoute = createRoute({
   component: PushRoute,
 });
 
+const tripPulseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/pulse",
+  component: PulseRoute,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   tripAccessLandingRoute,
@@ -168,4 +180,5 @@ export const routeTree = rootRoute.addChildren([
   tripDestinationRoute,
   tripWifiRoute,
   tripPushRoute,
+  tripPulseRoute,
 ]);

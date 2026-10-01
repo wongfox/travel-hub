@@ -87,6 +87,21 @@ const EnvSchema = z.object({
   PUSH_VAPID_PRIVATE_KEY: z.string().min(1).optional(),
   /** Approved consent text version for the `push` purpose; a `push.enabled` go-live prerequisite. */
   PUSH_CONSENT_TEXT_VERSION: z.string().min(1).optional(),
+  /** Approved consent text version for the `pulse` purpose; a `pulse.capture` go-live prerequisite (design Decision 13 — independent of `pulse.staff_alerts`). */
+  PULSE_CONSENT_TEXT_VERSION: z.string().min(1).optional(),
+  /**
+   * `StaffAlertPort` adapter selection (design Decision 6,
+   * `ADAPTER_<PORT>=stub|<vendor>`). Tasks 11.4-11.5's go-live guard
+   * (`config/go-live-guards.ts`'s `checkPulseStaffAlerts`) refuses to enable
+   * `pulse.staff_alerts` in production/staging while this stays `"stub"`.
+   */
+  ADAPTER_STAFF_ALERT: z.string().min(1).default("stub"),
+  /** D4a receiving team/channel identifier; a `pulse.staff_alerts` go-live prerequisite. */
+  STAFF_ALERT_RECEIVER_ID: z.string().min(1).optional(),
+  /** D4a delivery protocol reference (e.g. a webhook or ticketing API identifier); a `pulse.staff_alerts` go-live prerequisite. */
+  STAFF_ALERT_PROTOCOL_REF: z.string().min(1).optional(),
+  /** Retention period (days) for `pulse_response`/`staff_alert` records; a `pulse.staff_alerts` go-live prerequisite. */
+  STAFF_ALERT_RETENTION_DAYS: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
