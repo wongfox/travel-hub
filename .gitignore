@@ -8,3 +8,12 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+
+# Terraform (infra/) — .terraform.lock.hcl is intentionally NOT ignored;
+# Terraform's own convention is to commit it.
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/tfplan
+infra/terraform.tfvars
+infra/*.auto.tfvars
