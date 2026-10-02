@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "composite": false
+  },
+  "include": ["tests", "fixtures", "playwright.config.ts"],
+  "exclude": ["dist", "node_modules", "test-results", "playwright-report"]
+}
