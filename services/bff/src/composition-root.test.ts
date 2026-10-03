@@ -27,6 +27,7 @@ import { createInMemoryWifiOrderStore } from "./modules/wifi-checkout/wifi-order
 import { createWifiPackageStub } from "./adapters/wifi-package/stub.js";
 import { createInMemorySessionStore } from "./modules/trip-access/session-store.js";
 import { createInMemoryConsentStore } from "./modules/privacy/consent-store.js";
+import { createInMemoryAnalyticsEventStore } from "./modules/analytics/analytics-event-store.js";
 import { createInMemoryPushSubscriptionStore } from "./modules/notifications/push-subscription-store.js";
 import { createInMemoryNotificationStore } from "./modules/notifications/notification-store.js";
 import { createWebPushStub } from "./adapters/web-push/stub.js";
@@ -1452,6 +1453,55 @@ describe("startWorker — usage-analytics forward job wiring (task 12.1)", () =>
   });
 });
 
+describe("shared consent + analytics stores in production-like environments", () => {
+  const stores = async () => {
+    const { createInMemoryAnalyticsEventStore } = await import("./modules/analytics/analytics-event-store.js");
+    return { analyticsEventStore: createInMemoryAnalyticsEventStore(), consentStore: createInMemoryConsentStore() };
+  };
+
+  it("buildApp refuses production without a shared analyticsEventStore (the worker could never forward its events)", () => {
+    expect(() => buildApp({ analytics: { nodeEnv: "production", secret: "s3cret" } })).toThrow(/analyticsEventStore/);
+  });
+
+  it("buildApp refuses production without a shared consentStore (the worker could never see consent)", async () => {
+    const { analyticsEventStore } = await stores();
+    expect(() =>
+      buildApp({ analytics: { nodeEnv: "production", secret: "s3cret", analyticsEventStore } }),
+    ).toThrow(/consentStore/);
+  });
+
+  it("buildApp boots in production when both shared stores are wired in, and staging is guarded too", async () => {
+    const wired = await stores();
+    expect(() =>
+      buildApp({
+        analytics: { nodeEnv: "production", secret: "s3cret", analyticsEventStore: wired.analyticsEventStore },
+        privacy: { consentStore: wired.consentStore },
+      }),
+    ).not.toThrow();
+    expect(() => buildApp({ analytics: { nodeEnv: "staging", secret: "s3cret" } })).toThrow(/analyticsEventStore/);
+  });
+
+  it("buildApp keeps the in-memory defaults outside production-like environments", () => {
+    expect(() => buildApp({ analytics: { nodeEnv: "development" } })).not.toThrow();
+  });
+
+  it("startWorker refuses production without shared stores and boots with them", async () => {
+    const wired = await stores();
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), analytics: { nodeEnv: "production", secret: "s3cret" } }),
+    ).rejects.toThrow(/analyticsEventStore/);
+    await expect(
+      startWorker({
+        queueClient: createInMemoryQueueClient(),
+        analytics: { nodeEnv: "production", secret: "s3cret", analyticsEventStore: wired.analyticsEventStore },
+      }),
+    ).rejects.toThrow(/consentStore/);
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), analytics: { nodeEnv: "production", secret: "s3cret", ...wired } }),
+    ).resolves.toMatchObject({ jobsRegistered: expect.arrayContaining([ANALYTICS_FORWARD_QUEUE]) });
+  });
+});
+
 describe("usage-analytics — WU22 end-to-end (tasks 12.1-12.2)", () => {
   it("a full successful WiFi purchase produces all five funnel events in order, with trip_hash pseudonymization and no raw reservationRef anywhere", async () => {
     const accessLinkStore = createInMemoryAccessLinkStore();
@@ -1709,7 +1759,11 @@ describe("buildApp — analytics trip_hash secret production guard", () => {
 
   it("does not throw in production when a real secret is provided", () => {
     expect(() =>
-      buildApp({ tripAccess, analytics: { nodeEnv: "production", secret: "real-secret" } }),
+      buildApp({
+        tripAccess,
+        analytics: { nodeEnv: "production", secret: "real-secret", analyticsEventStore: createInMemoryAnalyticsEventStore() },
+        privacy: { consentStore: createInMemoryConsentStore() },
+      }),
     ).not.toThrow();
   });
 
