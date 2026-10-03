@@ -32,27 +32,31 @@ export interface SessionStore {
   deleteByIdHash(idHash: string): Promise<void>;
 }
 
-export function createInMemorySessionStore(): SessionStore {
+export function createInMemorySessionStore(now: () => Date = () => new Date()): SessionStore {
   const byIdHash = new Map<string, SessionRecord>();
 
   return {
     async create(idHash: string, input: CreateSessionInput): Promise<SessionRecord> {
-      const now = new Date().toISOString();
+      if (byIdHash.has(idHash)) {
+        throw new Error("session id hash already exists");
+      }
+      const stamp = now().toISOString();
       const record: SessionRecord = {
         idHash,
         linkId: input.linkId,
-        createdAt: now,
-        lastSeenAt: now,
+        createdAt: stamp,
+        lastSeenAt: stamp,
         expiresAt: input.expiresAt,
         locale: input.locale,
         userAgentClass: input.userAgentClass ?? null,
       };
       byIdHash.set(idHash, record);
-      return record;
+      return { ...record };
     },
 
     async findByIdHash(idHash: string): Promise<SessionRecord | null> {
-      return byIdHash.get(idHash) ?? null;
+      const record = byIdHash.get(idHash);
+      return record ? { ...record } : null;
     },
 
     async deleteByIdHash(idHash: string): Promise<void> {

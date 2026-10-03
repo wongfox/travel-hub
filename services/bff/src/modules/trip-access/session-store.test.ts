@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import { createInMemorySessionStore } from "./session-store.js";
+import { describeSessionStoreContract } from "./session-store.conformance.js";
+
+describeSessionStoreContract("in-memory", {
+  make: async (now) => ({ store: createInMemorySessionStore(now), newLinkId: async () => randomUUID() }),
+});
 
 describe("createInMemorySessionStore", () => {
   it("creates and finds a session by its id hash", async () => {
