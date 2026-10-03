@@ -127,6 +127,7 @@ export type NextMilestone = z.infer<typeof NextMilestoneSchema>;
 export const ConsentTextVersionsSchema = z.object({
   push: z.string().min(1).optional(),
   pulse: z.string().min(1).optional(),
+  precheckin: z.string().min(1).optional(),
 });
 export type ConsentTextVersions = z.infer<typeof ConsentTextVersionsSchema>;
 
@@ -143,7 +144,7 @@ export const TripDTOSchema = z.object({
   features: z.record(PassengerFeatureKeySchema, z.boolean()),
   /**
    * Currently published consent text versions the web must record for
-   * `push`/`pulse` (`POST /api/consents`). Omitted entirely when the server
+   * `push`/`pulse`/`precheckin_biometric` (`POST /api/consents`). Omitted entirely when the server
    * has none configured; the web then keeps the gated feature unavailable
    * instead of inventing a version. Not PII.
    */

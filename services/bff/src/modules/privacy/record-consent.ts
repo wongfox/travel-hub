@@ -90,5 +90,6 @@ export async function recordConsent(
     granted: record.granted,
     textVersion: record.textVersion,
     recordedAt: record.recordedAt,
+    recordId: record.id,
   };
 }

@@ -97,6 +97,7 @@ describe("POST /api/consents", () => {
       granted: true,
       textVersion: "v3",
       recordedAt: expect.any(String),
+      recordId: expect.any(String),
     });
 
     const latest = await consentStore.findLatest("RES-2002", null, "precheckin_biometric");

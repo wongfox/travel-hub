@@ -205,6 +205,8 @@ export interface BuildAppOptions {
     keyId?: string;
     /** `purge_after` computation config (task 8.5); defaults to the dev/non-production fallback when omitted. */
     retention?: RetentionConfig;
+    /** Published pre check-in consent text version (env.ts's `PRECHECKIN_CONSENT_TEXT_VERSION`); exposed to the web on `GET /api/trip`, omitted when unset. */
+    consentTextVersion?: string;
   };
   /**
    * `content` module wiring (tasks 9.1-9.4: help-center, onboard-menu,
@@ -440,6 +442,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     consentTextVersions: {
       ...(notificationsOptions.pushConsentTextVersion ? { push: notificationsOptions.pushConsentTextVersion } : {}),
       ...(options.pulse?.pulseConsentTextVersion ? { pulse: options.pulse.pulseConsentTextVersion } : {}),
+      ...(precheckinOptions.consentTextVersion ? { precheckin: precheckinOptions.consentTextVersion } : {}),
     },
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
