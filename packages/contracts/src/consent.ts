@@ -32,5 +32,10 @@ export const ConsentStateSchema = z.object({
   granted: z.boolean(),
   textVersion: z.string().min(1),
   recordedAt: z.string().min(1),
+  /**
+   * Identifier of the consent record just written by `POST /api/consents`;
+   * pre check-in echoes it as `consentRecordId` on submission. Opaque, not PII.
+   */
+  recordId: z.string().min(1).optional(),
 });
 export type ConsentState = z.infer<typeof ConsentStateSchema>;

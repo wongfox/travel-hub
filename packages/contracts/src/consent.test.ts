@@ -38,4 +38,17 @@ describe("ConsentStateSchema", () => {
 
     expect(ConsentStateSchema.parse(state)).toEqual(state);
   });
+
+  it("round-trips an optional recordId identifying the consent record just written", () => {
+    const state = {
+      purpose: "precheckin_biometric",
+      granted: true,
+      textVersion: "v3",
+      recordedAt: "2026-09-30T12:00:00.000Z",
+      recordId: "consent-1",
+    };
+
+    expect(ConsentStateSchema.parse(state)).toEqual(state);
+    expect(ConsentStateSchema.safeParse({ ...state, recordId: "" }).success).toBe(false);
+  });
 });
