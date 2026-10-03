@@ -15,7 +15,7 @@ Strict TDD (bff: `pnpm --filter bff exec vitest run --no-file-parallelism`; DB t
 
 ## Tasks
 - [x] T1 Explore: existing ports/in-memory stores/callers (privacy, analytics, record-consent cascade, forward job, record-analytics-events), schema from 3.3, branch-29 conventions; record exact contracts.
-- [ ] T2 Consent store: schema/migration (if needed) + Postgres adapter + conformance suite (in-memory and Postgres).
+- [x] T2 Consent store: schema/migration (if needed) + Postgres adapter + conformance suite (in-memory and Postgres).
 - [ ] T3 Analytics event store: schema/migration + Postgres adapter + conformance suite (in-memory and Postgres).
 - [ ] T4 Wire both in `main-api.ts` and `main-worker.ts` (same DATABASE_URL; production guards unchanged; pools closed on shutdown).
 - [ ] T5 Real check on the compose stack: consent + analytics written through the api path are read by the worker (forward job against the stub sink), plus docs/KNOWN-GAPS.
@@ -40,3 +40,5 @@ Route: delegated direct, single writer (this agent). TDD: strict (project settin
 
 ## Progress / evidence
 - T1: contracts recorded above (commit: see git log).
+
+- T2 (commit: see git log): REUSED `consent_record`; migration `0002_consent_record_shared_store` drops the `link_id -> access_link` FK (access links are in-memory, FK would reject every insert) and adds identity `seq` + index `consent_record_latest_idx(reservation_ref, purpose, seq)`. Adapter `adapters/consent-store/postgres.ts` (INSERT-only; findLatest ORDER BY seq DESC; listLatestByPurpose DISTINCT ON reservation_ref, passenger_ref IS NULL). Conformance `modules/privacy/consent-store.conformance.ts` (8 cases) run by in-memory and Postgres. RED: migration tests failed (2) and `postgres.test.ts` failed to import the missing adapter, before the schema/adapter existed. GREEN: 58 passed in privacy+adapters/consent-store+infra/db with TEST_DATABASE_URL. Mutation: flipping `findLatest` to ORDER BY seq ASC made 4 Postgres conformance cases fail (append-only/latest-wins/same-tick/concurrent); restored. tsc + eslint clean.

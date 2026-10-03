@@ -72,3 +72,20 @@ describe("wifi_order migration", () => {
     expect(sql).toMatch(/FOREIGN KEY \("order_id"\) REFERENCES "public"\."wifi_order"\("id"\)/);
   });
 });
+
+describe("consent_record shared-store migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("drops the link_id foreign key (access links are still process-local) and adds a monotonic seq", () => {
+    expect(all).toMatch(/ALTER TABLE "consent_record" DROP CONSTRAINT "consent_record_link_id_access_link_id_fk"/);
+    expect(all).toMatch(/ALTER TABLE "consent_record" ADD COLUMN "seq" bigint NOT NULL GENERATED ALWAYS AS IDENTITY/);
+  });
+
+  it("indexes latest-per-purpose lookups by (reservation_ref, purpose, seq)", () => {
+    expect(all).toMatch(/CREATE INDEX "consent_record_latest_idx" ON "consent_record" USING btree \("reservation_ref","purpose","seq"\)/);
+  });
+});

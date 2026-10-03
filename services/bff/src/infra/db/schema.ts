@@ -55,19 +55,30 @@ export const session = pgTable("session", {
   userAgentClass: text("user_agent_class"),
 });
 
-export const consentRecord = pgTable("consent_record", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  linkId: uuid("link_id")
-    .notNull()
-    .references(() => accessLink.id),
-  reservationRef: text("reservation_ref").notNull(),
-  passengerRef: text("passenger_ref"),
-  purpose: consentPurpose("purpose").notNull(),
-  textVersion: text("text_version").notNull(),
-  granted: boolean("granted").notNull(),
-  /** Append-only: withdrawal is a new row with granted=false, not an update. */
-  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * Append-only consent log shared by `bff-api` and `bff-worker`. `link_id` is
+ * the issuing access link's id kept as an audit reference WITHOUT a foreign
+ * key: access links/sessions are still process-local in-memory stores, so no
+ * `access_link` row exists to reference (the FK from task 3.3 was dropped when
+ * the Postgres `ConsentStore` landed). `seq` is the total order "latest wins"
+ * resolves by (`recorded_at` ties inside one clock tick).
+ */
+export const consentRecord = pgTable(
+  "consent_record",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    linkId: uuid("link_id").notNull(),
+    reservationRef: text("reservation_ref").notNull(),
+    passengerRef: text("passenger_ref"),
+    purpose: consentPurpose("purpose").notNull(),
+    textVersion: text("text_version").notNull(),
+    granted: boolean("granted").notNull(),
+    /** Append-only: withdrawal is a new row with granted=false, not an update. */
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("consent_record_latest_idx").on(table.reservationRef, table.purpose, table.seq)],
+);
 
 export const featureFlag = pgTable("feature_flag", {
   key: text("key").primaryKey(),

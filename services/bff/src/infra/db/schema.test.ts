@@ -59,6 +59,7 @@ describe("consent_record table", () => {
     expect(Object.keys(columns).sort()).toEqual(
       [
         "id",
+        "seq",
         "linkId",
         "reservationRef",
         "passengerRef",
