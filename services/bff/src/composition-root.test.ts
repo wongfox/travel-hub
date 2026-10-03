@@ -30,6 +30,8 @@ import { createInMemoryConsentStore } from "./modules/privacy/consent-store.js";
 import { createInMemoryAnalyticsEventStore } from "./modules/analytics/analytics-event-store.js";
 import { createInMemoryPushSubscriptionStore } from "./modules/notifications/push-subscription-store.js";
 import { createInMemoryNotificationStore } from "./modules/notifications/notification-store.js";
+import { createInMemoryPiiAccessAudit } from "./infra/audit/pii-access-audit.js";
+import { PUSH_SUBSCRIPTION_PURGE_QUEUE } from "./modules/notifications/purge-job.js";
 import { createWebPushStub } from "./adapters/web-push/stub.js";
 import { JOURNEY_POLL_QUEUE } from "./modules/notifications/journey-poll-job.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
@@ -997,6 +999,7 @@ describe("startWorker — pre check-in handoff/purge wiring (task 8.5)", () => {
         retentionPolicyId: "policy-1",
         consentTextVersion: "v1",
         kmsKeyConfigured: true,
+        piiAccessAudit: createInMemoryPiiAccessAudit(),
       },
     });
 
@@ -1121,7 +1124,9 @@ describe("buildApp — push subscription routes (task 11.1)", () => {
           vapidConfigured: true,
           alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
           pushConsentTextVersion: "v1",
+          subscriptionStore: createInMemoryPushSubscriptionStore(),
         },
+        privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
       }),
     ).not.toThrow();
   });
@@ -1295,6 +1300,7 @@ describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
           nodeEnv: "production",
           pulseConsentTextVersion: "v1",
         },
+        privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
       }),
     ).not.toThrow();
   });
@@ -1323,6 +1329,7 @@ describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
           staffAlertProtocolRef: "proto-1",
           staffAlertRetentionDays: 90,
         },
+        privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
       }),
     ).not.toThrow();
   });
@@ -1499,6 +1506,107 @@ describe("shared consent + analytics stores in production-like environments", ()
     await expect(
       startWorker({ queueClient: createInMemoryQueueClient(), analytics: { nodeEnv: "production", secret: "s3cret", ...wired } }),
     ).resolves.toMatchObject({ jobsRegistered: expect.arrayContaining([ANALYTICS_FORWARD_QUEUE]) });
+  });
+});
+
+describe("shared push-subscription / notification / pii-audit stores in production-like environments", () => {
+  const pushOn = { ...FLAG_DEFAULTS, "push.enabled": true } as never;
+  const pushPrereqs = {
+    vapidConfigured: true,
+    alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
+    pushConsentTextVersion: "v1",
+  };
+
+  it("buildApp refuses production with push.enabled and no shared subscriptionStore (the worker could never see the api's subscriptions)", () => {
+    expect(() =>
+      buildApp({
+        notifications: { flags: pushOn, nodeEnv: "production", ...pushPrereqs },
+        privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
+      }),
+    ).toThrow(/subscriptionStore/);
+  });
+
+  it("buildApp refuses production with push.enabled and no shared piiAccessAudit (the consent-withdrawal cascade audit would be process-local)", () => {
+    expect(() =>
+      buildApp({
+        notifications: { flags: pushOn, nodeEnv: "production", ...pushPrereqs, subscriptionStore: createInMemoryPushSubscriptionStore() },
+      }),
+    ).toThrow(/piiAccessAudit/);
+  });
+
+  it("buildApp boots in production with push.enabled when both shared stores are wired in, and staging is guarded too", () => {
+    const wired = {
+      notifications: { flags: pushOn, ...pushPrereqs, subscriptionStore: createInMemoryPushSubscriptionStore() },
+      privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
+    };
+    expect(() => buildApp({ ...wired, notifications: { ...wired.notifications, nodeEnv: "production" } })).not.toThrow();
+    expect(() =>
+      buildApp({ notifications: { flags: pushOn, nodeEnv: "staging", ...pushPrereqs } }),
+    ).toThrow(/subscriptionStore/);
+  });
+
+  it("buildApp does not require them while push.enabled is off, nor outside production-like environments", () => {
+    expect(() => buildApp({ notifications: { nodeEnv: "production" } })).not.toThrow();
+    expect(() => buildApp({ notifications: { flags: pushOn, nodeEnv: "development" } })).not.toThrow();
+  });
+
+  it("buildApp refuses production with pulse.capture and no shared piiAccessAudit", () => {
+    expect(() =>
+      buildApp({
+        pulse: { flags: { ...FLAG_DEFAULTS, "pulse.capture": true } as never, nodeEnv: "production", pulseConsentTextVersion: "v1" },
+      }),
+    ).toThrow(/piiAccessAudit/);
+  });
+
+  const workerPush = (stores: Record<string, unknown>) => ({
+    queueClient: createInMemoryQueueClient(),
+    notifications: { flags: pushOn, nodeEnv: "production" as const, ...pushPrereqs, ...stores },
+  });
+
+  it("startWorker refuses production with push.enabled without shared subscriptionStore, notificationStore and piiAccessAudit, and boots with them", async () => {
+    const subscriptionStore = createInMemoryPushSubscriptionStore();
+    const notificationStore = createInMemoryNotificationStore();
+    const piiAccessAudit = createInMemoryPiiAccessAudit();
+
+    await expect(startWorker(workerPush({}))).rejects.toThrow(/subscriptionStore/);
+    await expect(startWorker(workerPush({ subscriptionStore }))).rejects.toThrow(/notificationStore/);
+    await expect(startWorker(workerPush({ subscriptionStore, notificationStore }))).rejects.toThrow(/piiAccessAudit/);
+    await expect(startWorker(workerPush({ subscriptionStore, notificationStore, piiAccessAudit }))).resolves.toMatchObject({
+      jobsRegistered: expect.arrayContaining([JOURNEY_POLL_QUEUE, PUSH_SUBSCRIPTION_PURGE_QUEUE]),
+    });
+  });
+
+  it("startWorker keeps the in-memory defaults while push.enabled is off or outside production-like environments", async () => {
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), notifications: { nodeEnv: "production" } }),
+    ).resolves.toBeDefined();
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), notifications: { flags: pushOn, nodeEnv: "development" } }),
+    ).resolves.toBeDefined();
+  });
+
+  it("startWorker refuses production with pulse.capture or precheckin.production_collection and no shared piiAccessAudit", async () => {
+    await expect(
+      startWorker({
+        queueClient: createInMemoryQueueClient(),
+        pulse: { flags: { ...FLAG_DEFAULTS, "pulse.capture": true } as never, nodeEnv: "production" },
+      }),
+    ).rejects.toThrow(/piiAccessAudit/);
+    await expect(
+      startWorker({
+        queueClient: createInMemoryQueueClient(),
+        precheckin: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never,
+          adapterPrecheckinHandoff: "s3",
+          handoffPort: createPrecheckinHandoffStub(),
+          retention: { retentionDays: 30, handoffGraceMs: 7 * 24 * 60 * 60 * 1000 },
+          retentionPolicyId: "policy-1",
+          consentTextVersion: "v1",
+          kmsKeyConfigured: true,
+        },
+      }),
+    ).rejects.toThrow(/piiAccessAudit/);
   });
 });
 
