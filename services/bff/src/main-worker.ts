@@ -5,8 +5,7 @@ import { startWorker } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
 import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 import { resolveFlags } from "./config/flags.js";
-import { scheduleWifiOrderScans, WIFI_ENTITLEMENT_ACTIVATION_QUEUE } from "./modules/wifi-checkout/wifi-order-jobs.js";
-import { scheduleAnalyticsForward, ANALYTICS_FORWARD_QUEUE } from "./modules/analytics/forward-analytics-events-job.js";
+import { scheduleWorkerScans } from "./worker-schedulers.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 import { createDb } from "./infra/db/client.js";
 import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
@@ -125,15 +124,7 @@ async function main(): Promise<void> {
   });
   // The scan jobs only run when something enqueues them; nothing else does
   // (the payment webhook just marks the order PAID), so schedule them here.
-  const stopSchedulers: Array<() => void> = [];
-  if (result.jobsRegistered.includes(WIFI_ENTITLEMENT_ACTIVATION_QUEUE)) {
-    stopSchedulers.push(scheduleWifiOrderScans(queueClient));
-  }
-  if (result.jobsRegistered.includes(ANALYTICS_FORWARD_QUEUE)) {
-    stopSchedulers.push(
-      scheduleAnalyticsForward(queueClient, { intervalMs: env.ANALYTICS_FORWARD_INTERVAL_SECONDS * 1000 }),
-    );
-  }
+  const stopSchedulers = scheduleWorkerScans(queueClient, result.jobsRegistered, env);
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
 
   // The worker is a long-lived process: pg-boss polling keeps the event loop
