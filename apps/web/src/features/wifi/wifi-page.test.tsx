@@ -138,6 +138,38 @@ describe("WifiPage — return-URL landing mode", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/active/i));
   });
 
+  it("keeps showing the loaded order when a later poll refetch fails (no load-error over existing data)", async () => {
+    rememberWifiOrderId("idem-return-2", "order-43");
+    const pendingOrder: WifiOrderDTO = {
+      id: "order-43",
+      packageId: "WIFI-60",
+      status: "PAYMENT_PENDING",
+      amountMinor: 1500,
+      currency: "PEN",
+      sirRegistered: false,
+      receiptIssued: false,
+      entitlementRef: null,
+      entitlementExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    let orderCalls = 0;
+    const get = vi.fn().mockImplementation((path: string) => {
+      if (path === "/api/trip") return Promise.resolve(TRIP);
+      if (path === "/api/wifi/packages") return Promise.resolve(PACKAGES);
+      orderCalls += 1;
+      return orderCalls === 1 ? Promise.resolve(pendingOrder) : Promise.reject(new Error("transient network failure"));
+    });
+    renderPage(buildFakeApiClient({ get }), { getSearch: () => "?order=idem-return-2" });
+
+    await waitFor(() => expect(screen.getByRole("status")).toBeInTheDocument());
+    await waitFor(() => expect(orderCalls).toBeGreaterThanOrEqual(2), { timeout: 5000 });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
   it("shows a not-found message when the return URL's idempotencyKey has no remembered orderId", async () => {
     const apiClient = buildFakeApiClient();
 

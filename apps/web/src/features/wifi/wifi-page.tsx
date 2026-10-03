@@ -65,7 +65,9 @@ export function WifiPage({
     if (orderStatusQuery.isPending) {
       return <p role="status">{t("wifi.orderStatus.checking")}</p>;
     }
-    if (orderStatusQuery.isError) {
+    // Loaded data wins over a failed background refetch: a transient poll
+    // error must not hide an order the passenger already sees.
+    if (!orderStatusQuery.data) {
       return <p role="alert">{t("trip.loadError")}</p>;
     }
     return (
