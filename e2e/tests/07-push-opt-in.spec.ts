@@ -1,6 +1,5 @@
 import { test, expect } from "../fixtures/stack.js";
 import { issueLink } from "../fixtures/internal-api.js";
-import { grantConsent } from "../fixtures/passenger-api.js";
 
 /**
  * Design scenario 7/7: "push opt-in (Chromium)".
@@ -47,12 +46,14 @@ test("an eligible passenger can opt in to push notifications", async ({ page, co
   await page.goto(`/t#${token}`);
   await expect(page).toHaveURL(/\/trip$/);
 
-  // Gap E (e2e/KNOWN-GAPS.md): no web UI records push consent; the BFF
-  // requires it, so it is recorded through the public consent route.
-  await grantConsent(page, "push");
-
   await page.goto("/trip/push");
-  await expect(page.getByRole("heading", { name: /notification/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^(notifications|notificaciones)$/i })).toBeVisible();
+
+  // Push consent is recorded through the real consent gate (gap E, closed):
+  // the browser permission prompt (faked above) only follows it, so the
+  // enable button does not exist until the consent is accepted.
+  await expect(page.getByRole("button", { name: /enable notifications|activar notificaciones/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /^(i agree|acepto)$/i }).click();
 
   await page.getByRole("button", { name: /enable notifications|activar notificaciones/i }).click();
 

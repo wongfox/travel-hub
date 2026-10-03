@@ -174,5 +174,23 @@
       "face4": "Bien",
       "face5": "Muy bien"
     }
+  },
+  "consent": {
+    "push": {
+      "title": "Notificaciones del viaje",
+      "body": "Queremos enviarte notificaciones sobre tu viaje, como demoras o cambios de ubicación. Puedes desactivarlas en cualquier momento desde los ajustes de tu dispositivo.",
+      "accept": "Acepto",
+      "decline": "Ahora no",
+      "declined": "Las notificaciones están desactivadas. Puedes activarlas más tarde desde esta página.",
+      "error": "Algo salió mal al registrar tu consentimiento. Inténtalo de nuevo."
+    },
+    "pulse": {
+      "title": "Opinión sobre tu viaje",
+      "body": "Queremos preguntarte cómo fue tu viaje y podemos avisarte cuando la pregunta esté lista. Tu respuesta se vincula a tu reserva y se usa para mejorar el servicio.",
+      "accept": "Acepto",
+      "decline": "Ahora no",
+      "declined": "Sin problema, no te preguntaremos sobre este viaje.",
+      "error": "Algo salió mal al registrar tu consentimiento. Inténtalo de nuevo."
+    }
   }
 }

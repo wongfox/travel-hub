@@ -174,5 +174,23 @@
       "face4": "Good",
       "face5": "Very good"
     }
+  },
+  "consent": {
+    "push": {
+      "title": "Trip notifications",
+      "body": "We would like to send you notifications about your trip, such as delays or relocations. You can turn them off at any time in your device settings.",
+      "accept": "I agree",
+      "decline": "Not now",
+      "declined": "Notifications are off. You can enable them later from this page.",
+      "error": "Something went wrong recording your consent. Please try again."
+    },
+    "pulse": {
+      "title": "Trip feedback",
+      "body": "We would like to ask you how your trip went and may notify you when the question is ready. Your answer is linked to your reservation and used to improve the service.",
+      "accept": "I agree",
+      "decline": "Not now",
+      "declined": "No problem, we will not ask you about this trip.",
+      "error": "Something went wrong recording your consent. Please try again."
+    }
   }
 }

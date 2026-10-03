@@ -24,8 +24,11 @@ test("a negative pulse response dispatches exactly one staff alert, even retried
   await page.goto(`/t#${token}`);
   await expect(page).toHaveURL(/\/trip$/);
 
-  // Gap E (e2e/KNOWN-GAPS.md): the web has no pulse consent screen, so the
-  // consent the BFF requires is recorded through the public consent route.
+  // The web now records pulse consent through its own gate, but no seeded
+  // reservation has a COMPLETED leg, so `/trip/pulse` never renders that gate
+  // here (e2e/KNOWN-GAPS.md). Since this scenario drives `POST /api/pulse`
+  // from the page, the consent the BFF requires is recorded through the
+  // public consent route instead.
   await grantConsent(page, "pulse");
 
   // Two identical submissions in flight, simulating the concurrent-retry case

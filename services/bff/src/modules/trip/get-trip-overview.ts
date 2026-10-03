@@ -22,6 +22,8 @@ export interface GetTripOverviewDeps {
    * Phase 8 keep their prior (pre-check-in-unaware) behavior unchanged.
    */
   precheckinSubmissionStore?: Pick<PrecheckinSubmissionStore, "findByPassenger">;
+  /** Published push/pulse consent text versions (env `PUSH_/PULSE_CONSENT_TEXT_VERSION`); exposed to the web additively. */
+  consentTextVersions?: { push?: string; pulse?: string };
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
 }
@@ -67,6 +69,12 @@ export async function getTripOverview(
     })),
   );
 
+  const consentTextVersions = {
+    ...(deps.consentTextVersions?.push ? { push: deps.consentTextVersions.push } : {}),
+    ...(deps.consentTextVersions?.pulse ? { pulse: deps.consentTextVersions.pulse } : {}),
+  };
+  const hasConsentTextVersions = Object.keys(consentTextVersions).length > 0;
+
   return {
     linkId: accessLink.id,
     reservationRefMasked: maskReservationRef(accessLink.reservationRef),
@@ -86,6 +94,7 @@ export async function getTripOverview(
     alerts: buildRelocationAlerts(relocations),
     nextMilestone: selectNextMilestone(reservation.legs),
     features: resolvePassengerFeatures(deps.flags ?? FLAG_DEFAULTS),
+    ...(hasConsentTextVersions ? { consentTextVersions } : {}),
     fetchedAt: now.toISOString(),
   };
 }

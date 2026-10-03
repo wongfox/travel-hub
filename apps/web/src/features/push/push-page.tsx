@@ -34,13 +34,18 @@ export function PushPage({ apiClient, env }: PushPageProps) {
 
   const trip = tripQuery.data;
   const tier = resolveTripTier(trip.legs, trip.nextMilestone);
+  // No version published by the BFF means no consent text to record against,
+  // so the feature stays unavailable rather than inventing a version.
+  const pushConsentTextVersion = trip.consentTextVersions?.push;
 
   return (
     <ThemeProvider tier={tier}>
       <h2>{t("push.heading")}</h2>
-      {trip.features.pushEnabled ? (
+      {trip.features.pushEnabled && pushConsentTextVersion ? (
         <PushOptIn
           apiClient={apiClient}
+          consentTextVersion={pushConsentTextVersion}
+          cacheScope={trip.linkId}
           a2hsPromptEnabled={trip.features.pushA2hsPrompt}
           locale={i18n.language as Locale}
           {...(env ? { env } : {})}

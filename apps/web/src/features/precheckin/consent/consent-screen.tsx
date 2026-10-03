@@ -1,4 +1,4 @@
-import { useTranslation } from "react-i18next";
+import { PurposeConsentScreen } from "../../../shared/consent/purpose-consent-screen.js";
 
 export interface ConsentScreenProps {
   onAccept: () => void;
@@ -9,23 +9,9 @@ export interface ConsentScreenProps {
 /**
  * `pre-check-in` / `personal-data-protection`'s consent text and
  * accept/decline controls (task 8.1/8.2, spec "Consent required before
- * camera access", "Consent declined"). Purely presentational — the caller
- * (`PrecheckinConsentGate`) owns actually recording the decision via
- * `POST /api/consents` and gating the capture UI on the result.
+ * camera access", "Consent declined"): the shared `PurposeConsentScreen`
+ * bound to the `precheckin.consent.*` copy.
  */
-export function ConsentScreen({ onAccept, onDecline, submitting = false }: ConsentScreenProps) {
-  const { t } = useTranslation();
-
-  return (
-    <div>
-      <h2>{t("precheckin.consent.title")}</h2>
-      <p>{t("precheckin.consent.body")}</p>
-      <button type="button" onClick={onAccept} disabled={submitting}>
-        {t("precheckin.consent.accept")}
-      </button>
-      <button type="button" onClick={onDecline} disabled={submitting}>
-        {t("precheckin.consent.decline")}
-      </button>
-    </div>
-  );
+export function ConsentScreen(props: ConsentScreenProps) {
+  return <PurposeConsentScreen i18nPrefix="precheckin.consent" {...props} />;
 }

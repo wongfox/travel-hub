@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PulseScore } from "contracts";
-import type { ApiClient } from "../../shared/api/client.js";
+import { ApiError, type ApiClient } from "../../shared/api/client.js";
+import { PurposeConsentGate } from "../../shared/consent/purpose-consent-gate.js";
 import { useTripQuery } from "../../shared/trip/use-trip-query.js";
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
@@ -33,23 +34,12 @@ export function PulsePage({ apiClient }: PulsePageProps) {
   const submitMutation = useSubmitPulseResponseMutation(apiClient);
   /** Set only by this submission's own success handler — never by the effect below (avoids syncing derived state from a read inside an effect). */
   const [justAnsweredLegId, setJustAnsweredLegId] = useState<string | null>(null);
-  /** A ref, not state: purely an idempotency guard for the effect below (task 11.6's "once per trigger moment"), never rendered — so it never needs to trigger a re-render or go through `setState` inside the effect body. */
-  const promptRequestedForLegIdRef = useRef<string | null>(null);
-
   const trip = tripQuery.data;
   const triggerLeg = trip ? resolvePulseTriggerLeg(trip.legs) : null;
   const answeredLocally =
     trip !== undefined &&
     triggerLeg !== null &&
     (justAnsweredLegId === triggerLeg.id || hasAnsweredPulseLocally(trip.linkId, triggerLeg.id));
-
-  useEffect(() => {
-    if (!trip || !triggerLeg || answeredLocally) return;
-    if (promptRequestedForLegIdRef.current === triggerLeg.id) return;
-    promptRequestedForLegIdRef.current = triggerLeg.id;
-    void requestPulsePrompt(apiClient, triggerLeg.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trip?.linkId, triggerLeg?.id, answeredLocally]);
 
   if (tripQuery.isPending) {
     return <p role="status">{t("trip.loading")}</p>;
@@ -60,8 +50,11 @@ export function PulsePage({ apiClient }: PulsePageProps) {
   }
 
   const tier = resolveTripTier(trip.legs, trip.nextMilestone);
+  // No version published by the BFF means no consent text to record against,
+  // so the survey stays unavailable rather than inventing a version.
+  const pulseConsentTextVersion = trip.consentTextVersions?.pulse;
 
-  function handleSubmit(score: PulseScore): void {
+  function handleSubmit(score: PulseScore, onConsentRequired: () => void): void {
     if (!triggerLeg) return;
     submitMutation.mutate(
       { legId: triggerLeg.id, score },
@@ -70,6 +63,12 @@ export function PulsePage({ apiClient }: PulsePageProps) {
           markPulseAnsweredLocally(trip!.linkId, triggerLeg.id);
           setJustAnsweredLegId(triggerLeg.id);
         },
+        onError: (error) => {
+          if (error instanceof ApiError && error.code === "consent_required") {
+            submitMutation.reset();
+            onConsentRequired();
+          }
+        },
       },
     );
   }
@@ -77,14 +76,30 @@ export function PulsePage({ apiClient }: PulsePageProps) {
   return (
     <ThemeProvider tier={tier}>
       <h2>{t("pulse.heading")}</h2>
-      {!trip.features.pulseCapture ? (
+      {!trip.features.pulseCapture || !pulseConsentTextVersion ? (
         <p>{t("pulse.unavailable")}</p>
       ) : !triggerLeg ? (
         <p>{t("pulse.noMoment")}</p>
       ) : answeredLocally ? (
         <p role="status">{t("pulse.thanks")}</p>
       ) : (
-        <PulsePrompt onSubmit={handleSubmit} isSubmitting={submitMutation.isPending} />
+        <PurposeConsentGate
+          apiClient={apiClient}
+          purpose="pulse"
+          textVersion={pulseConsentTextVersion}
+          i18nPrefix="consent.pulse"
+          cacheScope={trip.linkId}
+        >
+          {({ onConsentRequired }) => (
+            <ConsentedPulsePrompt
+              apiClient={apiClient}
+              legId={triggerLeg.id}
+              isSubmitting={submitMutation.isPending}
+              onSubmit={(score) => handleSubmit(score, onConsentRequired)}
+              onConsentRequired={onConsentRequired}
+            />
+          )}
+        </PurposeConsentGate>
       )}
       {submitMutation.isError && <p role="alert">{t("pulse.submitError")}</p>}
       <nav>
@@ -92,4 +107,32 @@ export function PulsePage({ apiClient }: PulsePageProps) {
       </nav>
     </ThemeProvider>
   );
+}
+
+interface ConsentedPulsePromptProps {
+  apiClient: ApiClient;
+  legId: string;
+  isSubmitting: boolean;
+  onSubmit: (score: PulseScore) => void;
+  onConsentRequired: () => void;
+}
+
+/**
+ * Rendered only once `pulse` consent is recorded (inside `PurposeConsentGate`),
+ * so the best-effort `POST /api/pulse/prompt` push nudge also only ever
+ * follows consent. It fires once per trigger leg; a 403 `consent_required`
+ * (consent withdrawn or cache stale) re-shows the gate, any other failure
+ * stays a silent no-op as before.
+ */
+function ConsentedPulsePrompt({ apiClient, legId, isSubmitting, onSubmit, onConsentRequired }: ConsentedPulsePromptProps) {
+  useEffect(() => {
+    requestPulsePrompt(apiClient, legId).catch((error: unknown) => {
+      if (error instanceof ApiError && error.code === "consent_required") {
+        onConsentRequired();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legId]);
+
+  return <PulsePrompt onSubmit={onSubmit} isSubmitting={isSubmitting} />;
 }

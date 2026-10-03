@@ -35,9 +35,9 @@ export async function pageFetchJson(
 /**
  * Records a consent for the current passenger session via `POST /api/consents`.
  *
- * Gap E (`e2e/KNOWN-GAPS.md`): the web app only ships a consent screen for
- * pre check-in, so push/pulse flows have no UI that records their consent;
- * the BFF refuses both without it (403 `consent_required`).
+ * Only for flows that bypass the UI (scenario 6 drives `POST /api/pulse` from
+ * the page because no seeded reservation has a COMPLETED leg). UI-driven
+ * flows must accept the real consent gate instead (scenario 7).
  */
 export async function grantConsent(page: Page, purpose: "push" | "pulse" | "analytics"): Promise<void> {
   const result = await pageFetchJson(page, "/api/consents", { purpose, textVersion: "e2e-1", granted: true });
