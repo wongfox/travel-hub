@@ -93,3 +93,27 @@ export interface SirBookingPort {
     verifier: ReissueVerifier,
   ): Promise<ContactChannel | null>;
 }
+
+/** One POS-equivalent sale line item (`booking-data-integration` "Write WiFi sale to SIR"). */
+export interface PosSale {
+  reservationRef: string;
+  passengerRef: string;
+  packageCode: string;
+  amountMinor: number;
+  currency: string;
+}
+
+/**
+ * `SirPosPort` per `sdd/travel-hub-mvp/design-interfaces`: registers a
+ * successful WiFi sale in SIR using POS-equivalent sale-registration logic
+ * (`booking-data-integration`'s "Write WiFi sale to SIR with POS logic"
+ * requirement), and voids a sale when a purchase must be reversed. Task
+ * 10.3's SIR-registration job calls `registerSale` only after entitlement
+ * activation has already succeeded (design Decision 8); exhausted retries
+ * land in reconciliation, never trigger `voidSale` from that job itself.
+ */
+export interface SirPosPort {
+  /** MUST be idempotent per `idempotencyKey` (task 10.3): a retried registration for the same key returns the same `saleRef`, never a second POS entry. */
+  registerSale(sale: PosSale, idempotencyKey: string): Promise<{ saleRef: string }>;
+  voidSale(saleRef: string, reason: string): Promise<void>;
+}

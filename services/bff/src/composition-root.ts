@@ -48,10 +48,27 @@ import { registerContentRoutes } from "./modules/content/http.js";
 import type { ContentPort } from "./modules/content/ports.js";
 import { createContentStub } from "./adapters/content/stub.js";
 import { registerWifiCheckoutRoutes } from "./modules/wifi-checkout/http.js";
-import type { PaymentGatewayPort, WifiOrderStore, WifiPackageStore } from "./modules/wifi-checkout/ports.js";
+import type {
+  EReceiptPort,
+  PaymentGatewayPort,
+  WifiEntitlementPort,
+  WifiOrderStore,
+  WifiPackageStore,
+} from "./modules/wifi-checkout/ports.js";
 import { createInMemoryWifiOrderStore } from "./modules/wifi-checkout/wifi-order-store.js";
 import { createWifiPackageStub } from "./adapters/wifi-package/stub.js";
 import { createPaymentGatewayStub } from "./adapters/payment-gateway/stub.js";
+import { createWifiEntitlementStub } from "./adapters/wifi-entitlement/stub.js";
+import { createSirPosStub } from "./adapters/sir-pos/stub.js";
+import { createEReceiptStub } from "./adapters/e-receipt/stub.js";
+import {
+  registerWifiOrderJobs,
+  WIFI_ENTITLEMENT_ACTIVATION_QUEUE,
+  WIFI_SIR_RECEIPT_QUEUE,
+} from "./modules/wifi-checkout/wifi-order-jobs.js";
+import type { SirPosPort } from "./modules/booking/ports.js";
+import { registerOutboundRoutes } from "./modules/outbound/http.js";
+import type { TfeRedirectConfig } from "./modules/outbound/resolve-tfe-redirect.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -66,6 +83,21 @@ const DEFAULT_SESSION_RATE_LIMIT = { max: 10, windowMs: 60_000 };
 const DEFAULT_REISSUE_RATE_LIMIT = { max: 5, windowMs: 60_000 };
 /** Dev-only default; a real deployment names its production KMS key via config (design Decision 13's KMS key prerequisite). */
 const DEFAULT_PRECHECKIN_KEY_ID = "dev-only-precheckin-key";
+/**
+ * Dev-only default (task 10.5): the real TFE base URL, allowlisted
+ * placements, and attribution parameters are business/marketing
+ * configuration, not yet chosen (design's own "TFE" partner site is
+ * unnamed) — same "documented dev-only default" convention as
+ * `DEFAULT_DEV_INTERNAL_LINKS_API_KEY` above.
+ */
+const DEFAULT_TFE_REDIRECT_CONFIG: TfeRedirectConfig = {
+  baseUrl: "https://www.trainexperience.local",
+  allowedPlacements: {
+    home_banner: "/offers/machu-picchu-sunset",
+    menu_upsell: "/offers/private-tour",
+  },
+  attributionParams: { utm_source: "travel-hub-app", utm_medium: "in-app" },
+};
 
 export interface BuildAppOptions {
   /**
@@ -161,12 +193,26 @@ export interface BuildAppOptions {
      * `ADAPTER_PAYMENT` (env.ts); defaults to `"stub"`. The go-live guard
      * refuses `wifi.checkout: true` in production/staging while this stays
      * `"stub"` — it also requires non-stub receipt/SIR-POS/entitlement
-     * adapters that stay `"stub"` regardless until WU19 wires them (tasks
-     * 10.3-10.5), so this flag cannot go live in production before that work
-     * lands either way.
+     * adapters (`adapterReceipt`/`adapterSirPos`/`adapterWifiEntitlement`
+     * below, task 10.3), so all four must be declared non-stub together
+     * before this flag can go live in production.
      */
     adapterPayment?: string;
+    /** `ADAPTER_RECEIPT` (env.ts, task 10.3); defaults to `"stub"`. See `adapterPayment`. */
+    adapterReceipt?: string;
+    /** `ADAPTER_SIR_POS` (env.ts, task 10.3); defaults to `"stub"`. See `adapterPayment`. */
+    adapterSirPos?: string;
+    /** `ADAPTER_WIFI_ENTITLEMENT` (env.ts, task 10.3); defaults to `"stub"`. See `adapterPayment`. */
+    adapterWifiEntitlement?: string;
     buildReturnUrl?: (idempotencyKey: string) => string;
+  };
+  /**
+   * `complementary-services-redirect` wiring (task 10.5): no flag, no
+   * session — a self-contained allowlisted redirect. Defaults to a dev-only
+   * placeholder allowlist/base URL (business configuration not yet chosen).
+   */
+  outbound?: {
+    tfeConfig?: TfeRedirectConfig;
   };
 }
 
@@ -303,17 +349,24 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const wifiCheckoutFlags = wifiCheckoutOptions.flags ?? tripOptions.flags ?? FLAG_DEFAULTS;
   const wifiCheckoutNodeEnv = wifiCheckoutOptions.nodeEnv ?? contentNodeEnv;
   const adapterPayment = wifiCheckoutOptions.adapterPayment ?? "stub";
+  const adapterReceipt = wifiCheckoutOptions.adapterReceipt ?? "stub";
+  const adapterSirPos = wifiCheckoutOptions.adapterSirPos ?? "stub";
+  const adapterWifiEntitlement = wifiCheckoutOptions.adapterWifiEntitlement ?? "stub";
 
-  // Design Decision 13's go-live guard, wired to this module (task 10.1): the
-  // api process refuses to allow real WiFi checkout in production/staging
-  // while only a stub PaymentGatewayPort adapter is declared — the same
-  // pattern as the content guard above. The receipt/SIR-POS/entitlement
-  // adapters stay stub via INERT_GO_LIVE_ADAPTERS regardless (WU19 wires
-  // those), so `checkWifiCheckout` keeps refusing production go-live either
-  // way until that work lands too.
+  // Design Decision 13's go-live guard, wired to this module (tasks
+  // 10.1/10.3): the api process refuses to allow real WiFi checkout in
+  // production/staging unless every one of payment/receipt/SIR-POS/
+  // entitlement is declared non-stub — the same pattern as the content guard
+  // above.
   assertGoLiveGuard("wifi.checkout", wifiCheckoutFlags["wifi.checkout"], {
     nodeEnv: wifiCheckoutNodeEnv,
-    adapters: { ...INERT_GO_LIVE_ADAPTERS, payment: adapterPayment },
+    adapters: {
+      ...INERT_GO_LIVE_ADAPTERS,
+      payment: adapterPayment,
+      receipt: adapterReceipt,
+      sirPos: adapterSirPos,
+      wifiEntitlement: adapterWifiEntitlement,
+    },
     precheckin: { kmsKeyConfigured: false },
     push: { vapidConfigured: false, alertSourcePolicyComplete: false },
     pulseStaffAlerts: {},
@@ -328,6 +381,11 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     paymentGateway: wifiCheckoutOptions.paymentGateway ?? createPaymentGatewayStub(),
     flags: wifiCheckoutFlags,
     ...(wifiCheckoutOptions.buildReturnUrl ? { buildReturnUrl: wifiCheckoutOptions.buildReturnUrl } : {}),
+  });
+
+  const outboundOptions = options.outbound ?? {};
+  registerOutboundRoutes(app, {
+    tfeConfig: outboundOptions.tfeConfig ?? DEFAULT_TFE_REDIRECT_CONFIG,
   });
 
   return app;
@@ -367,6 +425,33 @@ export interface StartWorkerOptions {
     retentionPolicyId?: string;
     consentTextVersion?: string;
     kmsKeyConfigured?: boolean;
+    now?: () => Date;
+  };
+  /**
+   * WiFi entitlement-activation + SIR-registration/e-receipt-issuance job
+   * wiring (task 10.3). Same opt-in convention as `precheckin` above:
+   * omitted entirely, `startWorker` registers neither job; `main-worker.ts`
+   * always passes it so the real worker process always runs the go-live
+   * guard and registers both jobs.
+   */
+  wifiCheckout?: {
+    orderStore?: WifiOrderStore;
+    packageStore?: Pick<WifiPackageStore, "findById">;
+    entitlement?: Pick<WifiEntitlementPort, "grant">;
+    sirPos?: Pick<SirPosPort, "registerSale">;
+    eReceipt?: Pick<EReceiptPort, "issue">;
+    /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_PAYMENT` (env.ts); defaults to `"stub"`. See `BuildAppOptions.wifiCheckout.adapterPayment`. */
+    adapterPayment?: string;
+    /** `ADAPTER_RECEIPT` (env.ts); defaults to `"stub"`. */
+    adapterReceipt?: string;
+    /** `ADAPTER_SIR_POS` (env.ts); defaults to `"stub"`. */
+    adapterSirPos?: string;
+    /** `ADAPTER_WIFI_ENTITLEMENT` (env.ts); defaults to `"stub"`. */
+    adapterWifiEntitlement?: string;
     now?: () => Date;
   };
 }
@@ -454,6 +539,71 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     });
     await registerPurgeJob(options.queueClient, jobDeps);
     jobsRegistered.push(PRECHECKIN_HANDOFF_QUEUE, PRECHECKIN_PURGE_QUEUE);
+  }
+
+  if (options.wifiCheckout) {
+    const w = options.wifiCheckout;
+    const flags = w.flags ?? FLAG_DEFAULTS;
+    const nodeEnv = w.nodeEnv ?? "development";
+    const adapterPayment = w.adapterPayment ?? "stub";
+    const adapterReceipt = w.adapterReceipt ?? "stub";
+    const adapterSirPos = w.adapterSirPos ?? "stub";
+    const adapterWifiEntitlement = w.adapterWifiEntitlement ?? "stub";
+
+    // Same defense-in-depth check as precheckin's `handoffPort` guard above:
+    // without it, declaring a non-stub adapter name without wiring in its
+    // real port would let the go-live guard pass while `registerWifiOrderJobs`
+    // below silently falls back to the stub, so the declared adapter would
+    // never actually run.
+    if (adapterWifiEntitlement !== "stub" && !w.entitlement) {
+      throw new Error(
+        `ADAPTER_WIFI_ENTITLEMENT="${adapterWifiEntitlement}" has no real adapter wired in; ` +
+          'startWorker\'s wifiCheckout.entitlement must be provided, or ADAPTER_WIFI_ENTITLEMENT must stay "stub".',
+      );
+    }
+    if (adapterSirPos !== "stub" && !w.sirPos) {
+      throw new Error(
+        `ADAPTER_SIR_POS="${adapterSirPos}" has no real adapter wired in; ` +
+          'startWorker\'s wifiCheckout.sirPos must be provided, or ADAPTER_SIR_POS must stay "stub".',
+      );
+    }
+    if (adapterReceipt !== "stub" && !w.eReceipt) {
+      throw new Error(
+        `ADAPTER_RECEIPT="${adapterReceipt}" has no real adapter wired in; ` +
+          'startWorker\'s wifiCheckout.eReceipt must be provided, or ADAPTER_RECEIPT must stay "stub".',
+      );
+    }
+
+    // Design Decision 13's go-live guard, wired to this module (task 10.3):
+    // the worker refuses to register real entitlement/SIR/receipt jobs
+    // against production/staging unless every one of
+    // payment/receipt/SIR-POS/entitlement is declared non-stub — the same
+    // full `checkWifiCheckout` check `buildApp()` runs for the api process,
+    // defense-in-depth against the worker process being booted with a
+    // production flag directly.
+    assertGoLiveGuard("wifi.checkout", flags["wifi.checkout"], {
+      nodeEnv,
+      adapters: {
+        ...INERT_GO_LIVE_ADAPTERS,
+        payment: adapterPayment,
+        receipt: adapterReceipt,
+        sirPos: adapterSirPos,
+        wifiEntitlement: adapterWifiEntitlement,
+      },
+      precheckin: { kmsKeyConfigured: false },
+      push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+      pulseStaffAlerts: {},
+    });
+
+    await registerWifiOrderJobs(options.queueClient, {
+      orderStore: w.orderStore ?? createInMemoryWifiOrderStore(),
+      packageStore: w.packageStore ?? createWifiPackageStub(),
+      entitlement: w.entitlement ?? createWifiEntitlementStub(),
+      sirPos: w.sirPos ?? createSirPosStub(),
+      eReceipt: w.eReceipt ?? createEReceiptStub(),
+      ...(w.now ? { now: w.now } : {}),
+    });
+    jobsRegistered.push(WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE);
   }
 
   return { jobsRegistered };

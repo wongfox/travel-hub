@@ -90,4 +90,89 @@ describe("createInMemoryWifiOrderStore", () => {
     expect(events).toHaveLength(2);
     expect(events[1]).toMatchObject({ fromStatus: "PAYMENT_PENDING", toStatus: "PAID" });
   });
+
+  it("creates a new order with legRef resolved from input, and null entitlement/SIR/receipt fields (task 10.3)", async () => {
+    const store = createInMemoryWifiOrderStore();
+
+    const withLeg = await store.create({ ...BASE_INPUT, legRef: "LEG-1" });
+    const withoutLeg = await store.create({ ...BASE_INPUT, idempotencyKey: "idem-key-2" });
+
+    expect(withLeg.legRef).toBe("LEG-1");
+    expect(withoutLeg.legRef).toBe("");
+    for (const order of [withLeg, withoutLeg]) {
+      expect(order.entitlementRef).toBeNull();
+      expect(order.entitlementExpiresAt).toBeNull();
+      expect(order.sirRegisteredAt).toBeNull();
+      expect(order.sirSaleRef).toBeNull();
+      expect(order.sirRegistrationAttempts).toBe(0);
+      expect(order.sirReconciliationRequired).toBe(false);
+      expect(order.receiptIssuedAt).toBeNull();
+      expect(order.receiptRef).toBeNull();
+      expect(order.buyerEmail).toBe("");
+    }
+  });
+
+  it("creates a new order with buyerEmail resolved from input (task 10.3)", async () => {
+    const store = createInMemoryWifiOrderStore();
+
+    const order = await store.create({ ...BASE_INPUT, idempotencyKey: "idem-email", buyerEmail: "ana@example.com" });
+
+    expect(order.buyerEmail).toBe("ana@example.com");
+  });
+
+  it("transition can record SIR retry-exhaustion/reconciliation progress without changing status (task 10.3)", async () => {
+    const store = createInMemoryWifiOrderStore();
+    const created = await store.create(BASE_INPUT);
+    await store.transition(created.id, "ENTITLEMENT_ACTIVE", {});
+
+    const flagged = await store.transition(created.id, "ENTITLEMENT_ACTIVE", {
+      sirRegistrationAttempts: 4,
+      sirReconciliationRequired: true,
+    });
+
+    expect(flagged.sirRegistrationAttempts).toBe(4);
+    expect(flagged.sirReconciliationRequired).toBe(true);
+  });
+
+  it("transition can record entitlement/SIR/receipt progress without changing status (task 10.3)", async () => {
+    const store = createInMemoryWifiOrderStore();
+    const created = await store.create(BASE_INPUT);
+    await store.transition(created.id, "PAID", {});
+
+    const activated = await store.transition(created.id, "ENTITLEMENT_ACTIVE", {
+      entitlementRef: "ENT-1",
+      entitlementExpiresAt: "2026-01-02T00:00:00.000Z",
+    });
+    expect(activated.status).toBe("ENTITLEMENT_ACTIVE");
+
+    // Same-status transition: records SIR registration progress as an audit
+    // event without moving the saga state (design Decision 8's independent
+    // flags rule).
+    const sirRegistered = await store.transition(activated.id, "ENTITLEMENT_ACTIVE", {
+      sirRegisteredAt: "2026-01-02T00:01:00.000Z",
+      sirSaleRef: "SALE-1",
+    });
+    expect(sirRegistered.status).toBe("ENTITLEMENT_ACTIVE");
+    expect(sirRegistered.sirRegisteredAt).toBe("2026-01-02T00:01:00.000Z");
+    expect(sirRegistered.sirSaleRef).toBe("SALE-1");
+    // Entitlement fields set earlier are preserved by the merge-patch semantics.
+    expect(sirRegistered.entitlementRef).toBe("ENT-1");
+
+    const events = await store.listEventsForOrder(created.id);
+    expect(events).toHaveLength(3);
+    expect(events[2]).toMatchObject({ fromStatus: "ENTITLEMENT_ACTIVE", toStatus: "ENTITLEMENT_ACTIVE" });
+  });
+
+  it("listByStatus returns only orders currently in that status", async () => {
+    const store = createInMemoryWifiOrderStore();
+    const a = await store.create(BASE_INPUT);
+    const b = await store.create({ ...BASE_INPUT, idempotencyKey: "idem-key-3" });
+    await store.transition(a.id, "PAID", {});
+
+    const paid = await store.listByStatus("PAID");
+    const created = await store.listByStatus("CREATED");
+
+    expect(paid.map((o) => o.id)).toEqual([a.id]);
+    expect(created.map((o) => o.id)).toEqual([b.id]);
+  });
 });

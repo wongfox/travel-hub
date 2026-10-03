@@ -143,6 +143,19 @@ describe("createWifiOrder", () => {
     expect(events).toHaveLength(1);
   });
 
+  it("propagates legRef onto the created order record (task 10.3)", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const paymentGateway = fakePaymentGateway();
+
+    const result = await createWifiOrder(baseInput({ legRef: "LEG-1" }), {
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      paymentGateway,
+    });
+
+    expect(result.order.legRef).toBe("LEG-1");
+  });
+
   it("throws WifiPackageNotFoundError for an unknown packageId", async () => {
     const orderStore = createInMemoryWifiOrderStore();
     const paymentGateway = fakePaymentGateway();

@@ -83,7 +83,8 @@
     "documents": "Documents",
     "help": "Help",
     "menu": "Menu",
-    "destination": "Destination"
+    "destination": "Destination",
+    "wifi": "WiFi"
   },
   "precheckin": {
     "consent": {
@@ -126,5 +127,27 @@
     "poiMapHeading": "Points of interest map",
     "howToGetThereHeading": "How to get there",
     "circuitsHeading": "Circuits"
+  },
+  "wifi": {
+    "heading": "Onboard WiFi",
+    "noPackages": "No WiFi packages are available right now.",
+    "duration": "Duration: {minutes} minutes",
+    "buy": "Buy",
+    "unavailable": "WiFi purchase is not available right now.",
+    "checkoutError": "We couldn't start your purchase. Please try again.",
+    "redirecting": "Redirecting you to the payment page…",
+    "orderStatus": {
+      "checking": "Checking your purchase status…",
+      "paymentPending": "Waiting for payment confirmation…",
+      "paid": "Payment confirmed, activating your WiFi…",
+      "active": "Your WiFi is active",
+      "activeUntil": "Valid until {time}",
+      "failed": "We couldn't process your payment.",
+      "refunded": "Your payment was refunded.",
+      "notFound": "We couldn't find your order. Go back to the catalog and try again."
+    }
+  },
+  "tfe": {
+    "cta": "Discover more experiences"
   }
 }

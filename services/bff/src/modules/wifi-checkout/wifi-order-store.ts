@@ -42,12 +42,22 @@ export function createInMemoryWifiOrderStore(now: () => Date = () => new Date())
         reservationRef: input.reservationRef,
         passengerRef: input.passengerRef,
         packageId: input.packageId,
+        legRef: input.legRef ?? "",
+        buyerEmail: input.buyerEmail ?? "",
         amountMinor: input.amountMinor,
         currency: input.currency,
         status: "CREATED",
         idempotencyKey: input.idempotencyKey,
         gatewaySessionRef: null,
         gatewayPaymentRef: null,
+        entitlementRef: null,
+        entitlementExpiresAt: null,
+        sirRegisteredAt: null,
+        sirSaleRef: null,
+        sirRegistrationAttempts: 0,
+        sirReconciliationRequired: false,
+        receiptIssuedAt: null,
+        receiptRef: null,
         createdAt: at,
         updatedAt: at,
       };
@@ -88,6 +98,10 @@ export function createInMemoryWifiOrderStore(now: () => Date = () => new Date())
 
     async listEventsForOrder(id: string) {
       return eventsByOrderId.get(id) ?? [];
+    },
+
+    async listByStatus(status) {
+      return [...ordersById.values()].filter((order) => order.status === status);
     },
   };
 }

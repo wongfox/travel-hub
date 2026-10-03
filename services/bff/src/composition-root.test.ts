@@ -16,6 +16,12 @@ import { createPrecheckinDocumentStoreStub } from "./adapters/precheckin-documen
 import { createPrecheckinHandoffStub } from "./adapters/precheckin-handoff/stub.js";
 import { createKmsStub } from "./infra/crypto/kms-stub.js";
 import { encryptEnvelope } from "./infra/crypto/envelope-encryption.js";
+import {
+  WIFI_ENTITLEMENT_ACTIVATION_QUEUE,
+  WIFI_SIR_RECEIPT_QUEUE,
+} from "./modules/wifi-checkout/wifi-order-jobs.js";
+import { createInMemoryWifiOrderStore } from "./modules/wifi-checkout/wifi-order-store.js";
+import { createWifiPackageStub } from "./adapters/wifi-package/stub.js";
 
 describe("buildApp", () => {
   it("responds 200 with an ok status on GET /healthz", async () => {
@@ -634,7 +640,7 @@ describe("buildApp — wifi-checkout routes (tasks 10.1-10.2)", () => {
     ).toThrow(GoLiveGuardError);
   });
 
-  it("still refuses wifi.checkout in production once a non-stub payment adapter is declared, because receipt/SIR-POS/entitlement adapters stay stub (WU19's scope)", () => {
+  it("still refuses wifi.checkout in production once only a non-stub payment adapter is declared (task 10.3: receipt/SIR-POS/entitlement adapters still required)", () => {
     expect(() =>
       buildApp({
         wifiCheckout: {
@@ -646,12 +652,135 @@ describe("buildApp — wifi-checkout routes (tasks 10.1-10.2)", () => {
     ).toThrow(GoLiveGuardError);
   });
 
+  it("allows wifi.checkout in production once every adapter (payment, receipt, SIR-POS, entitlement) is declared non-stub (task 10.3)", () => {
+    expect(() =>
+      buildApp({
+        wifiCheckout: {
+          flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+          nodeEnv: "production",
+          adapterPayment: "a-real-gateway",
+          adapterReceipt: "a-real-receipt-service",
+          adapterSirPos: "a-real-sir-pos",
+          adapterWifiEntitlement: "a-real-captive-portal",
+        },
+      }),
+    ).not.toThrow();
+  });
+
   it("always allows wifi.checkout against the stub outside production/staging", () => {
     expect(() =>
       buildApp({
         wifiCheckout: { flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } },
       }),
     ).not.toThrow();
+  });
+});
+
+describe("buildApp — complementary-services-redirect (task 10.5)", () => {
+  it("registers GET /api/out/tfe end to end against the default (dev-only) allowlist", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/out/tfe?placement=home_banner" });
+
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toMatch(/^https:\/\//);
+  });
+
+  it("rejects an unknown placement with 400, never redirecting (open-redirect-safety)", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/out/tfe?placement=not-on-the-allowlist" });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.headers.location).toBeUndefined();
+  });
+});
+
+describe("startWorker — WiFi entitlement/SIR/receipt job wiring (task 10.3)", () => {
+  it("registers both WiFi jobs when wifiCheckout options are given", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      wifiCheckout: { flags: { ...FLAG_DEFAULTS, "wifi.checkout": false } },
+    });
+
+    expect(result.jobsRegistered).toEqual([
+      SAMPLE_JOB_QUEUE,
+      WIFI_ENTITLEMENT_ACTIVATION_QUEUE,
+      WIFI_SIR_RECEIPT_QUEUE,
+    ]);
+  });
+
+  it("does not register WiFi jobs when no wifiCheckout options are given (backward compatible)", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({ queueClient });
+
+    expect(result.jobsRegistered).toEqual([SAMPLE_JOB_QUEUE]);
+  });
+
+  it("throws GoLiveGuardError when wifi.checkout is true in production without every non-stub adapter declared", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        wifiCheckout: { nodeEnv: "production", flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } },
+      }),
+    ).rejects.toThrow(GoLiveGuardError);
+  });
+
+  it("throws when a non-stub adapter is named but no real port is wired in", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        wifiCheckout: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+          adapterPayment: "a-real-gateway",
+          adapterReceipt: "a-real-receipt-service",
+          adapterSirPos: "a-real-sir-pos",
+          adapterWifiEntitlement: "a-real-captive-portal",
+        },
+      }),
+    ).rejects.toThrow(/ADAPTER_WIFI_ENTITLEMENT|ADAPTER_SIR_POS|ADAPTER_RECEIPT/);
+  });
+
+  it("actually runs the entitlement-activation and SIR/receipt jobs end to end when their queues are triggered", async () => {
+    const queueClient = createInMemoryQueueClient();
+    const orderStore = createInMemoryWifiOrderStore();
+    const packageStore = createWifiPackageStub();
+    const packages = await packageStore.listActive();
+    const created = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: packages[0]!.id,
+      amountMinor: packages[0]!.priceMinor,
+      currency: packages[0]!.currency,
+      idempotencyKey: "worker-e2e-1",
+      legRef: "LEG-1",
+      buyerEmail: "ana@example.com",
+    });
+    await orderStore.transition(created.id, "PAID", { gatewayPaymentRef: "payment-1" });
+
+    await startWorker({
+      queueClient,
+      wifiCheckout: { orderStore, packageStore },
+    });
+
+    await queueClient.sendIdempotent(WIFI_ENTITLEMENT_ACTIVATION_QUEUE, "scan", {});
+    await queueClient.runPendingOnce(WIFI_ENTITLEMENT_ACTIVATION_QUEUE);
+    const activated = await orderStore.findById(created.id);
+    expect(activated?.status).toBe("ENTITLEMENT_ACTIVE");
+
+    await queueClient.sendIdempotent(WIFI_SIR_RECEIPT_QUEUE, "scan", {});
+    await queueClient.runPendingOnce(WIFI_SIR_RECEIPT_QUEUE);
+    const final = await orderStore.findById(created.id);
+    expect(final?.sirRegisteredAt).not.toBeNull();
+    expect(final?.receiptIssuedAt).not.toBeNull();
   });
 });
 
