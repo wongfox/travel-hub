@@ -86,7 +86,8 @@
     "destination": "Destino",
     "wifi": "WiFi",
     "push": "Notificações",
-    "pulse": "Como foi sua viagem?"
+    "pulse": "Como foi sua viagem?",
+    "precheckin": "Pré check-in"
   },
   "precheckin": {
     "consent": {
@@ -115,6 +116,33 @@
         "blurry": "A imagem está muito desfocada.",
         "poor_exposure": "A imagem está muito escura ou muito clara."
       }
+    },
+    "page": {
+      "heading": "Pré check-in",
+      "unavailable": "O pré check-in não está disponível no momento.",
+      "choosePassenger": "Quem vai concluir o pré check-in?",
+      "start": "Iniciar pré check-in de {name}",
+      "status": {
+        "none": "Pendente",
+        "received": "Concluído",
+        "unavailable": "Não está mais disponível"
+      },
+      "received": "Pré check-in recebido. Obrigado.",
+      "choose": "Escolher outro passageiro",
+      "statusOnly": "Seu pré check-in está concluído. Por segurança, nunca mostramos as imagens que você enviou."
+    },
+    "submit": {
+      "docTypeLabel": "Tipo de documento",
+      "docTypeChoose": "Selecione…",
+      "docTypes": {
+        "DNI": "DNI",
+        "PASSPORT": "Passaporte",
+        "OTHER": "Outro"
+      },
+      "submit": "Enviar pré check-in",
+      "submitting": "Enviando…",
+      "error": "Não foi possível enviar seu pré check-in. Suas fotos continuam aqui, tente novamente.",
+      "unavailable": "O pré check-in não está disponível no momento."
     }
   },
   "help": {

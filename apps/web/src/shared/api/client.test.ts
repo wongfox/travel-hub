@@ -37,6 +37,19 @@ describe("createApiClient", () => {
     );
   });
 
+  it("sends FormData as-is, without a JSON Content-Type, so the browser sets the multipart boundary", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 201 }));
+    const client = createApiClient({ fetchImpl });
+    const form = new FormData();
+    form.append("docType", "DNI");
+
+    await client.post("/api/precheckin/1", form);
+
+    const init = fetchImpl.mock.calls[0]![1] as RequestInit;
+    expect(init.body).toBe(form);
+    expect(init.headers).not.toHaveProperty("Content-Type");
+  });
+
   it("returns undefined for a 204 No Content response", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     const client = createApiClient({ fetchImpl });

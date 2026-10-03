@@ -122,6 +122,17 @@ describe("PurposeConsentGate", () => {
     expect(window.localStorage.length).toBe(0);
   });
 
+  it("hands the recorded consent's recordId to function children", async () => {
+    const post = vi.fn().mockResolvedValue({ ...grantedResponse("push", true), recordId: "consent-42" });
+    renderGate(post, {
+      children: ({ consentRecordId }) => <p data-testid="record-id">{consentRecordId}</p>,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "I agree" }));
+
+    expect(await screen.findByTestId("record-id")).toHaveTextContent("consent-42");
+  });
+
   it("re-shows the consent screen and forgets the cache when children report consent_required", async () => {
     window.localStorage.setItem("th-consent:link-1:push", "v1");
     renderGate(vi.fn(), {

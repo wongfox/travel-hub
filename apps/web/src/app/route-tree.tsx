@@ -12,6 +12,7 @@ import { DestinationPage } from "../features/destination/destination-page.js";
 import { WifiPage } from "../features/wifi/wifi-page.js";
 import { PushPage } from "../features/push/push-page.js";
 import { PulsePage } from "../features/pulse/pulse-page.js";
+import { PrecheckinPage } from "../features/precheckin/precheckin-page.js";
 
 /**
  * Code-based route tree stub (task 4.2). File-based routing/codegen is not
@@ -109,6 +110,11 @@ function PulseRoute() {
   return <PulsePage apiClient={defaultApiClient} />;
 }
 
+/** `pre-check-in` (Gap D): same sibling-route convention as `help`/`menu`/`destination`/`wifi`/`push`/`pulse`. */
+function PrecheckinRoute() {
+  return <PrecheckinPage apiClient={defaultApiClient} />;
+}
+
 const tripAccessLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/t",
@@ -169,6 +175,12 @@ const tripPulseRoute = createRoute({
   component: PulseRoute,
 });
 
+const tripPrecheckinRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/precheckin",
+  component: PrecheckinRoute,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   tripAccessLandingRoute,
@@ -181,4 +193,5 @@ export const routeTree = rootRoute.addChildren([
   tripWifiRoute,
   tripPushRoute,
   tripPulseRoute,
+  tripPrecheckinRoute,
 ]);
