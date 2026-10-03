@@ -33,6 +33,20 @@ export interface QueueClient {
     payload: TPayload,
   ): Promise<string | null>;
   work<TPayload extends object>(queueName: string, handler: QueueHandler<TPayload>): Promise<void>;
+  /**
+   * Task 13.3 (observability): number of jobs currently outstanding
+   * (pending/active, not yet completed) on `queueName`. Returns `0` for a
+   * queue name that was never created, rather than throwing — a metrics
+   * endpoint must stay resilient to a queue that has not registered yet.
+   */
+  getQueueDepth(queueName: string): Promise<number>;
+  /**
+   * Task 13.3 (observability): number of jobs sitting in `deadLetterQueueName`
+   * (a queue named via `QueueRetryPolicy.deadLetterQueue`). Returns `0` for a
+   * dead-letter queue name that has never received a job, rather than
+   * throwing.
+   */
+  getDeadLetterCount(deadLetterQueueName: string): Promise<number>;
 }
 
 interface PendingJob {
@@ -116,6 +130,14 @@ export function createInMemoryQueueClient(): InMemoryQueueClient {
 
     peekDeadLetters(deadLetterQueueName) {
       return deadLetters.get(deadLetterQueueName) ?? [];
+    },
+
+    async getQueueDepth(queueName) {
+      return pendingBySingletonKey.get(queueName)?.size ?? 0;
+    },
+
+    async getDeadLetterCount(deadLetterQueueName) {
+      return (deadLetters.get(deadLetterQueueName) ?? []).length;
     },
   };
 }
