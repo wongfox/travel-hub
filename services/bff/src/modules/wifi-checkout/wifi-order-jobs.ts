@@ -1,5 +1,6 @@
 import type { SirPosPort } from "../booking/ports.js";
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 import { activateWifiOrder } from "./activate-wifi-order.js";
 import { WifiPackageNotFoundError } from "./errors.js";
 import type { EReceiptPort, WifiEntitlementPort, WifiOrderRecord, WifiOrderStore, WifiPackageStore } from "./ports.js";
@@ -251,21 +252,14 @@ export const WIFI_SCAN_INTERVAL_MS = 60_000;
 /**
  * Periodically enqueues both WiFi scans (`PAID` -> `ENTITLEMENT_ACTIVE`, then
  * SIR registration + e-receipt) on the worker process. Nothing else triggers
- * them: the payment webhook only moves an order to `PAID`. Uses
- * `sendIdempotent` with a fixed natural key, so a slow scan is never stacked
- * (same convention as `handoff-job.ts`). A failed send is logged and the next
- * tick retries. Returns a function that stops the scheduler.
+ * them: the payment webhook only moves an order to `PAID`. Delegates to the
+ * shared `scheduleQueueScans` (idempotent natural key, logged send failures).
  */
 export function scheduleWifiOrderScans(
   queueClient: Pick<QueueClient, "sendIdempotent">,
   options: { intervalMs?: number } = {},
 ): () => void {
-  const timer = setInterval(() => {
-    for (const queue of [WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE]) {
-      queueClient.sendIdempotent(queue, "scan", {}).catch((error: unknown) => {
-        console.error(`failed to enqueue the ${queue} scan`, error);
-      });
-    }
-  }, options.intervalMs ?? WIFI_SCAN_INTERVAL_MS);
-  return () => clearInterval(timer);
+  return scheduleQueueScans(queueClient, [WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE], {
+    intervalMs: options.intervalMs ?? WIFI_SCAN_INTERVAL_MS,
+  });
 }
