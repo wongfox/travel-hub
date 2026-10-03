@@ -658,6 +658,7 @@ describe("buildApp — wifi-checkout routes (tasks 10.1-10.2)", () => {
         wifiCheckout: {
           flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
           nodeEnv: "production",
+          orderStore: createInMemoryWifiOrderStore(),
           adapterPayment: "a-real-gateway",
           adapterReceipt: "a-real-receipt-service",
           adapterSirPos: "a-real-sir-pos",
@@ -665,6 +666,27 @@ describe("buildApp — wifi-checkout routes (tasks 10.1-10.2)", () => {
         },
       }),
     ).not.toThrow();
+  });
+
+  it("throws in production when wifi.checkout is on and no shared orderStore is wired in, instead of silently using a process-local in-memory store", () => {
+    expect(() =>
+      buildApp({
+        wifiCheckout: {
+          flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+          nodeEnv: "production",
+          adapterPayment: "a-real-gateway",
+          adapterReceipt: "a-real-receipt-service",
+          adapterSirPos: "a-real-sir-pos",
+          adapterWifiEntitlement: "a-real-captive-portal",
+        },
+      }),
+    ).toThrow(/orderStore/);
+  });
+
+  it("does not require an orderStore in production while wifi.checkout is off", () => {
+    expect(() =>
+      buildApp({ wifiCheckout: { flags: { ...FLAG_DEFAULTS, "wifi.checkout": false }, nodeEnv: "production" } }),
+    ).not.toThrow(/orderStore/);
   });
 
   it("always allows wifi.checkout against the stub outside production/staging", () => {
@@ -747,6 +769,49 @@ describe("startWorker — WiFi entitlement/SIR/receipt job wiring (task 10.3)", 
         },
       }),
     ).rejects.toThrow(/ADAPTER_WIFI_ENTITLEMENT|ADAPTER_SIR_POS|ADAPTER_RECEIPT/);
+  });
+
+  it("throws in production when wifi.checkout is on and no shared orderStore is wired in, instead of silently using a worker-local in-memory store", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        wifiCheckout: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+          adapterPayment: "a-real-gateway",
+          adapterReceipt: "a-real-receipt-service",
+          adapterSirPos: "a-real-sir-pos",
+          adapterWifiEntitlement: "a-real-captive-portal",
+          entitlement: { async grant() { return { entitlementRef: "e" }; } } as never,
+          sirPos: { async registerSale() { return { saleRef: "s" }; } } as never,
+          eReceipt: { async issue() { return { receiptRef: "r" }; } } as never,
+        },
+      }),
+    ).rejects.toThrow(/orderStore/);
+  });
+
+  it("boots in production with wifi.checkout on once a shared orderStore is wired in", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        wifiCheckout: {
+          nodeEnv: "production",
+          flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+          orderStore: createInMemoryWifiOrderStore(),
+          adapterPayment: "a-real-gateway",
+          adapterReceipt: "a-real-receipt-service",
+          adapterSirPos: "a-real-sir-pos",
+          adapterWifiEntitlement: "a-real-captive-portal",
+          entitlement: { async grant() { return { entitlementRef: "e" }; } } as never,
+          sirPos: { async registerSale() { return { saleRef: "s" }; } } as never,
+          eReceipt: { async issue() { return { receiptRef: "r" }; } } as never,
+        },
+      }),
+    ).resolves.toBeDefined();
   });
 
   it("actually runs the entitlement-activation and SIR/receipt jobs end to end when their queues are triggered", async () => {

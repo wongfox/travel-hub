@@ -372,6 +372,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     pulseStaffAlerts: {},
   });
 
+  // The wifi flow spans two processes (api creates/pays orders, worker
+  // activates them), so a production-like deployment with the flag on needs
+  // one shared order store. Until a Drizzle-backed `WifiOrderStore` exists
+  // (e2e/KNOWN-GAPS.md gap C), fail loudly instead of silently running on a
+  // process-local in-memory store the worker can never see.
+  if (
+    wifiCheckoutFlags["wifi.checkout"] &&
+    isProductionLike(wifiCheckoutNodeEnv) &&
+    !wifiCheckoutOptions.orderStore
+  ) {
+    throw new Error(
+      "wifi.checkout is on in a production-like environment but no shared orderStore is wired in; " +
+        "refusing to start with a process-local in-memory WifiOrderStore (the worker would never see api orders).",
+    );
+  }
+
   registerWifiCheckoutRoutes(app, {
     accessLinkStore,
     sessionStore,
@@ -594,6 +610,16 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       push: { vapidConfigured: false, alertSourcePolicyComplete: false },
       pulseStaffAlerts: {},
     });
+
+    // Same reasoning as buildApp's check: the worker must read the very
+    // store the api writes to, never a private in-memory fallback.
+    if (flags["wifi.checkout"] && isProductionLike(nodeEnv) && !w.orderStore) {
+      throw new Error(
+        "wifi.checkout is on in a production-like environment but startWorker's wifiCheckout.orderStore " +
+          "was not provided; refusing to start with a worker-local in-memory WifiOrderStore " +
+          "(it would never see the orders the api creates).",
+      );
+    }
 
     await registerWifiOrderJobs(options.queueClient, {
       orderStore: w.orderStore ?? createInMemoryWifiOrderStore(),
