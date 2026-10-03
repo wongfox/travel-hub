@@ -91,6 +91,22 @@ describe("createWifiOrder", () => {
     expect(events).toHaveLength(1);
   });
 
+  it("records the funnel events once: an idempotency-key replay returning the existing order does not re-record them", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const recorded: string[] = [];
+    const analytics = {
+      async record(input: { name: string }) {
+        recorded.push(input.name);
+      },
+    };
+    const deps = { orderStore, packageStore: packageStoreOf([PACKAGE]), paymentGateway: fakePaymentGateway(), analytics };
+
+    await createWifiOrder(baseInput(), deps);
+    await createWifiOrder(baseInput(), deps);
+
+    expect(recorded).toEqual(["wifi_package_selected", "wifi_payment_attempted"]);
+  });
+
   it("calls the payment gateway with the same idempotencyKey on replay, relying on gateway-level idempotency for the session", async () => {
     const orderStore = createInMemoryWifiOrderStore();
     const paymentGateway = fakePaymentGateway();
