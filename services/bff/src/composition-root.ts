@@ -83,6 +83,17 @@ import { createSirPollingJourneyEventAdapter } from "./adapters/journey-event-so
 import { registerJourneyPollJob, JOURNEY_POLL_QUEUE } from "./modules/notifications/journey-poll-job.js";
 import { DEFAULT_ALERT_SOURCE_POLICY, isAlertSourcePolicyComplete } from "./config/alert-source-policy.js";
 import type { AlertSourcePolicy } from "contracts";
+import { registerPulseRoutes } from "./modules/pulse/http.js";
+import { createInMemoryPulseResponseStore } from "./modules/pulse/pulse-response-store.js";
+import { createInMemoryStaffAlertStore } from "./modules/pulse/staff-alert-store.js";
+import { createInMemoryPulsePromptDeliveryStore } from "./modules/pulse/pulse-prompt-delivery-store.js";
+import { DEFAULT_NEGATIVE_PULSE_RULE, type NegativePulseRule } from "./modules/pulse/negative-pulse-rule.js";
+import type { PulseResponseStore, StaffAlertPort, StaffAlertStore } from "./modules/pulse/ports.js";
+import { createStaffAlertStub } from "./adapters/staff-alert/stub.js";
+import {
+  registerStaffAlertDispatchJob,
+  STAFF_ALERT_DISPATCH_QUEUE,
+} from "./modules/pulse/dispatch-staff-alerts-job.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -251,6 +262,35 @@ export interface BuildAppOptions {
     /** `push.enabled` go-live prerequisite: approved consent text version (env.ts's `PUSH_CONSENT_TEXT_VERSION`). */
     pushConsentTextVersion?: string;
   };
+  /**
+   * `experience-pulse` capture + D4a alerting wiring (tasks 11.4-11.6).
+   * Shares `trip-access`'s `accessLinkStore`/`sessionStore`, `privacy`'s
+   * `consentStore`, and `notifications`'s `subscriptionStore`/`webPush` by
+   * default — a session created via `POST /api/session`, a consent recorded
+   * via `POST /api/consents`, and a push subscription created via `POST
+   * /api/push/subscriptions` must all be visible here too.
+   */
+  pulse?: {
+    pulseResponseStore?: Pick<PulseResponseStore, "create">;
+    staffAlertStore?: Pick<StaffAlertStore, "create">;
+    negativePulseRule?: NegativePulseRule;
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `notifications`'s/`wifiCheckout`'s/`trip-access`'s `nodeEnv`, then `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_STAFF_ALERT` (env.ts); defaults to `"stub"`. The go-live guard refuses `pulse.staff_alerts: true` in production/staging while this stays `"stub"`. */
+    adapterStaffAlert?: string;
+    /** `pulse.capture` go-live prerequisite: approved consent text version (env.ts's `PULSE_CONSENT_TEXT_VERSION`). */
+    pulseConsentTextVersion?: string;
+    /** `pulse.staff_alerts` go-live prerequisite (env.ts's `STAFF_ALERT_RECEIVER_ID`). */
+    staffAlertReceiverId?: string;
+    /** `pulse.staff_alerts` go-live prerequisite (env.ts's `STAFF_ALERT_PROTOCOL_REF`). */
+    staffAlertProtocolRef?: string;
+    /** `pulse.staff_alerts` go-live prerequisite (env.ts's `STAFF_ALERT_RETENTION_DAYS`). */
+    staffAlertRetentionDays?: number;
+    /** `WebPushPort` for the independent pulse-prompt delivery path (task 11.6); defaults to a fresh stub. Not shared with `notifications`'s own worker-only push sending — see `http.ts`'s doc comment on why this stays a separate path. */
+    webPush?: WebPushPort;
+    pulsePromptDeliveryStore?: Pick<ReturnType<typeof createInMemoryPulsePromptDeliveryStore>, "create">;
+  };
 }
 
 /**
@@ -376,6 +416,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     adapters: { ...INERT_GO_LIVE_ADAPTERS, content: adapterContent },
     precheckin: { kmsKeyConfigured: false },
     push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+    pulseCapture: {},
     pulseStaffAlerts: {},
   };
   assertGoLiveGuard("menu.enabled", contentFlags["menu.enabled"], contentGoLiveContext);
@@ -413,6 +454,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     },
     precheckin: { kmsKeyConfigured: false },
     push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+    pulseCapture: {},
     pulseStaffAlerts: {},
   });
 
@@ -453,6 +495,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
         ? { consentTextVersion: notificationsOptions.pushConsentTextVersion }
         : {}),
     },
+    pulseCapture: {},
     pulseStaffAlerts: {},
   });
 
@@ -462,6 +505,44 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     consentStore: sharedConsentStore,
     subscriptionStore: sharedPushSubscriptionStore,
     flags: notificationsFlags,
+  });
+
+  const pulseOptions = options.pulse ?? {};
+  const pulseFlags = pulseOptions.flags ?? notificationsFlags;
+  const pulseNodeEnv = pulseOptions.nodeEnv ?? notificationsNodeEnv;
+  const adapterStaffAlert = pulseOptions.adapterStaffAlert ?? "stub";
+
+  // Design Decision 13's go-live guard (tasks 11.4-11.5): `pulse.capture` and
+  // `pulse.staff_alerts` are independent flags with independent prerequisites
+  // (design's own table) — each is asserted on its own value, so capture can
+  // go live in production without alerting ever being enabled there.
+  const pulseGoLiveContext: GoLiveContext = {
+    nodeEnv: pulseNodeEnv,
+    adapters: { ...INERT_GO_LIVE_ADAPTERS, staffAlert: adapterStaffAlert },
+    precheckin: { kmsKeyConfigured: false },
+    push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+    pulseCapture: { ...(pulseOptions.pulseConsentTextVersion ? { consentTextVersion: pulseOptions.pulseConsentTextVersion } : {}) },
+    pulseStaffAlerts: {
+      ...(pulseOptions.staffAlertReceiverId ? { receiverId: pulseOptions.staffAlertReceiverId } : {}),
+      ...(pulseOptions.staffAlertProtocolRef ? { protocolRef: pulseOptions.staffAlertProtocolRef } : {}),
+      ...(pulseOptions.staffAlertRetentionDays ? { retentionDays: pulseOptions.staffAlertRetentionDays } : {}),
+    },
+  };
+  assertGoLiveGuard("pulse.capture", pulseFlags["pulse.capture"], pulseGoLiveContext);
+  assertGoLiveGuard("pulse.staff_alerts", pulseFlags["pulse.staff_alerts"], pulseGoLiveContext);
+
+  registerPulseRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
+    consentStore: sharedConsentStore,
+    pulseResponseStore: pulseOptions.pulseResponseStore ?? createInMemoryPulseResponseStore(),
+    staffAlertStore: pulseOptions.staffAlertStore ?? createInMemoryStaffAlertStore(),
+    pulsePromptDeliveryStore: pulseOptions.pulsePromptDeliveryStore ?? createInMemoryPulsePromptDeliveryStore(),
+    subscriptionStore: sharedPushSubscriptionStore,
+    webPush: pulseOptions.webPush ?? createWebPushStub(),
+    negativePulseRule: pulseOptions.negativePulseRule ?? DEFAULT_NEGATIVE_PULSE_RULE,
+    flags: pulseFlags,
   });
 
   return app;
@@ -558,6 +639,27 @@ export interface StartWorkerOptions {
     pushConsentTextVersion?: string;
     now?: () => Date;
   };
+  /**
+   * D4a staff-alert dispatch job wiring (task 11.5). Same opt-in convention
+   * as `precheckin`/`wifiCheckout`/`notifications` above: omitted entirely,
+   * `startWorker` registers no dispatch job; `main-worker.ts` always passes
+   * it so the real worker process always runs the go-live guard and
+   * registers the job.
+   */
+  pulse?: {
+    staffAlertStore?: StaffAlertStore;
+    staffAlertPort?: Pick<StaffAlertPort, "send">;
+    /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
+    flags?: Record<FlagKey, boolean>;
+    /** The running environment, passed to the go-live guard. Defaults to `"development"`. */
+    nodeEnv?: NodeEnvName;
+    /** `ADAPTER_STAFF_ALERT` (env.ts); defaults to `"stub"`. */
+    adapterStaffAlert?: string;
+    staffAlertReceiverId?: string;
+    staffAlertProtocolRef?: string;
+    staffAlertRetentionDays?: number;
+    now?: () => Date;
+  };
 }
 
 const INERT_GO_LIVE_ADAPTERS: GoLiveContext["adapters"] = {
@@ -624,7 +726,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
         kmsKeyConfigured: p.kmsKeyConfigured ?? false,
       },
       push: { vapidConfigured: false, alertSourcePolicyComplete: false },
-      pulseStaffAlerts: {},
+    pulseCapture: {},
+    pulseStaffAlerts: {},
     });
 
     const jobDeps = {
@@ -696,7 +799,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       },
       precheckin: { kmsKeyConfigured: false },
       push: { vapidConfigured: false, alertSourcePolicyComplete: false },
-      pulseStaffAlerts: {},
+    pulseCapture: {},
+    pulseStaffAlerts: {},
     });
 
     await registerWifiOrderJobs(options.queueClient, {
@@ -746,7 +850,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
         alertSourcePolicyComplete: isAlertSourcePolicyComplete(alertSourcePolicy),
         ...(n.pushConsentTextVersion ? { consentTextVersion: n.pushConsentTextVersion } : {}),
       },
-      pulseStaffAlerts: {},
+    pulseCapture: {},
+    pulseStaffAlerts: {},
     });
 
     const journeyEventSource =
@@ -766,6 +871,53 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       ...(n.now ? { now: n.now } : {}),
     });
     jobsRegistered.push(JOURNEY_POLL_QUEUE);
+  }
+
+  if (options.pulse) {
+    const p = options.pulse;
+    const flags = p.flags ?? FLAG_DEFAULTS;
+    const nodeEnv = p.nodeEnv ?? "development";
+    const adapterStaffAlert = p.adapterStaffAlert ?? "stub";
+
+    // Same defense-in-depth check as precheckin's `handoffPort`/wifiCheckout's/
+    // notifications' adapter guards above: without it, declaring a non-stub
+    // ADAPTER_STAFF_ALERT without also wiring a real `staffAlertPort` would
+    // let the go-live guard pass while `registerStaffAlertDispatchJob` below
+    // silently falls back to `createStaffAlertStub()`, so no D4a alert would
+    // ever actually reach the declared adapter.
+    if (adapterStaffAlert !== "stub" && !p.staffAlertPort) {
+      throw new Error(
+        `ADAPTER_STAFF_ALERT="${adapterStaffAlert}" has no real adapter wired in; ` +
+          'startWorker\'s pulse.staffAlertPort must be provided, or ADAPTER_STAFF_ALERT must stay "stub".',
+      );
+    }
+
+    // Design Decision 13's go-live guard, wired to this module (task 11.5):
+    // the worker refuses to register the real D4a dispatch job against
+    // production/staging unless a non-stub StaffAlertPort and the receiver/
+    // protocol/retention config are all declared — the same full
+    // `checkPulseStaffAlerts` check `buildApp()` runs for the api process,
+    // defense-in-depth against the worker process being booted with a
+    // production flag directly.
+    assertGoLiveGuard("pulse.staff_alerts", flags["pulse.staff_alerts"], {
+      nodeEnv,
+      adapters: { ...INERT_GO_LIVE_ADAPTERS, staffAlert: adapterStaffAlert },
+      precheckin: { kmsKeyConfigured: false },
+      push: { vapidConfigured: false, alertSourcePolicyComplete: false },
+      pulseCapture: {},
+      pulseStaffAlerts: {
+        ...(p.staffAlertReceiverId ? { receiverId: p.staffAlertReceiverId } : {}),
+        ...(p.staffAlertProtocolRef ? { protocolRef: p.staffAlertProtocolRef } : {}),
+        ...(p.staffAlertRetentionDays ? { retentionDays: p.staffAlertRetentionDays } : {}),
+      },
+    });
+
+    await registerStaffAlertDispatchJob(options.queueClient, {
+      staffAlertStore: p.staffAlertStore ?? createInMemoryStaffAlertStore(),
+      staffAlertPort: p.staffAlertPort ?? createStaffAlertStub(),
+      ...(p.now ? { now: p.now } : {}),
+    });
+    jobsRegistered.push(STAFF_ALERT_DISPATCH_QUEUE);
   }
 
   return { jobsRegistered };

@@ -50,11 +50,21 @@ export interface PushSubscriptionStore {
   deleteByLinkId(linkId: string): Promise<void>;
 }
 
+/**
+ * `send`'s `type` field accepts either a journey `AlertType` (routed through
+ * `dispatchJourneyEvents`'s `AlertSourcePolicy`/dedupe pipeline) or
+ * `"PULSE_PROMPT"` (task 11.6: `experience-pulse`'s own independent push
+ * path, deliberately never routed through that pipeline or
+ * `NotificationStore`'s `dedupe_key`). Additive, backward-compatible widening
+ * of the original `AlertType`-only signature.
+ */
+export type PushPayloadType = AlertType | "PULSE_PROMPT";
+
 /** `WebPushPort` per `sdd/travel-hub-mvp/design-interfaces`. */
 export interface WebPushPort {
   send(
     subscription: PushSubscriptionRecord,
-    payload: { type: AlertType; titleKey: string; bodyKey: string; url: string; locale: Locale },
+    payload: { type: PushPayloadType; titleKey: string; bodyKey: string; url: string; locale: Locale },
   ): Promise<"sent" | "gone" | "failed">;
 }
 

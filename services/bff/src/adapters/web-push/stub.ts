@@ -1,11 +1,11 @@
-import type { WebPushPort, PushSubscriptionRecord } from "../../modules/notifications/ports.js";
-import type { AlertType, Locale } from "contracts";
+import type { PushPayloadType, WebPushPort, PushSubscriptionRecord } from "../../modules/notifications/ports.js";
+import type { Locale } from "contracts";
 
 export interface WebPushStub extends WebPushPort {
   /** Every `send` call this stub instance has accepted, in call order. */
   readonly sentPayloads: {
     endpoint: string;
-    payload: { type: AlertType; titleKey: string; bodyKey: string; url: string; locale: Locale };
+    payload: { type: PushPayloadType; titleKey: string; bodyKey: string; url: string; locale: Locale };
   }[];
   /** Test/dev-only: makes the next `send` call return `"failed"` once, then returns to normal. */
   simulateFailureOnce(): void;

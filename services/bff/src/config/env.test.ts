@@ -131,4 +131,31 @@ describe("loadEnv", () => {
     expect(env.PUSH_VAPID_PRIVATE_KEY).toBe("a-real-private-key");
     expect(env.PUSH_CONSENT_TEXT_VERSION).toBe("v1");
   });
+
+  it("defaults ADAPTER_STAFF_ALERT to 'stub' and leaves the other task 11.4-11.5 go-live fields undefined", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.ADAPTER_STAFF_ALERT).toBe("stub");
+    expect(env.PULSE_CONSENT_TEXT_VERSION).toBeUndefined();
+    expect(env.STAFF_ALERT_RECEIVER_ID).toBeUndefined();
+    expect(env.STAFF_ALERT_PROTOCOL_REF).toBeUndefined();
+    expect(env.STAFF_ALERT_RETENTION_DAYS).toBeUndefined();
+  });
+
+  it("passes through explicitly configured task 11.4-11.5 go-live fields, coercing numeric ones", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      ADAPTER_STAFF_ALERT: "internal-queue",
+      PULSE_CONSENT_TEXT_VERSION: "v1",
+      STAFF_ALERT_RECEIVER_ID: "ops-team",
+      STAFF_ALERT_PROTOCOL_REF: "proto-1",
+      STAFF_ALERT_RETENTION_DAYS: "90",
+    });
+
+    expect(env.ADAPTER_STAFF_ALERT).toBe("internal-queue");
+    expect(env.PULSE_CONSENT_TEXT_VERSION).toBe("v1");
+    expect(env.STAFF_ALERT_RECEIVER_ID).toBe("ops-team");
+    expect(env.STAFF_ALERT_PROTOCOL_REF).toBe("proto-1");
+    expect(env.STAFF_ALERT_RETENTION_DAYS).toBe(90);
+  });
 });

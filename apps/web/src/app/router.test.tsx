@@ -315,6 +315,27 @@ describe("help, menu, and destination routes (tasks 9.2-9.4)", () => {
     expect(await screen.findByText(/not available/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /notification/i })).not.toBeInTheDocument();
   });
+
+  it("renders a pulse-unavailable message at /trip/pulse when pulse.capture is off, and never routes through the journey-events/push pipeline (task 11.6)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture({ features: { pulseCapture: false } as TripDTO["features"] }),
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/pulse"] }) });
+
+    render(
+      <AppProviders
+        router={router}
+        i18n={createI18n({ initialLocale: "en" })}
+        queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      />,
+    );
+
+    expect(await screen.findByText(/survey is not available/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("pulse-face-1")).not.toBeInTheDocument();
+  });
 });
 
 /**

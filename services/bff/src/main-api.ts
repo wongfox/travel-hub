@@ -40,6 +40,17 @@ async function main(): Promise<void> {
       alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
       ...(env.PUSH_CONSENT_TEXT_VERSION ? { pushConsentTextVersion: env.PUSH_CONSENT_TEXT_VERSION } : {}),
     },
+    pulse: {
+      // Tasks 11.4-11.5: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this api process's real boot-time configuration, not a stub.
+      nodeEnv: env.NODE_ENV,
+      adapterStaffAlert: env.ADAPTER_STAFF_ALERT,
+      ...(env.PULSE_CONSENT_TEXT_VERSION ? { pulseConsentTextVersion: env.PULSE_CONSENT_TEXT_VERSION } : {}),
+      ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),
+      ...(env.STAFF_ALERT_PROTOCOL_REF ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF } : {}),
+      ...(env.STAFF_ALERT_RETENTION_DAYS ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS } : {}),
+    },
   });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });

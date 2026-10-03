@@ -29,6 +29,9 @@ import { createInMemoryNotificationStore } from "./modules/notifications/notific
 import { createWebPushStub } from "./adapters/web-push/stub.js";
 import { JOURNEY_POLL_QUEUE } from "./modules/notifications/journey-poll-job.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
+import { STAFF_ALERT_DISPATCH_QUEUE } from "./modules/pulse/dispatch-staff-alerts-job.js";
+import { createInMemoryStaffAlertStore } from "./modules/pulse/staff-alert-store.js";
+import { createStaffAlertStub } from "./adapters/staff-alert/stub.js";
 
 describe("buildApp", () => {
   it("responds 200 with an ok status on GET /healthz", async () => {
@@ -1105,5 +1108,190 @@ describe("startWorker — journey-poll job wiring (task 11.2)", () => {
     await queueClient.runPendingOnce(JOURNEY_POLL_QUEUE);
 
     expect(webPush.sentPayloads.length).toBeGreaterThan(0);
+  });
+});
+
+describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
+  it("captures a pulse response end to end, and dispatches exactly one staff_alert for a negative response when both flags are on", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const sessionStore = createInMemorySessionStore();
+    const consentStore = createInMemoryConsentStore();
+    const staffAlertStore = createInMemoryStaffAlertStore();
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore },
+      privacy: { consentStore },
+      pulse: {
+        staffAlertStore,
+        flags: { ...FLAG_DEFAULTS, "pulse.capture": true, "pulse.staff_alerts": true } as never,
+      },
+    });
+
+    const link = await accessLinkStore.create({
+      tokenHash: "hash-pulse-1",
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const { generateAccessToken, hashAccessToken } = await import("./modules/trip-access/token.js");
+    const sessionId = generateAccessToken();
+    await sessionStore.create(hashAccessToken(sessionId), {
+      linkId: link.id,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      locale: "es",
+    });
+    await consentStore.record({
+      linkId: link.id,
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "pulse",
+      textVersion: "v1",
+      granted: true,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/pulse",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      payload: { legId: "L1", score: 1 },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const pending = await staffAlertStore.listPending();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.payload.reservationRef).toBe("RES-1001");
+  });
+
+  it("throws GoLiveGuardError at build time when pulse.capture is true in production without PULSE_CONSENT_TEXT_VERSION", () => {
+    expect(() =>
+      buildApp({
+        pulse: { flags: { ...FLAG_DEFAULTS, "pulse.capture": true } as never, nodeEnv: "production" },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("allows pulse.capture true in production once PULSE_CONSENT_TEXT_VERSION is declared", () => {
+    expect(() =>
+      buildApp({
+        pulse: {
+          flags: { ...FLAG_DEFAULTS, "pulse.capture": true } as never,
+          nodeEnv: "production",
+          pulseConsentTextVersion: "v1",
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("throws GoLiveGuardError at build time when pulse.staff_alerts is true in production without its prerequisites", () => {
+    expect(() =>
+      buildApp({
+        pulse: {
+          flags: { ...FLAG_DEFAULTS, "pulse.capture": true, "pulse.staff_alerts": true } as never,
+          nodeEnv: "production",
+          pulseConsentTextVersion: "v1",
+        },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("allows pulse.staff_alerts true in production once every prerequisite is declared", () => {
+    expect(() =>
+      buildApp({
+        pulse: {
+          flags: { ...FLAG_DEFAULTS, "pulse.capture": true, "pulse.staff_alerts": true } as never,
+          nodeEnv: "production",
+          pulseConsentTextVersion: "v1",
+          adapterStaffAlert: "internal-queue",
+          staffAlertReceiverId: "ops-team",
+          staffAlertProtocolRef: "proto-1",
+          staffAlertRetentionDays: 90,
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it("always allows pulse.capture/pulse.staff_alerts against the stub outside production/staging", () => {
+    expect(() =>
+      buildApp({
+        pulse: { flags: { ...FLAG_DEFAULTS, "pulse.capture": true, "pulse.staff_alerts": true } as never },
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("startWorker — pulse staff-alert dispatch job wiring (task 11.5)", () => {
+  it("registers the staff-alert dispatch job when pulse options are given", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({
+      queueClient,
+      pulse: { flags: { ...FLAG_DEFAULTS, "pulse.staff_alerts": false } as never },
+    });
+
+    expect(result.jobsRegistered).toContain(STAFF_ALERT_DISPATCH_QUEUE);
+  });
+
+  it("does not register the staff-alert dispatch job when no pulse options are given (backward compatible)", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    const result = await startWorker({ queueClient });
+
+    expect(result.jobsRegistered).toEqual([SAMPLE_JOB_QUEUE]);
+  });
+
+  it("throws GoLiveGuardError when pulse.staff_alerts is true in production without prerequisites", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        pulse: { nodeEnv: "production", flags: { ...FLAG_DEFAULTS, "pulse.staff_alerts": true } as never },
+      }),
+    ).rejects.toThrow(GoLiveGuardError);
+  });
+
+  it("throws when ADAPTER_STAFF_ALERT names a non-stub adapter but no real staffAlertPort is wired in", async () => {
+    const queueClient = createInMemoryQueueClient();
+
+    await expect(
+      startWorker({
+        queueClient,
+        pulse: {
+          flags: { ...FLAG_DEFAULTS, "pulse.staff_alerts": false } as never,
+          adapterStaffAlert: "a-real-channel",
+        },
+      }),
+    ).rejects.toThrow(/ADAPTER_STAFF_ALERT/);
+  });
+
+  it("actually dispatches a pending staff_alert end to end when its queue is triggered", async () => {
+    const queueClient = createInMemoryQueueClient();
+    const staffAlertStore = createInMemoryStaffAlertStore();
+    await staffAlertStore.create({
+      pulseResponseId: "pr-1",
+      payload: {
+        alertId: "alert-1",
+        reservationRef: "RES-1001",
+        passengerOrdinal: 1,
+        leg: { origin: "Ollantaytambo", destination: "Machu Picchu Pueblo", departureLocal: "2026-11-02T08:10:00-05:00" },
+        returnLegDepartureLocal: null,
+        serviceTier: "PRIME",
+        score: 1,
+        scaleMax: 5,
+        answeredAt: "2026-11-02T08:15:00.000Z",
+        passengerLocale: "es",
+      },
+    });
+    const staffAlertPort = createStaffAlertStub();
+
+    await startWorker({
+      queueClient,
+      pulse: { staffAlertStore, staffAlertPort, flags: { ...FLAG_DEFAULTS, "pulse.staff_alerts": false } as never },
+    });
+    await queueClient.sendIdempotent(STAFF_ALERT_DISPATCH_QUEUE, "scan", {});
+    await queueClient.runPendingOnce(STAFF_ALERT_DISPATCH_QUEUE);
+
+    expect(staffAlertPort.deliveries).toHaveLength(1);
+    expect((await staffAlertStore.findByPulseResponseId("pr-1"))?.status).toBe("sent");
   });
 });
