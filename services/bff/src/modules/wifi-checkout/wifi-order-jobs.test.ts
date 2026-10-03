@@ -62,7 +62,7 @@ describe("runSirAndReceiptJob e-receipt line", () => {
       legRef: "LEG-1",
       buyerEmail: "ana@example.com",
     });
-    await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    await orderStore.transition(created.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
     const issued: { lines: { description: string }[] }[] = [];
     const eReceipt = {
       async issue(input: { lines: { description: string }[] }) {
