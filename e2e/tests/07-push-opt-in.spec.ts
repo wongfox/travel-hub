@@ -1,5 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
+import { test, expect } from "../fixtures/stack.js";
+import { issueLink } from "../fixtures/internal-api.js";
+import { grantConsent } from "../fixtures/passenger-api.js";
 
 /**
  * Design scenario 7/7: "push opt-in (Chromium)".
@@ -16,20 +17,28 @@ import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
  * delivery-shaped assertion) — it does NOT depend on Gap C's cross-process
  * store sharing, only on Gaps A and B.
  *
- * BLOCKED today by:
- * - Gap A: no way to obtain the link token.
- * - Gap B: `push.enabled` defaults `false` with no override.
+ * Runs against the in-process BFF with `push.enabled` on via the composition
+ * root's `flags` option; the link token comes from the stub delivery port.
  */
-test("an eligible passenger can opt in to push notifications", async ({ page, context, request }) => {
-  test.fixme(
-    true,
-    "Gaps A+B (e2e/KNOWN-GAPS.md): no token retrieval, push.enabled flag off with no override",
-  );
-
+test("an eligible passenger can opt in to push notifications", async ({ page, context, stack }) => {
   await context.grantPermissions(["notifications"]);
-  await waitForApiHealthy(request);
 
-  const { token } = await issueLink(request, {
+  // A headless browser in a network-less container has no push service to
+  // subscribe against. Replace only `PushManager.subscribe` with a fake that
+  // returns a subscription-shaped object; everything else (feature detection,
+  // service worker readiness, the BFF subscription route) is real.
+  await page.addInitScript(() => {
+    PushManager.prototype.subscribe = async () =>
+      ({
+        endpoint: "https://push.example.test/e2e-endpoint",
+        toJSON: () => ({
+          endpoint: "https://push.example.test/e2e-endpoint",
+          keys: { p256dh: "e2e-p256dh-key", auth: "e2e-auth-secret" },
+        }),
+      }) as unknown as PushSubscription;
+  });
+
+  const { token } = await issueLink(stack, {
     reservationRef: "RES-1001",
     contact: { kind: "email", address: "passenger@example.com" },
     locale: "es",
@@ -38,10 +47,15 @@ test("an eligible passenger can opt in to push notifications", async ({ page, co
   await page.goto(`/t#${token}`);
   await expect(page).toHaveURL(/\/trip$/);
 
+  // Gap E (e2e/KNOWN-GAPS.md): no web UI records push consent; the BFF
+  // requires it, so it is recorded through the public consent route.
+  await grantConsent(page, "push");
+
   await page.goto("/trip/push");
   await expect(page.getByRole("heading", { name: /notification/i })).toBeVisible();
 
   await page.getByRole("button", { name: /enable notifications|activar notificaciones/i }).click();
 
   await expect(page.getByText(/notifications are enabled|notificaciones.*activ/i)).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
