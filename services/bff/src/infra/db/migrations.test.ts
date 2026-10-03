@@ -206,3 +206,47 @@ describe("staff_alert migration", () => {
     expect(all).toMatch(/CONSTRAINT "staff_alert_payload_minimal_keys" CHECK/);
   });
 });
+
+describe("precheckin_submission migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("enforces one submission per passenger as a UNIQUE constraint (the already_submitted guarantee lives in Postgres)", () => {
+    expect(all).toMatch(/CREATE TABLE "precheckin_submission"/);
+    expect(all).toMatch(
+      /CONSTRAINT "precheckin_submission_passenger_unique" UNIQUE\("reservation_ref","passenger_ref"\)/,
+    );
+  });
+
+  it("restricts status and doc_type to closed enums", () => {
+    expect(all).toMatch(
+      /CREATE TYPE "public"\."precheckin_submission_status" AS ENUM\('received', 'handed_off', 'purged'\)/,
+    );
+    expect(all).toMatch(/CREATE TYPE "public"\."precheckin_doc_type" AS ENUM\('DNI', 'PASSPORT', 'OTHER'\)/);
+  });
+
+  it("indexes the purge and handoff scans with partial indexes", () => {
+    expect(all).toMatch(
+      /CREATE INDEX "precheckin_submission_purge_after_idx" ON "precheckin_submission" USING btree \("purge_after"\) WHERE "precheckin_submission"\."status" <> 'purged'/,
+    );
+    expect(all).toMatch(
+      /CREATE INDEX "precheckin_submission_pending_handoff_idx" ON "precheckin_submission" USING btree \("seq"\) WHERE "precheckin_submission"\."status" = 'received'/,
+    );
+  });
+
+  it("stores no document content: only metadata and encryption-envelope references (no image/content/plaintext column)", () => {
+    const table = all.slice(all.indexOf('CREATE TABLE "precheckin_submission"'));
+    const body = table.slice(0, table.indexOf(");"));
+    expect(body).not.toMatch(/"(image|photo|content|plaintext|bytes|data)"/i);
+    expect(body).toMatch(/"photo_object_key" text NOT NULL/);
+    expect(body).toMatch(/"photo_wrapped_data_key" "?bytea"? NOT NULL/);
+  });
+
+  it("makes crypto-shredding a database invariant: a purged row must have zeroed key material", () => {
+    expect(all).toMatch(/CONSTRAINT "precheckin_submission_purged_shredded" CHECK/);
+    expect(all).toMatch(/CONSTRAINT "precheckin_submission_id_back_all_or_none" CHECK/);
+  });
+});

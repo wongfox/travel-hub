@@ -108,6 +108,18 @@ describe("submitPrecheckin", () => {
     await expect(submitPrecheckin(baseInput(), deps)).rejects.toBeInstanceOf(AlreadySubmittedError);
   });
 
+  it("deletes the ciphertext it just stored when it loses a concurrent race for the same passenger, leaving only the winner's objects", async () => {
+    const deps = buildDeps();
+
+    const results = await Promise.allSettled([submitPrecheckin(baseInput(), deps), submitPrecheckin(baseInput(), deps)]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const loser = results.find((r) => r.status === "rejected");
+    expect(loser && "reason" in loser ? loser.reason : undefined).toBeInstanceOf(AlreadySubmittedError);
+    // photo + id_front of the winner only: the loser's two ciphertexts must not be orphaned.
+    expect(deps.documentStore.contents.size).toBe(2);
+  });
+
   it("does not persist a submission record when document storage fails, so retry is allowed without re-consenting", async () => {
     const deps = buildDeps();
     deps.documentStore.simulatePutFailureOnce();

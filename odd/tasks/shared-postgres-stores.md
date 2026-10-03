@@ -56,7 +56,7 @@ Branch 33's inventory (`odd/tasks/schedule-remaining-scans.md`, commit 941e122 o
 
 ### S3 sub-tasks (route: delegated direct, single writer; Strict TDD, same runner/TEST_DATABASE_URL as S1/S2; TDD mode source: project config "Strict TDD Mode: enabled")
 - [x] S3-T1 contracts/conventions recorded (this section)
-- [ ] S3-T2 `precheckin_submission` store (migration `0009` + adapter + conformance)
+- [x] S3-T2 `precheckin_submission` store (migration `0009_precheckin_submission` + adapter + conformance): RED = conformance run on in-memory failed 6 cases (no duplicate rejection, no clock, loosening purgeAfter, handoff of purged) + lost-race ciphertext cleanup test failed (4 objects instead of 2) + 5 migration tests + adapter import failed first; GREEN = full bff suite with TEST_DATABASE_URL 994 passed (131 files); conformance 18 cases on in-memory and Postgres (8 concurrent creates: exactly one wins; boundary `purgeAfter == asOf` and 1 ms before; never-loosen; crypto-shredding; purged stays `already_submitted`) plus Postgres-only raw-SQL tests of both CHECKs. Mutations (each restored): removing `onConflictDoNothing` failed 3 cases (duplicate, concurrency, purged-still-submitted); `lte`->`lt` failed the boundary case; `LEAST(...)`->candidate failed never-loosen; dropping the `status <> purged` guard in `markHandedOff` failed the purged-handoff case. tsc + eslint clean. `submitPrecheckin` now deletes its just-stored ciphertext when `create` loses the race (`AlreadySubmittedError`).
 - [ ] S3-T3 wiring api + worker + production guard `assertSharedPrecheckinStores`
 - [ ] S3-T4 real compose check + KNOWN-GAPS
 
