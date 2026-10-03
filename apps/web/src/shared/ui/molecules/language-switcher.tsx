@@ -1,0 +1,36 @@
+import { useTranslation } from "react-i18next";
+import type { Locale } from "contracts";
+import { persistLocale } from "../../../i18n/index.js";
+
+const SUPPORTED_LOCALES: Locale[] = ["es", "en", "pt"];
+
+/**
+ * `localization` "Language selection" (atomic-design molecule, rendered in
+ * `AppShell` so it is present on every screen per "Selected language
+ * persists across screens"): lets the passenger switch the active UI
+ * language and persists the choice (`persistLocale`) so it survives a
+ * reload, per spec's "MUST persist that selection for the session/link".
+ */
+export function LanguageSwitcher() {
+  const { t, i18n } = useTranslation();
+
+  function selectLocale(locale: Locale): void {
+    void i18n.changeLanguage(locale);
+    persistLocale(locale);
+  }
+
+  return (
+    <div role="group" aria-label={t("language.selectorLabel")}>
+      {SUPPORTED_LOCALES.map((locale) => (
+        <button
+          key={locale}
+          type="button"
+          aria-pressed={i18n.language === locale}
+          onClick={() => selectLocale(locale)}
+        >
+          {t(`language.${locale}`)}
+        </button>
+      ))}
+    </div>
+  );
+}

@@ -9,3 +9,4 @@ export * from "./pulse.js";
 export * from "./consent.js";
 export * from "./content.js";
 export * from "./sensitive-routes.js";
+export * from "./resolve-content-locale.js";

@@ -55,7 +55,7 @@ export function createI18n(
   return instance;
 }
 
-const LOCALE_STORAGE_KEY = "th-locale";
+export const LOCALE_STORAGE_KEY = "th-locale";
 
 /** The browser-backed instance used by `main.tsx`. */
 export function createBrowserI18n(): I18nInstance {
@@ -64,4 +64,17 @@ export function createBrowserI18n(): I18nInstance {
       typeof window !== "undefined" ? window.localStorage.getItem(LOCALE_STORAGE_KEY) : null,
     navigatorLanguages: typeof navigator !== "undefined" ? navigator.languages : [],
   });
+}
+
+/**
+ * The write-half of the explicit-choice resolution above (task 7.3, spec
+ * `localization` "Language selection": "MUST persist that selection for the
+ * session/link"). `LanguageSwitcher` calls this alongside `i18n.changeLanguage`
+ * so the choice survives a reload/new tab, read back by `createBrowserI18n`
+ * on the next startup.
+ */
+export function persistLocale(locale: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  }
 }

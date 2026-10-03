@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import type { TripDTO } from "contracts";
 import { createAppRouter } from "./router.js";
@@ -147,5 +148,48 @@ describe("trip-home, trip-itinerary, and travel-documents routes (task 6.5)", ()
     render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
 
     expect(await screen.findByTestId("ticket-item")).toBeInTheDocument();
+  });
+});
+
+/**
+ * task 7.3's own acceptance criterion, verbatim: "switching to Portuguese
+ * renders every Phase 4–6 screen fully in Portuguese" — driven through the
+ * real `LanguageSwitcher` (rendered by `AppShell` on every route), not by
+ * constructing a Portuguese `i18n` instance directly.
+ */
+describe("switching language via the shell-wide LanguageSwitcher (task 7.3)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("re-renders trip home fully in Portuguese after selecting it from any screen", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", stubFetchByUrl({ "/api/trip": buildTripFixture() }));
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByTestId("trip-status")).toHaveTextContent("Upcoming trip");
+
+    await user.click(screen.getByRole("button", { name: "Portuguese" }));
+
+    expect(await screen.findByTestId("trip-status")).toHaveTextContent("Viagem próxima");
+    expect(screen.getByRole("link", { name: "Itinerário" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Documentos" })).toBeInTheDocument();
+  });
+
+  it("re-renders the not-found boundary in Portuguese after selecting it", async () => {
+    const user = userEvent.setup();
+    const router = createAppRouter({
+      history: createMemoryHistory({ initialEntries: ["/this-route-does-not-exist"] }),
+    });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Page not found");
+
+    await user.click(screen.getByRole("button", { name: "Portuguese" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Página não encontrada");
   });
 });
