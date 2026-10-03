@@ -47,4 +47,12 @@ describe("resolveMilestoneStatus", () => {
 
     expect(resolveMilestoneStatus(leg, "some-other-leg", NOW)).toBe("pending");
   });
+
+  it("handles a departure carrying a numeric UTC offset, as the seeded SIR data does", () => {
+    const past = buildLeg({ status: "DELAYED", departureLocal: "2026-11-10T08:00:00-05:00" });
+    const future = buildLeg({ status: "SCHEDULED", departureLocal: "2026-11-12T08:00:00-05:00" });
+
+    expect(resolveMilestoneStatus(past, null, NOW)).toBe("in_progress");
+    expect(resolveMilestoneStatus(future, null, NOW)).toBe("pending");
+  });
 });

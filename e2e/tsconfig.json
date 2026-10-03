@@ -5,6 +5,6 @@
     "rootDir": ".",
     "composite": false
   },
-  "include": ["tests", "fixtures", "playwright.config.ts"],
+  "include": ["tests", "fixtures", "harness", "playwright.config.ts"],
   "exclude": ["dist", "node_modules", "test-results", "playwright-report"]
 }

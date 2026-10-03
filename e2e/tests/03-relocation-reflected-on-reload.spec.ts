@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
+import { test, expect } from "../fixtures/stack.js";
+import { issueLink } from "../fixtures/internal-api.js";
 
 /**
  * Design scenario 3/7: "relocation reflected on reload".
@@ -12,17 +12,13 @@ import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
  * seat must show the updated assignment on first load AND survive a reload
  * (proving it's read fresh each time, not stuck on first-render state).
  *
- * BLOCKED today by Gap A (`e2e/KNOWN-GAPS.md`).
+ * Gap A (token retrieval) is resolved by the in-process harness (`fixtures/internal-api.ts`).
  */
 test("a relocated reservation shows the updated seat/alert on load and after reload", async ({
   page,
-  request,
+  stack,
 }) => {
-  test.fixme(true, "Gap A (e2e/KNOWN-GAPS.md): POST /internal/links never returns a retrievable token/linkUrl");
-
-  await waitForApiHealthy(request);
-
-  const { token } = await issueLink(request, {
+  const { token } = await issueLink(stack, {
     reservationRef: "RES-2002",
     contact: { kind: "email", address: "passenger@example.com" },
     locale: "es",
@@ -42,5 +38,5 @@ test("a relocated reservation shows the updated seat/alert on load and after rel
 
   // The itinerary/boarding pass reflects the relocated seat too.
   await page.goto("/trip/itinerary");
-  await expect(page.getByRole("heading")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2 })).toBeVisible();
 });

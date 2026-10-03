@@ -2,7 +2,7 @@
   "name": "e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Playwright end-to-end suite (task 14.1) exercising the design's seven named scenarios against the full docker-compose stack (apps/web + services/bff + Postgres, entirely against stub adapters).",
+  "description": "Playwright end-to-end suite (task 14.1) exercising the design's named scenarios against an in-process BFF (stub adapters) serving the built web bundle.",
   "type": "module",
   "scripts": {
     "test:e2e": "playwright test",
@@ -11,6 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "bff": "workspace:*",
+    "contracts": "workspace:*",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22",
     "typescript": "^5.6.3"

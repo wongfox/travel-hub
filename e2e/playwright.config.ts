@@ -3,25 +3,18 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Task 14.1 — Playwright E2E suite config.
  *
- * This suite targets the REAL `docker-compose` stack (root `docker-compose.yml`,
- * task 13.1): `web` on :8080 (nginx, proxies `/api/*`/`/webhooks/*` to
- * `bff-api`), `bff-api` on :3000, `bff-worker`, and `postgres`. It deliberately
- * does NOT declare a Playwright `webServer` block — this suite assumes the
- * stack is already running (`docker-compose up -d`), matching how a real
- * deployment's smoke suite works, not a local-dev convenience wrapper.
- *
- * Honesty note (see `sdd/travel-hub-mvp/apply-progress`, WU24): this config,
- * every fixture, and every spec file below were written and statically
- * verified (`npx playwright test --list`, `tsc --noEmit`, `eslint`) in a
- * sandbox with NO reachable Docker engine (`docker compose build`/`up` fail
- * with "failed to connect to the docker API"). None of these scenarios have
- * actually been RUN against a live stack. The next owner with a working
- * Docker engine must run `docker-compose up -d --build` then
- * `pnpm --filter e2e test:e2e` and record real pass/fail results before this
- * task can be considered verified end-to-end.
+ * The suite starts its OWN BFF in-process (`fixtures/stack.ts` ->
+ * `harness/in-process-stack.ts`): api + worker in one Node process with stub
+ * adapters injected, feature flags enabled through the composition root's
+ * options, and a tiny static server that serves the BUILT web bundle
+ * (`apps/web/dist`) and proxies `/api`, `/webhooks`, `/healthz` to that BFF
+ * the way `apps/web/docker/nginx.conf` does. The `baseURL` fixture points at
+ * that server, so no external stack, no `webServer` block and no exposed
+ * link-token route is needed. Prerequisites: `pnpm -w exec turbo run build
+ * --filter=bff --filter=contracts --filter=web`. Browsers cannot launch in
+ * every dev environment; `scripts/run-in-docker.sh` packages and runs the
+ * suite inside the Playwright image (see `README.md`).
  */
-const WEB_BASE_URL = process.env["E2E_WEB_BASE_URL"] ?? "http://localhost:8080";
-
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: false,
@@ -31,7 +24,6 @@ export default defineConfig({
   reporter: [["list"]],
   timeout: 30_000,
   use: {
-    baseURL: WEB_BASE_URL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

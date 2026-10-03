@@ -1,6 +1,7 @@
 import { precacheAndRoute } from "workbox-precaching";
 import { registerDenylistRoutes } from "./register-denylist.js";
 import { registerDocumentCacheRoute } from "./register-document-cache.js";
+import { registerNavigationFallback } from "./register-navigation-fallback.js";
 import { checkRemoteKill } from "./kill-switch.js";
 
 /**
@@ -17,6 +18,8 @@ import { checkRemoteKill } from "./kill-switch.js";
  * name bump is needed here. `checkRemoteKill` runs on activation and
  * unregisters + clears every cache when `/sw-kill.json` reports the app
  * should be killed (design Migration/Rollout item 5).
+ * `registerNavigationFallback` serves the precached shell for client-side
+ * routes so a deep-link reload works offline (found by E2E scenario 2).
  * `registerDocumentCacheRoute` (task 7.1) caches purchased tickets into
  * `th-docs-v1` so `travel-documents` stays viewable offline after one
  * online load, ordered after the denylist so a future overlapping pattern
@@ -42,6 +45,7 @@ precacheAndRoute(self.__WB_MANIFEST);
 
 registerDenylistRoutes();
 registerDocumentCacheRoute();
+registerNavigationFallback();
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
