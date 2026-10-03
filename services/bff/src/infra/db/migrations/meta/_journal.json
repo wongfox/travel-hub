@@ -57,6 +57,13 @@
       "when": 1791040831687,
       "tag": "0007_pulse_response",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791040943015,
+      "tag": "0008_staff_alert",
+      "breakpoints": true
     }
   ]
 }

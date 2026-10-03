@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
+import type { StaffAlertPayload } from "contracts";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -280,5 +282,64 @@ export const pulseResponse = pgTable(
   (table) => [
     unique("pulse_response_passenger_leg_unique").on(table.reservationRef, table.passengerRef, table.legRef),
     index("pulse_response_purge_after_idx").on(table.purgeAfter),
+  ],
+);
+
+/** Mirrors `StaffAlertStatus` (modules/pulse/ports.ts): a closed set, so an enum like `notification_status`. */
+export const staffAlertStatus = pgEnum("staff_alert_status", ["pending", "sent", "failed", "dead"]);
+
+/** The only top-level keys `StaffAlertPayloadSchema` (contracts, `.strict()`) allows; mirrored by the `staff_alert_payload_minimal_keys` CHECK. */
+const STAFF_ALERT_PAYLOAD_KEYS = [
+  "alertId",
+  "reservationRef",
+  "passengerOrdinal",
+  "leg",
+  "returnLegDepartureLocal",
+  "serviceTier",
+  "score",
+  "scaleMax",
+  "answeredAt",
+  "passengerLocale",
+] as const;
+
+/**
+ * `staff_alert` (design Data Model, task 11.5): created by `bff-api`'s pulse
+ * submission, dispatched (`listPending`/`updateStatus`) and purged by
+ * `bff-worker`. `UNIQUE(pulse_response_id)` is the "exactly one staff alert per
+ * passenger/leg" guarantee (a pulse response is itself unique per
+ * passenger/leg): `create` relies on `ON CONFLICT DO NOTHING`, so concurrent
+ * creators across processes cannot both win. `pulse_response_id` is a uuid
+ * reference WITHOUT a foreign key: the purge job deletes responses and alerts
+ * in two independent scans (and audits each alert), which an FK/CASCADE would
+ * break. `payload` is the strict minimal-PII `StaffAlertPayload` (validated by
+ * the adapter; the CHECK additionally rejects any unexpected top-level key even
+ * via raw SQL). `purge_after` (= payload.answeredAt + retention) is indexed for
+ * the purge scan; the partial index serves the dispatch scan.
+ */
+export const staffAlert = pgTable(
+  "staff_alert",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    pulseResponseId: uuid("pulse_response_id").notNull(),
+    payload: jsonb("payload").$type<StaffAlertPayload>().notNull(),
+    status: staffAlertStatus("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    purgeAfter: timestamp("purge_after", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("staff_alert_pulse_response_id_unique").on(table.pulseResponseId),
+    index("staff_alert_purge_after_idx").on(table.purgeAfter),
+    index("staff_alert_pending_idx").on(table.seq).where(sql`${table.status} = 'pending'`),
+    check(
+      "staff_alert_payload_minimal_keys",
+      sql`(${table.payload} - ARRAY[${sql.join(
+        STAFF_ALERT_PAYLOAD_KEYS.map((key) => sql.raw(`'${key}'`)),
+        sql.raw(", "),
+      )}]::text[]) = '{}'::jsonb`,
+    ),
   ],
 );
