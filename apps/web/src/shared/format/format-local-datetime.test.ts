@@ -21,4 +21,12 @@ describe("formatLocalDateTime", () => {
 
     expect(formatted).toContain("2026");
   });
+
+  it("keeps the wall-clock value when the string carries a numeric UTC offset (the seeded SIR data does)", () => {
+    const naive = formatLocalDateTime("2026-11-03T07:00:00", "en-US");
+    const withOffset = formatLocalDateTime("2026-11-03T07:00:00-05:00", "en-US");
+
+    expect(withOffset).toBe(naive);
+    expect(withOffset).toMatch(/7:00\s*AM/);
+  });
 });
