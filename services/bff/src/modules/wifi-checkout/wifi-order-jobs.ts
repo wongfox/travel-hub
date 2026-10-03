@@ -138,10 +138,14 @@ async function attemptReceiptIssuance(
   if (order.receiptIssuedAt) return "already";
 
   try {
+    // The boleta is issued in Spanish (es-PE fiscal document); an unresolvable
+    // package must not block it, so the internal id is only the last resort.
+    const pkg = await deps.packageStore.findById(order.packageId);
+    const description = pkg?.names.es ?? Object.values(pkg?.names ?? {})[0] ?? pkg?.code ?? order.packageId;
     const { receiptRef } = await deps.eReceipt.issue({
       orderId: order.id,
       buyerEmail: order.buyerEmail,
-      lines: [{ description: order.packageId, amountMinor: order.amountMinor }],
+      lines: [{ description, amountMinor: order.amountMinor }],
       currency: order.currency,
       // Stable across retries, same convention as `handoff-job.ts`'s
       // `idempotencyKey: submission.id`: protects against emailing a second

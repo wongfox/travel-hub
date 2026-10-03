@@ -47,6 +47,41 @@ async function createPaidOrder(orderStore: ReturnType<typeof createInMemoryWifiO
   return orderStore.transition(created.id, "PAID", { gatewayPaymentRef: `payment-${idempotencyKey}` });
 }
 
+describe("runSirAndReceiptJob e-receipt line", () => {
+  it("describes the receipt line with the package's commercial name, not the internal package id", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const created = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "WIFI-60",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-receipt-desc",
+      legRef: "LEG-1",
+      buyerEmail: "ana@example.com",
+    });
+    await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    const issued: { lines: { description: string }[] }[] = [];
+    const eReceipt = {
+      async issue(input: { lines: { description: string }[] }) {
+        issued.push(input);
+        return { receiptRef: "R-1" };
+      },
+    };
+
+    await runSirAndReceiptJob({
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      entitlement: createWifiEntitlementStub(),
+      sirPos: createSirPosStub(),
+      eReceipt,
+    });
+
+    expect(issued).toHaveLength(1);
+    expect(issued[0]?.lines[0]?.description).toBe("WiFi 60 minutos");
+  });
+});
+
 describe("runWifiEntitlementActivationJob", () => {
   it("activates every PAID order, transitioning to ENTITLEMENT_ACTIVE", async () => {
     const orderStore = createInMemoryWifiOrderStore();
