@@ -1,5 +1,9 @@
 import {
+  bigint,
   boolean,
+  index,
+  integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -80,3 +84,65 @@ export const piiAccessAudit = pgTable("pii_access_audit", {
   subjectId: text("subject_id").notNull(),
   at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Mirrors `WifiOrderStatusSchema` (contracts/src/wifi.ts); a closed set, so an enum like `consent_purpose`. */
+export const wifiOrderStatus = pgEnum("wifi_order_status", [
+  "CREATED",
+  "PAYMENT_PENDING",
+  "PAID",
+  "ENTITLEMENT_ACTIVE",
+  "PAYMENT_FAILED",
+  "REFUND_PENDING",
+  "REFUNDED",
+]);
+
+/**
+ * `wifi_order` (design Data Model, task 10.1/10.3): shared by `bff-api` and
+ * `bff-worker`. `idempotency_key` is unique (create() is idempotent per key);
+ * `status` is indexed for the worker scans (`listByStatus`).
+ */
+export const wifiOrder = pgTable(
+  "wifi_order",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reservationRef: text("reservation_ref").notNull(),
+    passengerRef: text("passenger_ref").notNull(),
+    packageId: text("package_id").notNull(),
+    legRef: text("leg_ref").notNull().default(""),
+    buyerEmail: text("buyer_email").notNull().default(""),
+    amountMinor: integer("amount_minor").notNull(),
+    currency: text("currency").notNull(),
+    status: wifiOrderStatus("status").notNull().default("CREATED"),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    gatewaySessionRef: text("gateway_session_ref"),
+    gatewayPaymentRef: text("gateway_payment_ref"),
+    entitlementRef: text("entitlement_ref"),
+    entitlementExpiresAt: timestamp("entitlement_expires_at", { withTimezone: true }),
+    sirRegisteredAt: timestamp("sir_registered_at", { withTimezone: true }),
+    sirSaleRef: text("sir_sale_ref"),
+    sirRegistrationAttempts: integer("sir_registration_attempts").notNull().default(0),
+    sirReconciliationRequired: boolean("sir_reconciliation_required").notNull().default(false),
+    receiptIssuedAt: timestamp("receipt_issued_at", { withTimezone: true }),
+    receiptRef: text("receipt_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("wifi_order_status_idx").on(table.status)],
+);
+
+/** `wifi_order_event`: append-only audit trail of every `wifi_order` transition (`seq` gives a stable transition order). */
+export const wifiOrderEvent = pgTable(
+  "wifi_order_event",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => wifiOrder.id),
+    fromStatus: wifiOrderStatus("from_status").notNull(),
+    toStatus: wifiOrderStatus("to_status").notNull(),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("wifi_order_event_order_id_idx").on(table.orderId, table.seq)],
+);

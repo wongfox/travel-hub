@@ -53,3 +53,22 @@ describe("first migration (generated from schema.ts via drizzle-kit generate)", 
     );
   });
 });
+
+describe("wifi_order migration", () => {
+  const sql = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("creates wifi_order with a unique idempotency_key and a status index", () => {
+    expect(sql).toMatch(/CREATE TABLE "wifi_order"/);
+    expect(sql).toMatch(/CONSTRAINT "wifi_order_idempotency_key_unique" UNIQUE\("idempotency_key"\)/);
+    expect(sql).toMatch(/CREATE INDEX "wifi_order_status_idx" ON "wifi_order"/);
+  });
+
+  it("creates wifi_order_event referencing wifi_order", () => {
+    expect(sql).toMatch(/CREATE TABLE "wifi_order_event"/);
+    expect(sql).toMatch(/FOREIGN KEY \("order_id"\) REFERENCES "public"\."wifi_order"\("id"\)/);
+  });
+});

@@ -15,7 +15,7 @@ Strict TDD (bff: `pnpm --filter bff exec vitest run --no-file-parallelism`); fol
 
 ## Tasks
 - [x] T1 Explore conventions (Drizzle schema, migrations, how existing Postgres stores are built/tested) and record the exact `WifiOrderStore` contract.
-- [ ] T2 Schema + migration for `wifi_order` (+ idempotency-key uniqueness).
+- [x] T2 Schema + migration for `wifi_order` (+ idempotency-key uniqueness).
 - [ ] T3 Postgres adapter implementing the full store contract incl. atomic compare-and-swap `transition`; contract/conformance tests run against both in-memory and Postgres.
 - [ ] T4 Wire it in `main-api.ts` and `main-worker.ts` (same `DATABASE_URL`); keep the production guard; compose/infra env consistent.
 - [ ] T5 Real end-to-end check: api + worker against Postgres in docker compose (order created via API, activated by the worker); update KNOWN-GAPS/docs.
@@ -33,3 +33,8 @@ RED-first tests per task, turbo typecheck/lint/test green, real Postgres run evi
 - Test infra decision: DB-backed tests read `TEST_DATABASE_URL`; skipped with an explicit console warning when unset (never silently pass). Local: compose postgres on localhost:5432, database `travel_hub_test`.
 - Production guard in composition-root (buildApp/startWorker throw when wifi.checkout on + production-like + no orderStore) is kept.
 
+
+### T2 evidence
+- RED: schema.test.ts/migrations.test.ts new cases failed (6 failed) before schema; migrate.test.ts failed (`./client.js` missing). GREEN after `drizzle-kit generate` -> `0001_low_wind_dancer.sql`, `infra/db/client.ts` (createDb), `infra/db/migrate.ts` (runMigrations + CLI), `test-database.ts`.
+- Real Postgres (compose postgres 16, db `travel_hub_test` created via `docker exec ... psql`): `TEST_DATABASE_URL=postgres://travel_hub:travel_hub@localhost:5432/travel_hub_test pnpm --filter bff exec vitest run src/infra/db` -> 3 files, 18 passed (migration applied twice, idempotent). information_schema shows 22 wifi_order columns; constraints wifi_order_pkey + wifi_order_idempotency_key_unique; indexes wifi_order_status_idx, wifi_order_event_order_id_idx.
+- tsc and eslint clean.
