@@ -8,6 +8,9 @@ import { createInMemoryRateLimiter } from "./rate-limiter.js";
 import { createLinkDeliveryStub, type LinkDeliveryStub } from "../../adapters/link-delivery/stub.js";
 import type { ContactChannel } from "./ports.js";
 import type { SirBookingPort } from "../booking/ports.js";
+import { createInMemoryPushSubscriptionStore } from "../notifications/push-subscription-store.js";
+import type { PushSubscriptionStore } from "../notifications/ports.js";
+import { issueAccessLink } from "./issue-link.js";
 
 const CONTACT: ContactChannel = { kind: "email", address: "ana@example.com" };
 const NEVER_LIMITED = () => createInMemoryRateLimiter({ max: 1_000_000, windowMs: 60_000 });
@@ -23,6 +26,7 @@ function buildSirBookingStub(matches: boolean): Pick<SirBookingPort, "getContact
 async function buildTestApp(options: {
   matches: boolean;
   reissueRateLimiterMax?: number;
+  pushSubscriptionStore?: PushSubscriptionStore;
 }): Promise<{ app: FastifyInstance; store: AccessLinkStore; linkDelivery: LinkDeliveryStub }> {
   const app = Fastify();
   await app.register(cookie);
@@ -42,6 +46,7 @@ async function buildTestApp(options: {
     reissueRateLimiter: options.reissueRateLimiterMax
       ? createInMemoryRateLimiter({ max: options.reissueRateLimiterMax, windowMs: 60_000 })
       : NEVER_LIMITED(),
+    ...(options.pushSubscriptionStore ? { pushSubscriptionStore: options.pushSubscriptionStore } : {}),
   });
   await app.ready();
 
@@ -109,5 +114,38 @@ describe("POST /api/links/reissue", () => {
     });
 
     expect(second.statusCode).toBe(429);
+  });
+
+  it("invalidates the prior link's push subscriptions end to end through the HTTP route (task 11.1 acceptance)", async () => {
+    const pushSubscriptionStore = createInMemoryPushSubscriptionStore();
+    const { app, store } = await buildTestApp({ matches: true, pushSubscriptionStore });
+    const previous = await issueAccessLink(
+      { reservationRef: "RES-1001", contact: CONTACT, locale: "es" },
+      {
+        store,
+        linkDelivery: createLinkDeliveryStub(),
+        linkExpiryMs: 72 * 60 * 60 * 1000,
+        buildLinkUrl: (token: string) => `https://app.travel-hub.local/t#${token}`,
+      },
+    );
+    const subscription = await pushSubscriptionStore.create({
+      linkId: previous.accessLinkId,
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      endpoint: "https://push.example.com/endpoint-1",
+      p256dh: "p256dh-1",
+      auth: "auth-1",
+      locale: "es",
+      consentRecordId: "consent-1",
+      expiresAt: previous.expiresAt,
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/links/reissue",
+      payload: { reservationRef: "RES-1001", surname: "gomez", locale: "es" },
+    });
+
+    expect(await pushSubscriptionStore.findById(subscription.id)).toBeNull();
   });
 });

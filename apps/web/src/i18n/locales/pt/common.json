@@ -84,7 +84,8 @@
     "help": "Ajuda",
     "menu": "Cardápio",
     "destination": "Destino",
-    "wifi": "WiFi"
+    "wifi": "WiFi",
+    "push": "Notificações"
   },
   "precheckin": {
     "consent": {
@@ -149,5 +150,13 @@
   },
   "tfe": {
     "cta": "Descubra mais experiências"
+  },
+  "push": {
+    "heading": "Notificações",
+    "optIn": "Ativar notificações",
+    "optInError": "Não foi possível ativar as notificações. Tente novamente.",
+    "subscribed": "As notificações estão ativadas.",
+    "a2hsExplainer": "Para receber notificações, adicione este app à tela inicial e tente novamente a partir dela.",
+    "unavailable": "As notificações push não estão disponíveis no momento."
   }
 }

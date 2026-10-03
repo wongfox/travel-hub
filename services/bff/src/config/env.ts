@@ -72,6 +72,21 @@ const EnvSchema = z.object({
    * `wifi.checkout` in production/staging while this stays `"stub"`.
    */
   ADAPTER_WIFI_ENTITLEMENT: z.string().min(1).default("stub"),
+  /**
+   * `WebPushPort` adapter selection (design Decision 6,
+   * `ADAPTER_<PORT>=stub|<vendor>`). Task 11.1's go-live guard
+   * (`config/go-live-guards.ts`'s `checkPushEnabled`) does not itself check
+   * this adapter name (it checks VAPID key configuration directly), but it
+   * follows the same per-port adapter-selection convention as every other
+   * `ADAPTER_*` variable for consistency and future real-adapter wiring.
+   */
+  ADAPTER_WEB_PUSH: z.string().min(1).default("stub"),
+  /** Self-managed VAPID public key (design Decision 11); a `push.enabled` go-live prerequisite alongside the private key. */
+  PUSH_VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+  /** Self-managed VAPID private key (design Decision 11); a `push.enabled` go-live prerequisite alongside the public key. */
+  PUSH_VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  /** Approved consent text version for the `push` purpose; a `push.enabled` go-live prerequisite. */
+  PUSH_CONSENT_TEXT_VERSION: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

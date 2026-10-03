@@ -3,6 +3,7 @@
  */
 import { buildApp } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
+import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -28,6 +29,16 @@ async function main(): Promise<void> {
       adapterReceipt: env.ADAPTER_RECEIPT,
       adapterSirPos: env.ADAPTER_SIR_POS,
       adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
+    },
+    notifications: {
+      // Task 11.1: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this api process's real boot-time configuration, not a stub.
+      nodeEnv: env.NODE_ENV,
+      adapterWebPush: env.ADAPTER_WEB_PUSH,
+      vapidConfigured: Boolean(env.PUSH_VAPID_PUBLIC_KEY && env.PUSH_VAPID_PRIVATE_KEY),
+      alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
+      ...(env.PUSH_CONSENT_TEXT_VERSION ? { pushConsentTextVersion: env.PUSH_CONSENT_TEXT_VERSION } : {}),
     },
   });
 

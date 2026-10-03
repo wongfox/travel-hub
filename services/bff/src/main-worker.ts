@@ -6,6 +6,7 @@ import { loadEnv } from "./config/env.js";
 import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 import { FLAG_DEFAULTS } from "./config/flags.js";
 import { scheduleWifiOrderScans, WIFI_ENTITLEMENT_ACTIVATION_QUEUE } from "./modules/wifi-checkout/wifi-order-jobs.js";
+import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -42,6 +43,17 @@ async function main(): Promise<void> {
       adapterReceipt: env.ADAPTER_RECEIPT,
       adapterSirPos: env.ADAPTER_SIR_POS,
       adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
+    },
+    notifications: {
+      // Task 11.2: real env-sourced config, so the go-live guard
+      // (config/go-live-guards.ts) actually enforces its prerequisites
+      // against this worker's real boot-time configuration, not a stub.
+      flags: FLAG_DEFAULTS,
+      nodeEnv: env.NODE_ENV,
+      adapterWebPush: env.ADAPTER_WEB_PUSH,
+      vapidConfigured: Boolean(env.PUSH_VAPID_PUBLIC_KEY && env.PUSH_VAPID_PRIVATE_KEY),
+      alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
+      ...(env.PUSH_CONSENT_TEXT_VERSION ? { pushConsentTextVersion: env.PUSH_CONSENT_TEXT_VERSION } : {}),
     },
   });
   // The scan jobs only run when something enqueues them; nothing else does

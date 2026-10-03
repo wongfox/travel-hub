@@ -166,4 +166,40 @@ describe("createInMemoryAccessLinkStore", () => {
 
     expect(await store.findById("does-not-exist")).toBeNull();
   });
+
+  it("listActive returns every not-yet-revoked link across all reservations", async () => {
+    const store = createInMemoryAccessLinkStore();
+    const resA = await store.create({
+      tokenHash: "hash-i",
+      reservationRef: "RES-9009",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const resB = await store.create({
+      tokenHash: "hash-j",
+      reservationRef: "RES-9010",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const revoked = await store.create({
+      tokenHash: "hash-k",
+      reservationRef: "RES-9011",
+      passengerScope: [],
+      expiresAt: "2026-11-05T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    await store.revoke(revoked.id, resA.id);
+
+    const active = await store.listActive();
+
+    expect(active.map((record) => record.id).sort()).toEqual([resA.id, resB.id].sort());
+  });
+
+  it("listActive returns an empty array when no links have been issued", async () => {
+    const store = createInMemoryAccessLinkStore();
+
+    expect(await store.listActive()).toEqual([]);
+  });
 });

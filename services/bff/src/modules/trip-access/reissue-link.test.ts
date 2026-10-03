@@ -5,6 +5,7 @@ import { issueAccessLink } from "./issue-link.js";
 import { reissueAccessLink } from "./reissue-link.js";
 import type { ContactChannel } from "./ports.js";
 import type { SirBookingPort } from "../booking/ports.js";
+import { createInMemoryPushSubscriptionStore } from "../notifications/push-subscription-store.js";
 
 const CONTACT: ContactChannel = { kind: "email", address: "ana@example.com" };
 
@@ -83,5 +84,63 @@ describe("reissueAccessLink", () => {
     await reissueAccessLink({ reservationRef: "RES-1001", surname: "wrong", locale: "es" }, noMatchDeps);
 
     expect(await deps.store.findActiveByReservation("RES-1001")).toHaveLength(1);
+  });
+
+  it("invalidates every push subscription bound to a link it revokes (task 11.1 acceptance: reissue invalidates the prior subscription)", async () => {
+    const deps = buildDeps(buildSirBookingStub(true));
+    const pushSubscriptionStore = createInMemoryPushSubscriptionStore();
+    const previous = await issueAccessLink({ reservationRef: "RES-1001", contact: CONTACT, locale: "es" }, deps);
+    const subscription = await pushSubscriptionStore.create({
+      linkId: previous.accessLinkId,
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      endpoint: "https://push.example.com/endpoint-1",
+      p256dh: "p256dh-1",
+      auth: "auth-1",
+      locale: "es",
+      consentRecordId: "consent-1",
+      expiresAt: previous.expiresAt,
+    });
+
+    await reissueAccessLink(
+      { reservationRef: "RES-1001", surname: "gomez", locale: "es" },
+      { ...deps, pushSubscriptionStore },
+    );
+
+    expect(await pushSubscriptionStore.findById(subscription.id)).toBeNull();
+  });
+
+  it("leaves another link's push subscriptions untouched when it is not revoked", async () => {
+    const deps = buildDeps(buildSirBookingStub(true));
+    const pushSubscriptionStore = createInMemoryPushSubscriptionStore();
+    await issueAccessLink({ reservationRef: "RES-1001", contact: CONTACT, locale: "es" }, deps);
+    const otherLink = await issueAccessLink({ reservationRef: "RES-2002", contact: CONTACT, locale: "es" }, deps);
+    const untouchedSubscription = await pushSubscriptionStore.create({
+      linkId: otherLink.accessLinkId,
+      reservationRef: "RES-2002",
+      passengerScope: [],
+      endpoint: "https://push.example.com/endpoint-2",
+      p256dh: "p256dh-2",
+      auth: "auth-2",
+      locale: "es",
+      consentRecordId: "consent-2",
+      expiresAt: otherLink.expiresAt,
+    });
+
+    await reissueAccessLink(
+      { reservationRef: "RES-1001", surname: "gomez", locale: "es" },
+      { ...deps, pushSubscriptionStore },
+    );
+
+    expect(await pushSubscriptionStore.findById(untouchedSubscription.id)).toEqual(untouchedSubscription);
+  });
+
+  it("works without a pushSubscriptionStore dependency (backward compatible)", async () => {
+    const deps = buildDeps(buildSirBookingStub(true));
+    await issueAccessLink({ reservationRef: "RES-1001", contact: CONTACT, locale: "es" }, deps);
+
+    await expect(
+      reissueAccessLink({ reservationRef: "RES-1001", surname: "gomez", locale: "es" }, deps),
+    ).resolves.toBeUndefined();
   });
 });
