@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { createI18n } from "../../../i18n/index.js";
@@ -60,7 +60,14 @@ describe("CameraCapture", () => {
     renderCameraCapture({ role: "photo", mediaDevices: { getUserMedia } });
 
     expect(screen.queryByRole("button", { name: "Capture" })).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Capture" })).toBeInTheDocument());
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    // Stream acquired but no frame decoded yet (videoWidth is still 0): capturing now would
+    // draw a 0x0 canvas, so the button must wait for the video's first frame.
+    expect(screen.queryByRole("button", { name: "Capture" })).not.toBeInTheDocument();
+
+    fireEvent.loadedData(screen.getByTestId("camera-video-photo"));
+
+    expect(await screen.findByRole("button", { name: "Capture" })).toBeInTheDocument();
   });
 
   it("calls onUnavailable instead of rendering a capture button when getUserMedia rejects", async () => {
@@ -94,6 +101,8 @@ describe("CameraCapture", () => {
       captureFrame,
     });
 
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    fireEvent.loadedData(screen.getByTestId("camera-video-photo"));
     await screen.findByRole("button", { name: "Capture" });
     await user.click(screen.getByRole("button", { name: "Capture" }));
 
