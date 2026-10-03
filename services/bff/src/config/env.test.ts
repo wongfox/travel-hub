@@ -78,6 +78,19 @@ describe("loadEnv", () => {
     expect(env.PRECHECKIN_HANDOFF_GRACE_DAYS).toBe(3);
   });
 
+  it("defaults ANALYTICS_FORWARD_INTERVAL_SECONDS to 60 and coerces an explicit value", () => {
+    const base = { DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" };
+    expect(loadEnv(base).ANALYTICS_FORWARD_INTERVAL_SECONDS).toBe(60);
+    expect(loadEnv({ ...base, ANALYTICS_FORWARD_INTERVAL_SECONDS: "5" }).ANALYTICS_FORWARD_INTERVAL_SECONDS).toBe(5);
+  });
+
+  it("rejects a non-positive or non-integer ANALYTICS_FORWARD_INTERVAL_SECONDS", () => {
+    const base = { DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" };
+    expect(() => loadEnv({ ...base, ANALYTICS_FORWARD_INTERVAL_SECONDS: "0" })).toThrow();
+    expect(() => loadEnv({ ...base, ANALYTICS_FORWARD_INTERVAL_SECONDS: "-3" })).toThrow();
+    expect(() => loadEnv({ ...base, ANALYTICS_FORWARD_INTERVAL_SECONDS: "1.5" })).toThrow();
+  });
+
   it("defaults ADAPTER_CONTENT to 'stub' (task 9.1 go-live prerequisite)", () => {
     const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
 

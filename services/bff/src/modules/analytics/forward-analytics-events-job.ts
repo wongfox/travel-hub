@@ -1,5 +1,6 @@
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import type { ConsentStore } from "../privacy/consent-store.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 import { computeTripHash } from "./trip-hash.js";
 import type { AnalyticsEventStore, AnalyticsSinkPort, PseudonymousAnalyticsEvent } from "./ports.js";
 
@@ -96,5 +97,22 @@ export async function registerForwardAnalyticsEventsJob(
   await queueClient.createQueue(ANALYTICS_FORWARD_QUEUE, ANALYTICS_FORWARD_RETRY_POLICY);
   await queueClient.work(ANALYTICS_FORWARD_QUEUE, async () => {
     await runForwardAnalyticsEventsJob(deps);
+  });
+}
+
+/** Default cadence of the analytics forward scan; the job is idempotent, so a short interval only bounds forwarding latency. */
+export const ANALYTICS_FORWARD_INTERVAL_MS = 60_000;
+
+/**
+ * Periodically enqueues the analytics forward scan on the worker process
+ * (nothing else does). Shares `scheduleQueueScans`' semantics: idempotent
+ * natural key, logged send failures retried next tick, returns a stop function.
+ */
+export function scheduleAnalyticsForward(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [ANALYTICS_FORWARD_QUEUE], {
+    intervalMs: options.intervalMs ?? ANALYTICS_FORWARD_INTERVAL_MS,
   });
 }

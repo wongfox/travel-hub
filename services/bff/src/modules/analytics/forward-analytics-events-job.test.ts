@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryAnalyticsEventStore } from "./analytics-event-store.js";
 import { createAnalyticsSinkStub } from "../../adapters/analytics-sink/stub.js";
-import { runForwardAnalyticsEventsJob } from "./forward-analytics-events-job.js";
+import {
+  runForwardAnalyticsEventsJob,
+  registerForwardAnalyticsEventsJob,
+  scheduleAnalyticsForward,
+  ANALYTICS_FORWARD_QUEUE,
+} from "./forward-analytics-events-job.js";
 import { createInMemoryConsentStore } from "../privacy/consent-store.js";
+import { createInMemoryQueueClient } from "../../infra/queue/queue-client.js";
 import { computeTripHash } from "./trip-hash.js";
 
 const SECRET = "test-secret";
@@ -115,5 +121,38 @@ describe("runForwardAnalyticsEventsJob", () => {
     expect(result.forwarded).toBe(1);
     expect(sink.deliveries[0]!.map((e) => e.tripHash)).toEqual([granted]);
     expect((await store.list()).map((r) => r.tripHash)).toEqual([granted]);
+  });
+});
+
+describe("scheduleAnalyticsForward", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues the forward scan on every tick so pending events are forwarded with no manual trigger, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const store = createInMemoryAnalyticsEventStore(() => new Date("2026-10-01T00:00:00.000Z"));
+    await store.create({ name: "screen_view", tripHash: computeTripHash("RES-A", SECRET), occurredAt: "2026-10-01T00:00:00.000Z" });
+    const sink = createAnalyticsSinkStub();
+    const queueClient = createInMemoryQueueClient();
+    await queueClient.start();
+    await registerForwardAnalyticsEventsJob(queueClient, {
+      analyticsEventStore: store,
+      analyticsSink: sink,
+      consentStore: await consentStoreWith({ "RES-A": true }),
+      secret: SECRET,
+    });
+
+    const stop = scheduleAnalyticsForward(queueClient, { intervalMs: 1000 });
+    await queueClient.runPendingOnce(ANALYTICS_FORWARD_QUEUE);
+    expect(await store.listPendingForward()).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    // Overlapping ticks collapse into one pending job (natural-key dedupe).
+    await vi.advanceTimersByTimeAsync(1000);
+    await queueClient.runPendingOnce(ANALYTICS_FORWARD_QUEUE);
+    expect(await store.listPendingForward()).toHaveLength(0);
+
+    stop();
   });
 });
