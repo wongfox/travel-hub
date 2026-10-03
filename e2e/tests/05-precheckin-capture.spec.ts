@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
+import { test, expect } from "../fixtures/stack.js";
+import { issueLink } from "../fixtures/internal-api.js";
 
 /**
  * Design scenario 5/7: "pre check-in with fake media stream and
@@ -10,15 +10,13 @@ import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
  * `--use-fake-ui-for-media-stream` flags, configured below), and the
  * file-upload fallback path for a blocked-camera environment.
  *
- * BLOCKED today by THREE independent gaps (`e2e/KNOWN-GAPS.md`):
- * - Gap A: no way to obtain the link token.
- * - Gap B: `precheckin.capture_ui` defaults `false` with no override.
+ * STILL BLOCKED by Gap D only (`e2e/KNOWN-GAPS.md`); gaps A (token retrieval)
+ * and B (flags) are resolved by the in-process harness, but:
  * - Gap D: there is no `PrecheckinPage`/route registered in
  *   `apps/web/src/app/route-tree.tsx` at all — `PrecheckinCaptureFlow`
  *   exists and is unit-tested, but nothing composes it onto a navigable
  *   URL with passenger-ordinal selection and the task 8.3 submission call.
- *   This is independent of gaps A/B: even with a session and the flag on,
- *   there is still no page to navigate to.
+ *   Even with a session and the flag on, there is still no page to navigate to.
  */
 // Top-level (not inside the describe): Playwright forbids `use({ launchOptions })`
 // in a describe group because it forces a new worker.
@@ -29,18 +27,15 @@ test.use({
 });
 
 test.describe("pre check-in capture", () => {
-
-  test("camera capture flow completes with a fake media stream", async ({ page, context, request }) => {
+  test("camera capture flow completes with a fake media stream", async ({ page, context, stack }) => {
     test.fixme(
       true,
-      "Gaps A+B+D (e2e/KNOWN-GAPS.md): no token retrieval, precheckin.capture_ui flag off with no override, " +
-        "and no PrecheckinPage/route exists in apps/web at all",
+      "Gap D (e2e/KNOWN-GAPS.md): no PrecheckinPage/route exists in apps/web at all",
     );
 
     await context.grantPermissions(["camera"]);
-    await waitForApiHealthy(request);
 
-    const { token } = await issueLink(request, {
+    const { token } = await issueLink(stack, {
       reservationRef: "RES-1001",
       contact: { kind: "email", address: "passenger@example.com" },
       locale: "es",
@@ -59,19 +54,17 @@ test.describe("pre check-in capture", () => {
     await expect(page.getByText(/listo|ready|pronto/i)).toBeVisible();
   });
 
-  test("file-upload fallback works when camera access is blocked", async ({ page, context, request }) => {
+  test("file-upload fallback works when camera access is blocked", async ({ page, context, stack }) => {
     test.fixme(
       true,
-      "Gaps A+B+D (e2e/KNOWN-GAPS.md): no token retrieval, precheckin.capture_ui flag off with no override, " +
-        "and no PrecheckinPage/route exists in apps/web at all",
+      "Gap D (e2e/KNOWN-GAPS.md): no PrecheckinPage/route exists in apps/web at all",
     );
 
     // Deny camera access entirely to force the file-upload fallback
     // (`is-camera-available.ts`/`file-upload-fallback.tsx`, task 8.2).
     await context.clearPermissions();
-    await waitForApiHealthy(request);
 
-    const { token } = await issueLink(request, {
+    const { token } = await issueLink(stack, {
       reservationRef: "RES-1001",
       contact: { kind: "email", address: "passenger@example.com" },
       locale: "es",

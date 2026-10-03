@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
+import { test, expect } from "../fixtures/stack.js";
+import { issueLink } from "../fixtures/internal-api.js";
 
 /**
  * Design scenario 1/7: "link → trip in one step".
@@ -9,16 +9,11 @@ import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
  * never left behind in browser history (task 5.5's own acceptance
  * criterion, `history.replaceState` stripping the fragment).
  *
- * BLOCKED today by Gap A (`e2e/KNOWN-GAPS.md`): `issueLink()` cannot obtain
- * a real token through the black-box HTTP surface this suite is restricted
- * to. See `fixtures/internal-api.ts` for the exact missing piece.
+ * The token comes from the in-process stub `LinkDeliveryPort` (see
+ * `fixtures/internal-api.ts`); no HTTP route exposes it.
  */
-test("opening a personalized link lands on trip home in one step", async ({ page, request }) => {
-  test.fixme(true, "Gap A (e2e/KNOWN-GAPS.md): POST /internal/links never returns a retrievable token/linkUrl");
-
-  await waitForApiHealthy(request);
-
-  const { token } = await issueLink(request, {
+test("opening a personalized link lands on trip home in one step", async ({ page, stack }) => {
+  const { token } = await issueLink(stack, {
     reservationRef: "RES-1001",
     contact: { kind: "email", address: "passenger@example.com" },
     locale: "es",
@@ -35,6 +30,7 @@ test("opening a personalized link lands on trip home in one step", async ({ page
   expect(historyHasToken).toBe(false);
 
   // Trip home actually rendered real trip content, not a loading/error state.
+  await expect(page.getByText(/próxima salida|next departure|próxima partida/i)).toBeVisible();
   await expect(page.getByRole("status")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });

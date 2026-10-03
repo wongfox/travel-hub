@@ -1,5 +1,5 @@
-import { test, expect } from "@playwright/test";
-import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
+import { test, expect } from "../fixtures/stack.js";
+import { issueLink } from "../fixtures/internal-api.js";
 
 /**
  * Design scenario 2/7: "offline boarding pass".
@@ -10,18 +10,14 @@ import { issueLink, waitForApiHealthy } from "../fixtures/internal-api.js";
  * list (not an error), with a freshness banner, per `offline-trip-data`'s
  * "Trip data accessible with no connectivity" requirement.
  *
- * BLOCKED today by Gap A (`e2e/KNOWN-GAPS.md`).
+ * Gap A (token retrieval) is resolved by the in-process harness (`fixtures/internal-api.ts`).
  */
 test("boarding pass/tickets remain visible after going offline and reloading", async ({
   page,
   context,
-  request,
+  stack,
 }) => {
-  test.fixme(true, "Gap A (e2e/KNOWN-GAPS.md): POST /internal/links never returns a retrievable token/linkUrl");
-
-  await waitForApiHealthy(request);
-
-  const { token } = await issueLink(request, {
+  const { token } = await issueLink(stack, {
     reservationRef: "RES-1001",
     contact: { kind: "email", address: "passenger@example.com" },
     locale: "es",
@@ -32,19 +28,31 @@ test("boarding pass/tickets remain visible after going offline and reloading", a
   await page.goto(`/t#${token}`);
   await expect(page).toHaveURL(/\/trip$/);
   await page.goto("/trip/documents");
-  await expect(page.getByRole("heading")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2 })).toBeVisible();
+
+  // The service worker must be installed AND controlling this page for an
+  // offline navigation to be served at all; wait for that, then reload once
+  // online so the documents route is also in the offline store.
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+  await expect(page.getByRole("heading", { level: 2 })).toBeVisible();
 
   // Now go offline and reload the exact same route.
   await context.setOffline(true);
   await page.reload();
 
   // Still renders real ticket content from the cached `TripSnapshot`, not
-  // `trip.loadError`'s role="alert" state.
+  // `trip.loadError`'s role="alert" state. The app only falls back to the
+  // snapshot once TanStack Query's default retries (1s+2s+4s backoff) give up,
+  // so the first paint is "Loading your trip…" for ~7s: wait it out.
+  await expect(page.getByRole("heading", { level: 2 })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("heading")).toBeVisible();
 
-  // A freshness ("last updated at...") indicator is present while offline.
+  // A freshness ("last updated at...") indicator is present while offline,
+  // alongside the cached tickets (barcode payloads from the seeded RES-1001).
   await expect(page.getByText(/actualizaci[oó]n|last updated|atualiza/i)).toBeVisible();
+  await expect(page.getByText(/BP-RES-1001-L1/)).toBeVisible();
 
   await context.setOffline(false);
 });
