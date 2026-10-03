@@ -6,6 +6,7 @@ import { createInMemoryQueueClient } from "./infra/queue/queue-client.js";
 import { SAMPLE_JOB_QUEUE } from "./infra/queue/sample-job.js";
 import { createInMemoryAccessLinkStore } from "./modules/trip-access/access-link-store.js";
 import { resolveAccessLinkByToken } from "./modules/trip-access/resolve-link.js";
+import { DEFAULT_SESSION_COOKIE_NAME } from "./modules/trip-access/http.js";
 
 describe("buildApp", () => {
   it("responds 200 with an ok status on GET /healthz", async () => {
@@ -188,6 +189,48 @@ describe("buildApp — trip-access session exchange & reissue (task 5.3/5.4)", (
     });
 
     expect(response.statusCode).toBe(202);
+  });
+});
+
+describe("buildApp — trip overview (task 6.2)", () => {
+  it("returns 401 when GET /api/trip is called with no session at all", async () => {
+    const app = buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/trip" });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("returns the trip overview end to end for a session exchanged against injected (but shared) stores", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({ tripAccess: { accessLinkStore, sessionStore } });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/trip",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { legs: Array<{ tier: string }> };
+    // RES-1001's seed fixture (services/bff/seed/sir/reservations.json) has one PRIME-tier leg.
+    expect(body.legs[0]?.tier).toBe("PRIME");
   });
 });
 
