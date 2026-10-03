@@ -15,6 +15,7 @@ import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-st
 import { createPostgresPushSubscriptionStore } from "./adapters/push-subscription-store/postgres.js";
 import { createPostgresNotificationStore } from "./adapters/notification-store/postgres.js";
 import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
+import { createPostgresPrecheckinSubmissionStore } from "./adapters/precheckin-submission-store/postgres.js";
 import { createPostgresPulseResponseStore } from "./adapters/pulse-response-store/postgres.js";
 import { createPostgresStaffAlertStore } from "./adapters/staff-alert-store/postgres.js";
 import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
@@ -41,6 +42,8 @@ async function main(): Promise<void> {
       flags,
       nodeEnv: env.NODE_ENV,
       piiAccessAudit,
+      // The very table the api writes: pending handoffs to deliver, expired submissions to purge.
+      submissionStore: createPostgresPrecheckinSubmissionStore(db.db),
       adapterPrecheckinHandoff: env.ADAPTER_PRECHECKIN_HANDOFF,
       ...(env.PRECHECKIN_RETENTION_POLICY_ID
         ? { retentionPolicyId: env.PRECHECKIN_RETENTION_POLICY_ID }
