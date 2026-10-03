@@ -1,10 +1,14 @@
+import "fake-indexeddb/auto";
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TripDTO } from "contracts";
 import { createI18n } from "../../i18n/index.js";
 import type { ApiClient } from "../../shared/api/client.js";
+import { setActiveLinkId } from "../../shared/offline/trip-prefs-store.js";
+import { saveTripSnapshot } from "../../shared/offline/trip-snapshot-store.js";
+import { toTripSnapshot } from "../../shared/offline/to-trip-snapshot.js";
 import { DocumentsPage } from "./documents-page.js";
 
 function buildFakeApiClient(get: ApiClient["get"]): ApiClient {
@@ -70,5 +74,28 @@ describe("DocumentsPage", () => {
     expect(items).toHaveLength(2);
     expect(screen.getByTestId("theme-provider")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View document" })).toHaveAttribute("href", "/api/documents/DOC-2");
+  });
+
+  it("falls back to the cached tickets with a freshness banner when the live fetch fails (task 7.1)", async () => {
+    const trip = buildTrip({ linkId: "documents-cache-link" });
+    await setActiveLinkId(trip.linkId);
+    await saveTripSnapshot(trip.linkId, toTripSnapshot(trip));
+    const apiClient = buildFakeApiClient(vi.fn().mockRejectedValue(new Error("offline")));
+
+    renderPage(apiClient);
+
+    const items = await screen.findAllByTestId("offline-ticket-item");
+    expect(items).toHaveLength(2);
+    expect(screen.getByTestId("theme-provider")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Last updated");
+  });
+
+  it("shows an error when the live fetch fails and no cached tickets exist (task 7.1's isError branch)", async () => {
+    await setActiveLinkId("documents-never-cached-link");
+    const apiClient = buildFakeApiClient(vi.fn().mockRejectedValue(new Error("offline")));
+
+    renderPage(apiClient);
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We couldn't load your trip"));
   });
 });

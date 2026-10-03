@@ -1,26 +1,5 @@
-import { openDB } from "idb";
+import { getTravelHubDb, SNAPSHOTS_STORE } from "./travelhub-db.js";
 import { TripSnapshotSchema, type TripSnapshot } from "./trip-snapshot.js";
-
-const DB_NAME = "travelhub";
-const DB_VERSION = 1;
-const SNAPSHOTS_STORE = "snapshots";
-
-/**
- * A new connection is opened per call rather than cached at module scope:
- * this store is read/written on trip load, not in a hot loop, so the extra
- * `indexedDB.open` round trip is negligible and this keeps the store
- * trivially testable (each test simply uses a distinct link id) without a
- * test-only reset hook in production code.
- */
-async function getDb() {
-  return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(SNAPSHOTS_STORE)) {
-        db.createObjectStore(SNAPSHOTS_STORE);
-      }
-    },
-  });
-}
 
 /**
  * Writes a `TripSnapshot` for the given link id (design: IndexedDB
@@ -30,7 +9,7 @@ async function getDb() {
  */
 export async function saveTripSnapshot(linkId: string, snapshot: TripSnapshot): Promise<void> {
   const validated = TripSnapshotSchema.parse(snapshot);
-  const db = await getDb();
+  const db = await getTravelHubDb();
   await db.put(SNAPSHOTS_STORE, validated, linkId);
 }
 
@@ -40,7 +19,7 @@ export async function saveTripSnapshot(linkId: string, snapshot: TripSnapshot): 
  * exclusively from IndexedDB (spec `offline-trip-data`).
  */
 export async function getTripSnapshot(linkId: string): Promise<TripSnapshot | undefined> {
-  const db = await getDb();
+  const db = await getTravelHubDb();
   const raw: unknown = await db.get(SNAPSHOTS_STORE, linkId);
   if (raw === undefined) {
     return undefined;

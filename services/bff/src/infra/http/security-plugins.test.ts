@@ -27,6 +27,26 @@ describe("registerSecurityPlugins", () => {
     expect(response.headers["permissions-policy"]).toBe("camera=(self)");
   });
 
+  it("sends Cache-Control: no-store on a sensitive route (design Decision 5 / task 7.2)", async () => {
+    const app = Fastify();
+    await registerSecurityPlugins(app);
+    app.get("/api/session", async () => ({ ok: true }));
+
+    const response = await app.inject({ method: "GET", url: "/api/session" });
+
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("does not send Cache-Control: no-store on a non-sensitive route", async () => {
+    const app = Fastify();
+    await registerSecurityPlugins(app);
+    app.get("/api/trip", async () => ({ ok: true }));
+
+    const response = await app.inject({ method: "GET", url: "/api/trip" });
+
+    expect(response.headers["cache-control"]).not.toBe("no-store");
+  });
+
   it("returns 429 once a route decorated with the rate-limit plugin exceeds its configured threshold", async () => {
     const app = Fastify();
     await registerSecurityPlugins(app);
