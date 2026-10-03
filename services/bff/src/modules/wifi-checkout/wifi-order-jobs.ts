@@ -217,3 +217,28 @@ export async function registerWifiOrderJobs(queueClient: QueueClient, deps: Wifi
     await runSirAndReceiptJob(deps);
   });
 }
+
+/** Default cadence of the WiFi scans; both jobs are idempotent, so a short interval only bounds activation latency. */
+export const WIFI_SCAN_INTERVAL_MS = 60_000;
+
+/**
+ * Periodically enqueues both WiFi scans (`PAID` -> `ENTITLEMENT_ACTIVE`, then
+ * SIR registration + e-receipt) on the worker process. Nothing else triggers
+ * them: the payment webhook only moves an order to `PAID`. Uses
+ * `sendIdempotent` with a fixed natural key, so a slow scan is never stacked
+ * (same convention as `handoff-job.ts`). A failed send is logged and the next
+ * tick retries. Returns a function that stops the scheduler.
+ */
+export function scheduleWifiOrderScans(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  const timer = setInterval(() => {
+    for (const queue of [WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE]) {
+      queueClient.sendIdempotent(queue, "scan", {}).catch((error: unknown) => {
+        console.error(`failed to enqueue the ${queue} scan`, error);
+      });
+    }
+  }, options.intervalMs ?? WIFI_SCAN_INTERVAL_MS);
+  return () => clearInterval(timer);
+}

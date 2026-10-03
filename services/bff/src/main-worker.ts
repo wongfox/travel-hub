@@ -5,6 +5,7 @@ import { startWorker } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
 import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 import { FLAG_DEFAULTS } from "./config/flags.js";
+import { scheduleWifiOrderScans, WIFI_ENTITLEMENT_ACTIVATION_QUEUE } from "./modules/wifi-checkout/wifi-order-jobs.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -43,6 +44,11 @@ async function main(): Promise<void> {
       adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
     },
   });
+  // The scan jobs only run when something enqueues them; nothing else does
+  // (the payment webhook just marks the order PAID), so schedule them here.
+  if (result.jobsRegistered.includes(WIFI_ENTITLEMENT_ACTIVATION_QUEUE)) {
+    scheduleWifiOrderScans(queueClient);
+  }
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
 }
 

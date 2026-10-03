@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   runWifiEntitlementActivationJob,
   runSirAndReceiptJob,
   registerWifiOrderJobs,
+  scheduleWifiOrderScans,
   WIFI_ENTITLEMENT_ACTIVATION_QUEUE,
   WIFI_SIR_RECEIPT_QUEUE,
   SIR_REGISTRATION_RETRY_LIMIT,
@@ -331,5 +332,66 @@ describe("registerWifiOrderJobs", () => {
     const final = await orderStore.findById(order.id);
     expect(final?.sirRegisteredAt).not.toBeNull();
     expect(final?.receiptIssuedAt).not.toBeNull();
+  });
+});
+
+describe("scheduleWifiOrderScans", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues both scans on every interval tick so paid orders get activated without a manual trigger, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const orderStore = createInMemoryWifiOrderStore();
+    const order = await createPaidOrder(orderStore, "idem-scheduled");
+    const queueClient = createInMemoryQueueClient();
+    await queueClient.start();
+    await registerWifiOrderJobs(queueClient, {
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      entitlement: createWifiEntitlementStub(),
+      sirPos: createSirPosStub(),
+      eReceipt: createEReceiptStub(),
+    });
+
+    const stop = scheduleWifiOrderScans(queueClient, { intervalMs: 1000 });
+
+    // Nothing is enqueued before the first tick.
+    await queueClient.runPendingOnce(WIFI_ENTITLEMENT_ACTIVATION_QUEUE);
+    expect((await orderStore.findById(order.id))?.status).toBe("PAID");
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await queueClient.runPendingOnce(WIFI_ENTITLEMENT_ACTIVATION_QUEUE);
+    expect((await orderStore.findById(order.id))?.status).toBe("ENTITLEMENT_ACTIVE");
+
+    await queueClient.runPendingOnce(WIFI_SIR_RECEIPT_QUEUE);
+    const final = await orderStore.findById(order.id);
+    expect(final?.sirRegisteredAt).not.toBeNull();
+    expect(final?.receiptIssuedAt).not.toBeNull();
+
+    stop();
+    const second = await createPaidOrder(orderStore, "idem-after-stop");
+    await vi.advanceTimersByTimeAsync(5000);
+    await queueClient.runPendingOnce(WIFI_ENTITLEMENT_ACTIVATION_QUEUE);
+    expect((await orderStore.findById(second.id))?.status).toBe("PAID");
+  });
+
+  it("keeps ticking when a send fails (a queue outage must not kill the scheduler)", async () => {
+    vi.useFakeTimers();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    let calls = 0;
+    const queueClient = {
+      async sendIdempotent() {
+        calls += 1;
+        throw new Error("queue down");
+      },
+    };
+
+    const stop = scheduleWifiOrderScans(queueClient as never, { intervalMs: 1000 });
+    await vi.advanceTimersByTimeAsync(2000);
+    stop();
+
+    expect(calls).toBe(4);
+    errors.mockRestore();
   });
 });
