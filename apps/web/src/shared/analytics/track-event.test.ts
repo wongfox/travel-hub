@@ -19,7 +19,7 @@ describe("trackEvent", () => {
   });
 
   it("enqueues the event once consent is granted", async () => {
-    setAnalyticsConsentGranted(true);
+    await setAnalyticsConsentGranted(true);
     const marker = crypto.randomUUID();
 
     await trackEvent({ name: "wifi_offer_viewed", props: { marker } });
@@ -28,15 +28,16 @@ describe("trackEvent", () => {
     expect(queued).toHaveLength(1);
   });
 
-  it("stops enqueueing once consent is withdrawn, even if it was granted a moment ago (task 12.3)", async () => {
-    setAnalyticsConsentGranted(true);
+  it("stops enqueueing and discards the queue once consent is withdrawn, even if it was granted a moment ago (task 12.3)", async () => {
+    await setAnalyticsConsentGranted(true);
     const marker = crypto.randomUUID();
     await trackEvent({ name: "wifi_offer_viewed", props: { marker } });
 
-    setAnalyticsConsentGranted(false);
+    await setAnalyticsConsentGranted(false);
     await trackEvent({ name: "wifi_package_selected", props: { marker } });
 
     const queued = (await listQueuedAnalyticsEvents()).filter((e) => e.props?.marker === marker);
-    expect(queued.map((e) => e.name)).toEqual(["wifi_offer_viewed"]);
+    // Withdrawal discards what was already queued too (it must never be flushed later).
+    expect(queued).toEqual([]);
   });
 });

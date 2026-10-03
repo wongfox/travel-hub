@@ -48,6 +48,12 @@ export async function listQueuedAnalyticsEvents(): Promise<QueuedAnalyticsEvent[
   return [...all].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
 }
 
+/** Discards every queued event (consent withdrawal: nothing queued before it may ever be sent). */
+export async function clearQueuedAnalyticsEvents(): Promise<void> {
+  const db = await getTravelHubDb();
+  await db.clear(ANALYTICS_QUEUE_STORE);
+}
+
 /** Removes the given queued events by id (called by `flushAnalyticsQueue` after a successful send — never before). */
 export async function removeQueuedAnalyticsEvents(ids: string[]): Promise<void> {
   const db = await getTravelHubDb();

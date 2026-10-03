@@ -1,19 +1,16 @@
-import type { ApiClient } from "../api/client.js";
-import { listQueuedAnalyticsEvents, removeQueuedAnalyticsEvents, type QueuedAnalyticsEvent } from "./analytics-queue-store.js";
+import { ApiError, UnparsableApiError, type ApiClient } from "../api/client.js";
+import { hasAnalyticsConsentGranted } from "./analytics-consent.js";
+import { clearQueuedAnalyticsEvents, listQueuedAnalyticsEvents, removeQueuedAnalyticsEvents, type QueuedAnalyticsEvent } from "./analytics-queue-store.js";
 
 export interface FlushAnalyticsQueueDeps {
   apiClient: ApiClient;
-  /**
-   * Injectable seam for deterministic tests and non-beacon environments;
-   * defaults to the real `navigator.sendBeacon` when available. Returning
-   * `false` (or throwing) falls back to `apiClient.post`.
-   */
-  sendBeacon?: (url: string, body: Blob) => boolean;
 }
 
 export interface FlushAnalyticsQueueResult {
   sent: number;
-  /** `true` when nothing was queued — distinguishes a no-op flush from one that actually sent events. */
+  /** Events discarded because the server permanently rejected their batch (a 4xx other than 408/429), so it can never block later events. */
+  dropped: number;
+  /** `true` when nothing was queued or sent — distinguishes a no-op flush from one that actually sent events. */
   skipped: boolean;
 }
 
@@ -30,39 +27,52 @@ function toWirePayload(events: QueuedAnalyticsEvent[]): { events: { name: string
   };
 }
 
-/** Sends in ≤`MAX_EVENTS_PER_REQUEST`-event batches (R3-001), removing each only after a send it can trust succeeded. */
+/** A 4xx the server will keep rejecting no matter how often it is retried; 408 (timeout) and 429 (rate limit) are transient. */
+function isPermanentRejection(error: unknown): boolean {
+  if (!(error instanceof ApiError) && !(error instanceof UnparsableApiError)) return false;
+  return error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
+}
+
+/**
+ * Sends in ≤`MAX_EVENTS_PER_REQUEST`-event batches (R3-001), removing each
+ * only after a response it can observe: `fetch` with `keepalive` (survives
+ * page unload) instead of `navigator.sendBeacon`, whose `true` only means
+ * "queued by the browser" and would delete rows that may never arrive.
+ * A permanently rejected batch (4xx other than 408/429) is dropped so it
+ * cannot stall every later flush; transient failures (5xx, network, 408,
+ * 429) rethrow and keep the queue. Consent is re-checked first: without it
+ * nothing is sent and the queue is discarded.
+ */
 export async function flushAnalyticsQueue(deps: FlushAnalyticsQueueDeps): Promise<FlushAnalyticsQueueResult> {
+  if (!hasAnalyticsConsentGranted()) {
+    await clearQueuedAnalyticsEvents();
+    return { sent: 0, dropped: 0, skipped: true };
+  }
+
   const queued = await listQueuedAnalyticsEvents();
   if (queued.length === 0) {
-    return { sent: 0, skipped: true };
+    return { sent: 0, dropped: 0, skipped: true };
   }
-
-  const sendBeacon =
-    deps.sendBeacon ??
-    (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function"
-      ? navigator.sendBeacon.bind(navigator)
-      : undefined);
 
   let sent = 0;
+  let dropped = 0;
   for (let i = 0; i < queued.length; i += MAX_EVENTS_PER_REQUEST) {
+    if (!hasAnalyticsConsentGranted()) {
+      await clearQueuedAnalyticsEvents();
+      break;
+    }
     const batch = queued.slice(i, i + MAX_EVENTS_PER_REQUEST);
     const ids = batch.map((event) => event.id);
-    const payload = toWirePayload(batch);
 
-    if (sendBeacon) {
-      const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-      const accepted = sendBeacon("/api/events", blob);
-      if (accepted) {
-        await removeQueuedAnalyticsEvents(ids);
-        sent += batch.length;
-        continue;
-      }
+    try {
+      await deps.apiClient.post("/api/events", toWirePayload(batch), { keepalive: true });
+      sent += batch.length;
+    } catch (error) {
+      if (!isPermanentRejection(error)) throw error;
+      dropped += batch.length;
     }
-
-    await deps.apiClient.post("/api/events", payload);
     await removeQueuedAnalyticsEvents(ids);
-    sent += batch.length;
   }
 
-  return { sent, skipped: false };
+  return { sent, dropped, skipped: false };
 }
