@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createPgBossQueueClient } from "./pg-boss-queue-client.js";
 
 describe("createPgBossQueueClient", () => {
@@ -19,5 +19,45 @@ describe("createPgBossQueueClient", () => {
     // methods (see sdd/travel-hub-mvp/apply-progress).
     expect(typeof client.getQueueDepth).toBe("function");
     expect(typeof client.getDeadLetterCount).toBe("function");
+  });
+});
+
+const createQueueCalls: Array<{ name: string; options: Record<string, unknown> }> = [];
+
+vi.mock("pg-boss", () => ({
+  PgBoss: class {
+    async createQueue(name: string, options: Record<string, unknown> = {}) {
+      // Real pg-boss rejects a `deadLetter` that names a queue not yet created.
+      const dl = options.deadLetter as string | undefined;
+      if (dl && !createQueueCalls.some((c) => c.name === dl)) {
+        throw new Error(`Queue ${dl} does not exist`);
+      }
+      createQueueCalls.push({ name, options });
+    }
+  },
+}));
+
+describe("createPgBossQueueClient.createQueue", () => {
+  it("creates the dead-letter queue before the queue that references it", async () => {
+    createQueueCalls.length = 0;
+    const client = createPgBossQueueClient("postgres://user:pass@127.0.0.1:1/unused");
+
+    await client.createQueue("main-q", {
+      retryLimit: 5,
+      retryBackoffSeconds: 10,
+      deadLetterQueue: "main-q-dead-letter",
+    });
+
+    expect(createQueueCalls.map((c) => c.name)).toEqual(["main-q-dead-letter", "main-q"]);
+    expect(createQueueCalls[1]?.options.deadLetter).toBe("main-q-dead-letter");
+  });
+
+  it("creates only the queue itself when no dead-letter queue is declared", async () => {
+    createQueueCalls.length = 0;
+    const client = createPgBossQueueClient("postgres://user:pass@127.0.0.1:1/unused");
+
+    await client.createQueue("plain-q", { retryLimit: 3, retryBackoffSeconds: 5 });
+
+    expect(createQueueCalls.map((c) => c.name)).toEqual(["plain-q"]);
   });
 });
