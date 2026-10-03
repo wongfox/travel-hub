@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { StaffAlertPayloadSchema } from "contracts";
 import {
   DuplicateStaffAlertError,
   type CreateStaffAlertInput,
@@ -28,6 +29,8 @@ export function createInMemoryStaffAlertStore(
 
   return {
     async create(input: CreateStaffAlertInput): Promise<StaffAlertRecord> {
+      // Same strict minimal-PII boundary as the Postgres adapter (extra fields are rejected, never stored).
+      StaffAlertPayloadSchema.parse(input.payload);
       if (byPulseResponseId.has(input.pulseResponseId)) {
         throw new DuplicateStaffAlertError(input.pulseResponseId);
       }

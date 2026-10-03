@@ -37,6 +37,8 @@ import { JOURNEY_POLL_QUEUE } from "./modules/notifications/journey-poll-job.js"
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 import { STAFF_ALERT_DISPATCH_QUEUE } from "./modules/pulse/dispatch-staff-alerts-job.js";
 import { createInMemoryStaffAlertStore } from "./modules/pulse/staff-alert-store.js";
+import { createInMemoryPulseResponseStore } from "./modules/pulse/pulse-response-store.js";
+import { PULSE_PURGE_QUEUE } from "./modules/pulse/purge-job.js";
 import { createStaffAlertStub } from "./adapters/staff-alert/stub.js";
 
 describe("buildApp", () => {
@@ -1299,6 +1301,7 @@ describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
           flags: { ...FLAG_DEFAULTS, "pulse.capture": true } as never,
           nodeEnv: "production",
           pulseConsentTextVersion: "v1",
+          pulseResponseStore: createInMemoryPulseResponseStore(),
         },
         privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
       }),
@@ -1328,6 +1331,8 @@ describe("buildApp — pulse routes (tasks 11.4-11.6)", () => {
           staffAlertReceiverId: "ops-team",
           staffAlertProtocolRef: "proto-1",
           staffAlertRetentionDays: 90,
+          pulseResponseStore: createInMemoryPulseResponseStore(),
+          staffAlertStore: createInMemoryStaffAlertStore(),
         },
         privacy: { piiAccessAudit: createInMemoryPiiAccessAudit() },
       }),
@@ -1607,6 +1612,90 @@ describe("shared push-subscription / notification / pii-audit stores in producti
         },
       }),
     ).rejects.toThrow(/piiAccessAudit/);
+  });
+});
+
+describe("shared pulse response / staff alert stores in production-like environments", () => {
+  const captureOn = { ...FLAG_DEFAULTS, "pulse.capture": true } as never;
+  const alertsOn = { ...FLAG_DEFAULTS, "pulse.capture": true, "pulse.staff_alerts": true } as never;
+  const alertPrereqs = {
+    pulseConsentTextVersion: "v1",
+    adapterStaffAlert: "http",
+    staffAlertReceiverId: "recv-1",
+    staffAlertProtocolRef: "proto-1",
+    staffAlertRetentionDays: 90,
+  };
+  const piiAccessAudit = createInMemoryPiiAccessAudit();
+
+  it("buildApp refuses production with pulse.capture and no shared pulseResponseStore (the worker purge job could never see the api's responses)", () => {
+    expect(() =>
+      buildApp({
+        pulse: { flags: captureOn, nodeEnv: "production", pulseConsentTextVersion: "v1" },
+        privacy: { piiAccessAudit },
+      }),
+    ).toThrow(/pulseResponseStore/);
+  });
+
+  it("buildApp refuses production with pulse.staff_alerts and no shared staffAlertStore", () => {
+    expect(() =>
+      buildApp({
+        pulse: { flags: alertsOn, nodeEnv: "production", ...alertPrereqs, pulseResponseStore: createInMemoryPulseResponseStore() },
+        privacy: { piiAccessAudit },
+      }),
+    ).toThrow(/staffAlertStore/);
+  });
+
+  it("buildApp boots in production with the shared pulse stores wired in; staging is guarded too; capture alone does not need the alert store", () => {
+    const pulseResponseStore = createInMemoryPulseResponseStore();
+    const staffAlertStore = createInMemoryStaffAlertStore();
+    expect(() =>
+      buildApp({
+        pulse: { flags: alertsOn, nodeEnv: "production", ...alertPrereqs, pulseResponseStore, staffAlertStore },
+        privacy: { piiAccessAudit },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      buildApp({
+        pulse: { flags: captureOn, nodeEnv: "production", pulseConsentTextVersion: "v1", pulseResponseStore },
+        privacy: { piiAccessAudit },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      buildApp({
+        pulse: { flags: captureOn, nodeEnv: "staging", pulseConsentTextVersion: "v1" },
+        privacy: { piiAccessAudit },
+      }),
+    ).toThrow(/pulseResponseStore/);
+  });
+
+  it("buildApp does not require them while the pulse flags are off, nor outside production-like environments", () => {
+    expect(() => buildApp({ pulse: { nodeEnv: "production" } })).not.toThrow();
+    expect(() => buildApp({ pulse: { flags: alertsOn, nodeEnv: "development" } })).not.toThrow();
+  });
+
+  it("startWorker refuses production with pulse.capture without shared pulseResponseStore and staffAlertStore (purge reads both), and boots with them", async () => {
+    const pulseResponseStore = createInMemoryPulseResponseStore();
+    const staffAlertStore = createInMemoryStaffAlertStore();
+    const worker = (stores: Record<string, unknown>) => ({
+      queueClient: createInMemoryQueueClient(),
+      pulse: { flags: captureOn, nodeEnv: "production" as const, piiAccessAudit, ...stores },
+    });
+
+    await expect(startWorker(worker({}))).rejects.toThrow(/pulseResponseStore/);
+    await expect(startWorker(worker({ pulseResponseStore }))).rejects.toThrow(/staffAlertStore/);
+    await expect(startWorker(worker({ staffAlertStore }))).rejects.toThrow(/pulseResponseStore/);
+    await expect(startWorker(worker({ pulseResponseStore, staffAlertStore }))).resolves.toMatchObject({
+      jobsRegistered: expect.arrayContaining([STAFF_ALERT_DISPATCH_QUEUE, PULSE_PURGE_QUEUE]),
+    });
+  });
+
+  it("startWorker keeps the in-memory defaults while the pulse flags are off or outside production-like environments", async () => {
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), pulse: { nodeEnv: "production" } }),
+    ).resolves.toBeDefined();
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), pulse: { flags: captureOn, nodeEnv: "development" } }),
+    ).resolves.toBeDefined();
   });
 });
 

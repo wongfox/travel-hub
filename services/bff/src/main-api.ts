@@ -15,6 +15,9 @@ import { createPostgresConsentStore } from "./adapters/consent-store/postgres.js
 import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-store/postgres.js";
 import { createPostgresPushSubscriptionStore } from "./adapters/push-subscription-store/postgres.js";
 import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
+import { createPostgresPulseResponseStore } from "./adapters/pulse-response-store/postgres.js";
+import { createPostgresStaffAlertStore } from "./adapters/staff-alert-store/postgres.js";
+import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -49,6 +52,8 @@ async function main(): Promise<void> {
   // activation/SIR/receipt jobs read the very same `wifi_order` table through
   // the same DATABASE_URL (migrations: `node dist/infra/db/migrate.js`).
   const db = createDb(env.DATABASE_URL);
+  // One retention config for the stores of both processes (purge_after = answered_at + STAFF_ALERT_RETENTION_DAYS).
+  const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: env.STAFF_ALERT_RETENTION_DAYS });
 
   const app = buildApp({
     logger,
@@ -109,6 +114,10 @@ async function main(): Promise<void> {
       ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),
       ...(env.STAFF_ALERT_PROTOCOL_REF ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF } : {}),
       ...(env.STAFF_ALERT_RETENTION_DAYS ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS } : {}),
+      // Shared with the worker's dispatch and purge jobs through the same DATABASE_URL;
+      // `purge_after` is computed with the same retention config the worker uses.
+      pulseResponseStore: createPostgresPulseResponseStore(db.db, undefined, pulseRetention),
+      staffAlertStore: createPostgresStaffAlertStore(db.db, undefined, pulseRetention),
     },
     precheckin: {
       ...(env.PRECHECKIN_CONSENT_TEXT_VERSION ? { consentTextVersion: env.PRECHECKIN_CONSENT_TEXT_VERSION } : {}),

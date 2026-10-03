@@ -164,3 +164,45 @@ describe("notification migration", () => {
     expect(all).toMatch(/CREATE TYPE "public"\."notification_status" AS ENUM\('pending', 'sent', 'failed', 'skipped_policy'\)/);
   });
 });
+
+describe("pulse_response migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("enforces one response per passenger/leg as a UNIQUE constraint (the spec's idempotency lives in Postgres)", () => {
+    expect(all).toMatch(/CREATE TABLE "pulse_response"/);
+    expect(all).toMatch(
+      /CONSTRAINT "pulse_response_passenger_leg_unique" UNIQUE\("reservation_ref","passenger_ref","leg_ref"\)/,
+    );
+  });
+
+  it("indexes purge_after for the retention purge scan", () => {
+    expect(all).toMatch(/CREATE INDEX "pulse_response_purge_after_idx" ON "pulse_response" USING btree \("purge_after"\)/);
+  });
+});
+
+describe("staff_alert migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("enforces exactly one staff_alert per pulse response as UNIQUE(pulse_response_id)", () => {
+    expect(all).toMatch(/CREATE TABLE "staff_alert"/);
+    expect(all).toMatch(/CONSTRAINT "staff_alert_pulse_response_id_unique" UNIQUE\("pulse_response_id"\)/);
+  });
+
+  it("restricts status to a closed enum and indexes purge_after and pending rows", () => {
+    expect(all).toMatch(/CREATE TYPE "public"\."staff_alert_status" AS ENUM\('pending', 'sent', 'failed', 'dead'\)/);
+    expect(all).toMatch(/CREATE INDEX "staff_alert_purge_after_idx" ON "staff_alert" USING btree \("purge_after"\)/);
+    expect(all).toMatch(/CREATE INDEX "staff_alert_pending_idx" ON "staff_alert" USING btree \("seq"\) WHERE "staff_alert"\."status" = 'pending'/);
+  });
+
+  it("keeps the payload minimal-PII in the database with a top-level key allow-list CHECK", () => {
+    expect(all).toMatch(/CONSTRAINT "staff_alert_payload_minimal_keys" CHECK/);
+  });
+});
