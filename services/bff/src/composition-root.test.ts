@@ -1640,3 +1640,34 @@ describe("personal-data-protection — consent-withdrawal cascade (task 12.3)", 
     expect(await subscriptionStore.findById(subscriptionId)).toBeNull();
   });
 });
+
+describe("buildApp — analytics trip_hash secret production guard", () => {
+  const tripAccess = { nodeEnv: "production" as const, internalApiKey: "real-key" };
+
+  it("throws at build time in production when no analytics secret is provided, instead of using the public dev-only HMAC secret", () => {
+    expect(() => buildApp({ tripAccess, analytics: { nodeEnv: "production" } })).toThrow(
+      /ANALYTICS_TRIP_HASH_SECRET/,
+    );
+  });
+
+  it("also throws in staging (production-like)", () => {
+    expect(() =>
+      buildApp({
+        tripAccess: { ...tripAccess, nodeEnv: "staging" },
+        analytics: { nodeEnv: "staging" },
+      }),
+    ).toThrow(/ANALYTICS_TRIP_HASH_SECRET/);
+  });
+
+  it("does not throw in production when a real secret is provided", () => {
+    expect(() =>
+      buildApp({ tripAccess, analytics: { nodeEnv: "production", secret: "real-secret" } }),
+    ).not.toThrow();
+  });
+
+  it("keeps the dev-only fallback in development and test", () => {
+    expect(() => buildApp({ analytics: { nodeEnv: "development" } })).not.toThrow();
+    expect(() => buildApp({ analytics: { nodeEnv: "test" } })).not.toThrow();
+    expect(() => buildApp()).not.toThrow();
+  });
+});

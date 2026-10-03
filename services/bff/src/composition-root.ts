@@ -317,8 +317,10 @@ export interface BuildAppOptions {
    */
   analytics?: {
     analyticsEventStore?: AnalyticsEventStore;
-    /** `ANALYTICS_TRIP_HASH_SECRET` (env.ts); defaults to a dev-only secret. */
+    /** `ANALYTICS_TRIP_HASH_SECRET` (env.ts); defaults to a dev-only secret outside production-like environments. */
     secret?: string;
+    /** `NODE_ENV` (env.ts); production-like environments refuse the dev-only secret. */
+    nodeEnv?: NodeEnvName;
   };
 }
 
@@ -432,6 +434,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   // `sharedConsentStore`/`sharedPushSubscriptionStore`).
   const analyticsOptions = options.analytics ?? {};
   const sharedAnalyticsEventStore = analyticsOptions.analyticsEventStore ?? createInMemoryAnalyticsEventStore();
+  if (!analyticsOptions.secret && isProductionLike(analyticsOptions.nodeEnv ?? "development")) {
+    throw new Error(
+      "ANALYTICS_TRIP_HASH_SECRET is required in a production-like environment (production/staging); " +
+        "refusing to start with the public dev-only trip_hash HMAC secret.",
+    );
+  }
   const analyticsSecret = analyticsOptions.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET;
   const analyticsRecorder: AnalyticsRecorder = createAnalyticsRecorder({
     analyticsEventStore: sharedAnalyticsEventStore,

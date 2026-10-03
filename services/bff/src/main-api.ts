@@ -53,8 +53,11 @@ async function main(): Promise<void> {
     },
     analytics: {
       // Task 12.1: real env-sourced secret, so `trip_hash` pseudonymization
-      // is stable across this api process's restarts.
-      secret: env.ANALYTICS_TRIP_HASH_SECRET ?? "dev-only-analytics-trip-hash-secret",
+      // is stable across this api process's restarts. Production-like
+      // environments fail fast at boot when it is missing (composition-root.ts);
+      // the dev-only fallback applies to development/test only.
+      nodeEnv: env.NODE_ENV,
+      ...(env.ANALYTICS_TRIP_HASH_SECRET ? { secret: env.ANALYTICS_TRIP_HASH_SECRET } : {}),
     },
   });
 
