@@ -463,6 +463,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const analyticsSecret = analyticsOptions.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET;
 
   const privacyOptions = options.privacy ?? {};
+  // Events are written here and forwarded by the worker, which re-checks consent
+  // per trip: both stores must be the shared Postgres ones, never per-process maps.
+  assertSharedAnalyticsStores(analyticsOptions.nodeEnv, {
+    analyticsEventStore: analyticsOptions.analyticsEventStore,
+    consentStore: privacyOptions.consentStore,
+  });
   // Shared with `registerPrecheckinRoutes` below: a consent granted via
   // `POST /api/consents` must be visible to pre check-in's own
   // `assertConsentGranted` check — they MUST be the same store instance.
@@ -682,6 +688,31 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   return app;
 }
 
+/**
+ * The analytics pipeline spans two processes (api records consent and events,
+ * the worker re-checks consent and forwards), so a production-like deployment
+ * needs the shared stores; fail loudly instead of running on process-local
+ * in-memory maps the other process can never see (same rule as the wifi order store).
+ */
+function assertSharedAnalyticsStores(
+  nodeEnv: NodeEnvName | undefined,
+  stores: { analyticsEventStore: unknown; consentStore: unknown },
+): void {
+  if (!isProductionLike(nodeEnv ?? "development")) return;
+  if (!stores.analyticsEventStore) {
+    throw new Error(
+      "no shared analyticsEventStore is wired in a production-like environment; refusing to start with a " +
+        "process-local in-memory AnalyticsEventStore (the worker would never forward the api's events).",
+    );
+  }
+  if (!stores.consentStore) {
+    throw new Error(
+      "no shared consentStore is wired in a production-like environment; refusing to start with a " +
+        "process-local in-memory ConsentStore (the worker would never see the api's consent).",
+    );
+  }
+}
+
 export interface WorkerBootResult {
   /** Job names registered on the worker's queue. */
   jobsRegistered: string[];
@@ -810,6 +841,8 @@ export interface StartWorkerOptions {
    * /api/events` or any task 12.2 funnel call site are visible to this job.
    */
   analytics?: {
+    /** The running environment; production-like environments require shared `analyticsEventStore` and `consentStore`. Defaults to `"development"`. */
+    nodeEnv?: NodeEnvName;
     analyticsEventStore?: AnalyticsEventStore;
     analyticsSink?: Pick<AnalyticsSinkPort, "forward">;
     /** Consent is re-checked per trip at forward time; must be the SAME store instance the api process records consent in (defaults to a fresh in-memory store, which forwards nothing). */
@@ -1121,6 +1154,7 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
   if (options.analytics) {
     const a = options.analytics;
     const adapterAnalyticsSink = a.adapterAnalyticsSink ?? "stub";
+    assertSharedAnalyticsStores(a.nodeEnv, { analyticsEventStore: a.analyticsEventStore, consentStore: a.consentStore });
 
     // Same defense-in-depth check as every other adapter above: without it,
     // declaring a non-stub ADAPTER_ANALYTICS_SINK without also wiring a real

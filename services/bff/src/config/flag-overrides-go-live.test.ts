@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildApp, startWorker } from "../composition-root.js";
 import { createInMemoryQueueClient } from "../infra/queue/queue-client.js";
+import { createInMemoryAnalyticsEventStore } from "../modules/analytics/analytics-event-store.js";
+import { createInMemoryConsentStore } from "../modules/privacy/consent-store.js";
 import { createInMemoryWifiOrderStore } from "../modules/wifi-checkout/wifi-order-store.js";
 import { loadEnv } from "./env.js";
 import { FLAG_DEFAULTS, resolveFlags, type FlagKey } from "./flags.js";
@@ -26,7 +28,8 @@ function productionApi(flags: Record<FlagKey, boolean>) {
   return buildApp({
     trip: { flags },
     tripAccess: { nodeEnv: "production", internalApiKey: "k" },
-    analytics: { nodeEnv: "production", secret: "s" },
+    analytics: { nodeEnv: "production", secret: "s", analyticsEventStore: createInMemoryAnalyticsEventStore() },
+    privacy: { consentStore: createInMemoryConsentStore() },
     content: { nodeEnv: "production" },
     wifiCheckout: { nodeEnv: "production", orderStore: createInMemoryWifiOrderStore() },
     notifications: { nodeEnv: "production" },

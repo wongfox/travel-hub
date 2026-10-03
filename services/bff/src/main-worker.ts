@@ -9,6 +9,8 @@ import { scheduleWifiOrderScans, WIFI_ENTITLEMENT_ACTIVATION_QUEUE } from "./mod
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 import { createDb } from "./infra/db/client.js";
 import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
+import { createPostgresConsentStore } from "./adapters/consent-store/postgres.js";
+import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-store/postgres.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -85,13 +87,12 @@ async function main(): Promise<void> {
         ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS }
         : {}),
     },
-    // Task 12.1: registers the analytics forward job. `analyticsEventStore`
-    // defaults to a fresh in-memory instance — same documented gap as
-    // `notifications.accessLinkStore` above (a real deployment needs this to
-    // be the SAME store the `api` process's `buildApp({ analytics })`
-    // writes to, pending a Drizzle-backed `analytics_event` adapter; see
-    // `sdd/travel-hub-mvp/apply-progress`).
+    // Task 12.1: registers the analytics forward job over the SAME Postgres
+    // analytics_event / consent_record tables the api process writes to.
     analytics: {
+      nodeEnv: env.NODE_ENV,
+      analyticsEventStore: createPostgresAnalyticsEventStore(db.db),
+      consentStore: createPostgresConsentStore(db.db),
       adapterAnalyticsSink: env.ADAPTER_ANALYTICS_SINK,
       ...(env.ANALYTICS_TRIP_HASH_SECRET ? { secret: env.ANALYTICS_TRIP_HASH_SECRET } : {}),
     },

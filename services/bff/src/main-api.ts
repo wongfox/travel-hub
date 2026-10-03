@@ -11,6 +11,8 @@ import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 import { createDeadLetterAlertLogOnlyAdapter } from "./adapters/dead-letter-alert/log-only.js";
 import { createDb } from "./infra/db/client.js";
 import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
+import { createPostgresConsentStore } from "./adapters/consent-store/postgres.js";
+import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-store/postgres.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -106,7 +108,11 @@ async function main(): Promise<void> {
     precheckin: {
       ...(env.PRECHECKIN_CONSENT_TEXT_VERSION ? { consentTextVersion: env.PRECHECKIN_CONSENT_TEXT_VERSION } : {}),
     },
+    // Shared with the worker through the same DATABASE_URL: consent recorded here
+    // is what the worker's analytics forward job re-checks.
+    privacy: { consentStore: createPostgresConsentStore(db.db) },
     analytics: {
+      analyticsEventStore: createPostgresAnalyticsEventStore(db.db),
       // Task 12.1: real env-sourced secret, so `trip_hash` pseudonymization
       // is stable across this api process's restarts. Production-like
       // environments fail fast at boot when it is missing (composition-root.ts);

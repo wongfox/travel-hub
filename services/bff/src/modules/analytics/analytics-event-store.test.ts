@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { describeAnalyticsEventStoreContract } from "./analytics-event-store.conformance.js";
 import { createInMemoryAnalyticsEventStore } from "./analytics-event-store.js";
+
+describeAnalyticsEventStoreContract("in-memory", {
+  make: async (now) => createInMemoryAnalyticsEventStore(now),
+});
 
 describe("createInMemoryAnalyticsEventStore", () => {
   it("creates a record whose shape never includes a reservationRef/passengerRef field at all", async () => {

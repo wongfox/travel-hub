@@ -15,6 +15,20 @@
       "when": 1791032463080,
       "tag": "0001_low_wind_dancer",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791037229478,
+      "tag": "0002_consent_record_shared_store",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791037327771,
+      "tag": "0003_analytics_event",
+      "breakpoints": true
     }
   ]
 }
