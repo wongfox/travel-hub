@@ -32,4 +32,19 @@ describe("loadEnv", () => {
       loadEnv({ NODE_ENV: "not-a-real-env", DATABASE_URL: "postgres://x" }),
     ).toThrow();
   });
+
+  it("leaves INTERNAL_LINKS_API_KEY undefined when not provided", () => {
+    const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
+
+    expect(env.INTERNAL_LINKS_API_KEY).toBeUndefined();
+  });
+
+  it("passes through an explicitly configured INTERNAL_LINKS_API_KEY", () => {
+    const env = loadEnv({
+      DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub",
+      INTERNAL_LINKS_API_KEY: "a-real-service-secret",
+    });
+
+    expect(env.INTERNAL_LINKS_API_KEY).toBe("a-real-service-secret");
+  });
 });

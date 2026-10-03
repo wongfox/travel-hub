@@ -11,6 +11,12 @@ const EnvSchema = z.object({
   NODE_ENV: NodeEnvSchema.default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  /**
+   * Shared-secret credential for `POST /internal/links` (task 5.2). Optional
+   * here so `development`/`test` can fall back to the composition root's
+   * dev-only default; production deployments must set a real secret.
+   */
+  INTERNAL_LINKS_API_KEY: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
