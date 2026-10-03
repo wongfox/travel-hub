@@ -7,10 +7,11 @@ export interface GetPrecheckinStatusDeps {
 
 /**
  * Per-passenger completion status (task 8.4 / `TripDTO.passengers[].precheckinStatus`
- * wiring): `"received"` once a submission exists for this exact
- * `(reservationRef, passengerRef)` pair, `"none"` otherwise. `"unavailable"`
- * (e.g. purged after retention) is not produced by this function — purge
- * lands in task 8.5.
+ * wiring): `"none"` when no submission exists; `"received"` for a submission
+ * in status `"received"` or `"handed_off"` (handoff is an internal
+ * processing step — the passenger never sees a difference, since submitted
+ * images are never re-displayed either way); `"unavailable"` once the
+ * submission has been purged past its retention period (task 8.5).
  */
 export async function getPrecheckinStatusForPassenger(
   reservationRef: string,
@@ -18,5 +19,6 @@ export async function getPrecheckinStatusForPassenger(
   deps: GetPrecheckinStatusDeps,
 ): Promise<PrecheckinStatus> {
   const existing = await deps.submissionStore.findByPassenger(reservationRef, passengerRef);
-  return existing ? "received" : "none";
+  if (!existing) return "none";
+  return existing.status === "purged" ? "unavailable" : "received";
 }

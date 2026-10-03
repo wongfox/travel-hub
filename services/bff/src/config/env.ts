@@ -17,6 +17,24 @@ const EnvSchema = z.object({
    * dev-only default; production deployments must set a real secret.
    */
   INTERNAL_LINKS_API_KEY: z.string().min(1).optional(),
+  /**
+   * `PrecheckinHandoffPort` adapter selection (design Decision 6,
+   * `ADAPTER_<PORT>=stub|<vendor>`). Task 8.5's go-live guard
+   * (`config/go-live-guards.ts`) refuses to enable
+   * `precheckin.production_collection` in production/staging while this
+   * stays `"stub"`.
+   */
+  ADAPTER_PRECHECKIN_HANDOFF: z.string().min(1).default("stub"),
+  /** Legal-approved retention policy identifier; a `precheckin.production_collection` go-live prerequisite. */
+  PRECHECKIN_RETENTION_POLICY_ID: z.string().min(1).optional(),
+  /** Retention period for pre check-in data (task 8.5's `purge_after` formula); a go-live prerequisite in production/staging, with a dev/test-only default (`retention.ts`) when unset. */
+  PRECHECKIN_RETENTION_DAYS: z.coerce.number().int().positive().optional(),
+  /** Approved consent text version; a `precheckin.production_collection` go-live prerequisite. */
+  PRECHECKIN_CONSENT_TEXT_VERSION: z.string().min(1).optional(),
+  /** Real KMS key identifier; a `precheckin.production_collection` go-live prerequisite (replaces the dev-only default key id). */
+  PRECHECKIN_KMS_KEY_ID: z.string().min(1).optional(),
+  /** `HANDOFF_GRACE` window (days) in task 8.5's `purge_after` formula; dev/test-only default (`retention.ts`) when unset. */
+  PRECHECKIN_HANDOFF_GRACE_DAYS: z.coerce.number().int().positive().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

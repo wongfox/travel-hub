@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { DocumentType } from "contracts";
 import { encryptEnvelope } from "../../infra/crypto/envelope-encryption.js";
 import type { KeyManagementPort } from "../../infra/crypto/key-management-port.js";
+import { computeInitialPurgeAfter, type RetentionConfig } from "./retention.js";
 import {
   AlreadySubmittedError,
   type PrecheckinDocumentStorePort,
@@ -29,9 +30,18 @@ export interface SubmitPrecheckinInput {
 
 export interface SubmitPrecheckinDeps {
   submissionStore: Pick<PrecheckinSubmissionStore, "findByPassenger" | "create">;
-  documentStore: PrecheckinDocumentStorePort;
+  documentStore: Pick<PrecheckinDocumentStorePort, "put" | "delete">;
   kms: KeyManagementPort;
   keyId: string;
+  /**
+   * Latest leg arrival across the reservation (task 8.5's `resolveTripEndLocal`),
+   * used only to compute the submission's initial `purgeAfter` — this use
+   * case never reads `SirBookingPort` itself, so the caller (the HTTP route)
+   * must resolve it first.
+   */
+  tripEndLocal: string;
+  /** `PRECHECKIN_RETENTION_DAYS`/`PRECHECKIN_HANDOFF_GRACE_DAYS`-derived config (task 8.5's `retention.ts`). */
+  retention: RetentionConfig;
 }
 
 async function encryptAndStore(
@@ -110,5 +120,8 @@ export async function submitPrecheckin(
     photo,
     idFront,
     idBack,
+    // Task 8.5: `trip end + PRECHECKIN_RETENTION_DAYS` baseline (`handed_off_at`
+    // is unknown yet, so the `HandoffJob` tightens this once a handoff completes).
+    purgeAfter: computeInitialPurgeAfter(deps.tripEndLocal, deps.retention),
   });
 }
