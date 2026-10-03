@@ -27,6 +27,11 @@ export function createPgBossQueueClient(connectionString: string): QueueClient {
     },
 
     async createQueue(name: string, policy: QueueRetryPolicy) {
+      // pg-boss rejects `deadLetter` naming a queue that does not exist yet,
+      // so the dead-letter queue must be created first (no-op if it exists).
+      if (policy.deadLetterQueue) {
+        await boss.createQueue(policy.deadLetterQueue);
+      }
       await boss.createQueue(name, {
         retryLimit: policy.retryLimit,
         retryBackoff: true,
