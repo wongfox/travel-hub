@@ -17,6 +17,7 @@ import { createPostgresNotificationStore } from "./adapters/notification-store/p
 import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
 import { createPostgresPrecheckinSubmissionStore } from "./adapters/precheckin-submission-store/postgres.js";
 import { createPostgresPulseResponseStore } from "./adapters/pulse-response-store/postgres.js";
+import { createPostgresAccessLinkStore } from "./adapters/access-link-store/postgres.js";
 import { createPostgresStaffAlertStore } from "./adapters/staff-alert-store/postgres.js";
 import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
 
@@ -82,6 +83,8 @@ async function main(): Promise<void> {
       nodeEnv: env.NODE_ENV,
       // The very tables the api writes: subscriptions to fan out to / purge, notification dedupe, audit.
       subscriptionStore: createPostgresPushSubscriptionStore(db.db),
+      // The links the api issues: journey-poll's SIR polling adapter scans the live ones (`listActive`).
+      accessLinkStore: createPostgresAccessLinkStore(db.db),
       notificationStore: createPostgresNotificationStore(db.db),
       piiAccessAudit,
       adapterWebPush: env.ADAPTER_WEB_PUSH,
