@@ -35,6 +35,21 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot schema migration (drizzle, `services/bff/src/infra/db/migrations`):
+  # applies pending migrations (e.g. `wifi_order`) and exits; bff-api and
+  # bff-worker only start once it has completed. In production run the same
+  # command (`node dist/infra/db/migrate.js`) as a one-off task before deploying.
+  bff-migrate:
+    build:
+      context: .
+      dockerfile: services/bff/Dockerfile
+    command: ["node", "dist/infra/db/migrate.js"]
+    environment:
+      DATABASE_URL: postgres://travel_hub:travel_hub@postgres:5432/travel_hub
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   bff-api:
     build:
       context: .
@@ -71,6 +86,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      bff-migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -92,6 +109,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      bff-migrate:
+        condition: service_completed_successfully
 
   web:
     build:

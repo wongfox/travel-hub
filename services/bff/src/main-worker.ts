@@ -7,10 +7,15 @@ import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 import { FLAG_DEFAULTS } from "./config/flags.js";
 import { scheduleWifiOrderScans, WIFI_ENTITLEMENT_ACTIVATION_QUEUE } from "./modules/wifi-checkout/wifi-order-jobs.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
+import { createDb } from "./infra/db/client.js";
+import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
   const queueClient = createPgBossQueueClient(env.DATABASE_URL);
+  // Same DATABASE_URL and store implementation as the api process, so the
+  // jobs below see every order the api wrote.
+  const db = createDb(env.DATABASE_URL);
   const result = await startWorker({
     queueClient,
     precheckin: {
@@ -47,6 +52,7 @@ async function main(): Promise<void> {
       adapterReceipt: env.ADAPTER_RECEIPT,
       adapterSirPos: env.ADAPTER_SIR_POS,
       adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
+      orderStore: createPostgresWifiOrderStore(db.db),
     },
     notifications: {
       // Task 11.2: real env-sourced config, so the go-live guard
@@ -101,6 +107,7 @@ async function main(): Promise<void> {
     console.log(`worker received ${signal}, stopping`);
     queueClient
       .stop()
+      .then(() => db.close())
       .then(() => process.exit(0))
       .catch((error: unknown) => {
         console.error(error);

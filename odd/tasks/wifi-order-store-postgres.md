@@ -17,7 +17,7 @@ Strict TDD (bff: `pnpm --filter bff exec vitest run --no-file-parallelism`); fol
 - [x] T1 Explore conventions (Drizzle schema, migrations, how existing Postgres stores are built/tested) and record the exact `WifiOrderStore` contract.
 - [x] T2 Schema + migration for `wifi_order` (+ idempotency-key uniqueness).
 - [x] T3 Postgres adapter implementing the full store contract incl. atomic compare-and-swap `transition`; contract/conformance tests run against both in-memory and Postgres.
-- [ ] T4 Wire it in `main-api.ts` and `main-worker.ts` (same `DATABASE_URL`); keep the production guard; compose/infra env consistent.
+- [x] T4 Wire it in `main-api.ts` and `main-worker.ts` (same `DATABASE_URL`); keep the production guard; compose/infra env consistent.
 - [ ] T5 Real end-to-end check: api + worker against Postgres in docker compose (order created via API, activated by the worker); update KNOWN-GAPS/docs.
 
 ## Acceptance
@@ -45,3 +45,9 @@ RED-first tests per task, turbo typecheck/lint/test green, real Postgres run evi
 - Conformance suite `modules/wifi-checkout/wifi-order-store.conformance.ts` (13 cases incl. concurrent create, concurrent CAS exactly-one-wins, stale progress write vs REFUND_PENDING) run against in-memory (`wifi-order-store.test.ts`) and Postgres (`adapters/wifi-order-store/postgres.test.ts`, gated by TEST_DATABASE_URL).
 - RED: in-memory contract 7 failed before the port change; caller CAS tests failed before caller changes; postgres test failed (module missing). GREEN: full `vitest run --no-file-parallelism` with TEST_DATABASE_URL: 120 files, 773 passed. Mutation check (dropping the status predicate from the UPDATE) made 3 Postgres CAS tests fail, then restored.
 - Postgres adapter: single `UPDATE ... WHERE id AND status RETURNING` + event insert in one transaction; create via `ON CONFLICT (idempotency_key) DO NOTHING`.
+
+### T4 evidence
+- `main-api.ts` and `main-worker.ts` each build `createDb(env.DATABASE_URL)` + `createPostgresWifiOrderStore(db.db)` and pass it as `wifiCheckout.orderStore` (production guard in composition-root untouched, still throws without an orderStore); pools are closed on api `onClose` / worker SIGTERM.
+- Migrations: compose gets a one-shot `bff-migrate` service (`node dist/infra/db/migrate.js`, same image) that bff-api/bff-worker wait for (`service_completed_successfully`). No Postgres migration step existed before. Production: run the same command as a one-off task before deploy (infra/compute.tf already injects the same DATABASE_URL secret into api and worker via `shared_container_secrets`; no terraform change needed).
+- `migrate-path.test.ts` (2 tests) covers src/dist migrations-folder resolution. Entry points have no unit tests; proven in T5.
+- tsc/eslint clean; full vitest with TEST_DATABASE_URL green.
