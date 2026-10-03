@@ -3,6 +3,8 @@ import { buildApp, startWorker } from "../composition-root.js";
 import { createInMemoryQueueClient } from "../infra/queue/queue-client.js";
 import { createInMemoryAnalyticsEventStore } from "../modules/analytics/analytics-event-store.js";
 import { createInMemoryConsentStore } from "../modules/privacy/consent-store.js";
+import { createInMemoryAccessLinkStore } from "../modules/trip-access/access-link-store.js";
+import { createInMemorySessionStore } from "../modules/trip-access/session-store.js";
 import { createInMemoryWifiOrderStore } from "../modules/wifi-checkout/wifi-order-store.js";
 import { loadEnv } from "./env.js";
 import { FLAG_DEFAULTS, resolveFlags, type FlagKey } from "./flags.js";
@@ -27,7 +29,12 @@ function flagsFromEnv(overrides: Partial<Record<FlagKey, boolean>>): Record<Flag
 function productionApi(flags: Record<FlagKey, boolean>) {
   return buildApp({
     trip: { flags },
-    tripAccess: { nodeEnv: "production", internalApiKey: "k" },
+    tripAccess: {
+      nodeEnv: "production",
+      internalApiKey: "k",
+      accessLinkStore: createInMemoryAccessLinkStore(),
+      sessionStore: createInMemorySessionStore(),
+    },
     analytics: { nodeEnv: "production", secret: "s", analyticsEventStore: createInMemoryAnalyticsEventStore() },
     privacy: { consentStore: createInMemoryConsentStore() },
     content: { nodeEnv: "production" },
@@ -42,7 +49,7 @@ function productionWorker(flags: Record<FlagKey, boolean>) {
     queueClient: createInMemoryQueueClient(),
     precheckin: { flags, nodeEnv: "production" },
     wifiCheckout: { flags, nodeEnv: "production", orderStore: createInMemoryWifiOrderStore() },
-    notifications: { flags, nodeEnv: "production" },
+    notifications: { flags, nodeEnv: "production", accessLinkStore: createInMemoryAccessLinkStore() },
     pulse: { flags, nodeEnv: "production" },
   });
 }

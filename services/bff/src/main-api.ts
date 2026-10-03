@@ -17,6 +17,8 @@ import { createPostgresPushSubscriptionStore } from "./adapters/push-subscriptio
 import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
 import { createPostgresPrecheckinSubmissionStore } from "./adapters/precheckin-submission-store/postgres.js";
 import { createPostgresPulseResponseStore } from "./adapters/pulse-response-store/postgres.js";
+import { createPostgresAccessLinkStore } from "./adapters/access-link-store/postgres.js";
+import { createPostgresSessionStore } from "./adapters/session-store/postgres.js";
 import { createPostgresStaffAlertStore } from "./adapters/staff-alert-store/postgres.js";
 import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
 
@@ -72,6 +74,11 @@ async function main(): Promise<void> {
     trip: { flags },
     tripAccess: {
       nodeEnv: env.NODE_ENV,
+      // Shared by every api instance and read by the worker's journey-poll through the same
+      // DATABASE_URL; only SHA-256 hashes of tokens/session ids are stored. The per-process
+      // rate limiters stay in-memory (documented multi-instance gap in e2e/KNOWN-GAPS.md).
+      accessLinkStore: createPostgresAccessLinkStore(db.db),
+      sessionStore: createPostgresSessionStore(db.db),
       ...(env.INTERNAL_LINKS_API_KEY ? { internalApiKey: env.INTERNAL_LINKS_API_KEY } : {}),
     },
     content: {
