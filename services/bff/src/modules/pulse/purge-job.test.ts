@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryPulseResponseStore } from "./pulse-response-store.js";
 import { createInMemoryStaffAlertStore } from "./staff-alert-store.js";
 import { createInMemoryPiiAccessAudit } from "../../infra/audit/pii-access-audit.js";
 import { runPulsePurgeJob } from "./purge-job.js";
+import { schedulePulsePurge, PULSE_PURGE_QUEUE } from "./purge-job.js";
 
 const RESPONSE_INPUT = { reservationRef: "RES-1001", passengerRef: "P1", legRef: "L1", score: 2, locale: "es" as const };
 
@@ -91,5 +92,33 @@ describe("runPulsePurgeJob", () => {
     const result = await runPulsePurgeJob({ pulseResponseStore, staffAlertStore, piiAccessAudit });
 
     expect(result).toEqual({ purgedResponses: 0, purgedAlerts: 0, failed: 0 });
+  });
+});
+
+describe("schedulePulsePurge", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues an idempotent scan for its queue on every tick, defaults to 3600000 ms, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const sendIdempotent = vi.fn().mockResolvedValue(undefined);
+
+    const stop = schedulePulsePurge({ sendIdempotent }, { intervalMs: 1000 });
+    expect(sendIdempotent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    expect(sendIdempotent).toHaveBeenCalledWith(PULSE_PURGE_QUEUE, "scan", {});
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+
+    const stopDefault = schedulePulsePurge({ sendIdempotent });
+    await vi.advanceTimersByTimeAsync(3600000 - 1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(2);
+    stopDefault();
   });
 });

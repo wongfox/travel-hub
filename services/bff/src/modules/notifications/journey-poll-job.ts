@@ -2,6 +2,7 @@ import type { AlertSourcePolicy } from "contracts";
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import { dispatchJourneyEvents } from "./dispatch-journey-events.js";
 import type { JourneyEventSourcePort, NotificationStore, PushSubscriptionStore, WebPushPort } from "./ports.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 
 /** Worker queue this module registers on (task 11.2), following `registerHandoffJob`/`registerWifiOrderJobs`'s exact `registerXxxJob(queueClient, deps)` convention. */
 export const JOURNEY_POLL_QUEUE = "journey-poll";
@@ -44,4 +45,19 @@ export async function registerJourneyPollJob(queueClient: QueueClient, deps: Jou
   await queueClient.work(JOURNEY_POLL_QUEUE, async () => {
     await runJourneyPollJob(deps);
   });
+}
+
+/** Default cadence of the journey poll (60s); overridden by the env-driven interval in `main-worker.ts`. */
+export const JOURNEY_POLL_INTERVAL_MS = 60_000;
+
+/**
+ * Periodically enqueues the journey poll on the worker process (nothing else does).
+ * Delegates to `scheduleQueueScans`: idempotent natural key, logged send
+ * failures retried next tick, returns a stop function.
+ */
+export function scheduleJourneyPoll(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [JOURNEY_POLL_QUEUE], { intervalMs: options.intervalMs ?? JOURNEY_POLL_INTERVAL_MS });
 }

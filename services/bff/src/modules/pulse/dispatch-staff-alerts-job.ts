@@ -1,5 +1,6 @@
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import type { StaffAlertPort, StaffAlertStore } from "./ports.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 
 /** Worker queue this module registers on (task 11.5), following `registerHandoffJob`/`registerWifiOrderJobs`'s exact `registerXxxJob(queueClient, deps)` convention; triggered on the deployment's own cadence (Phase 13's scope), same as `PrecheckinHandoffPort`'s job. */
 export const STAFF_ALERT_DISPATCH_QUEUE = "pulse-staff-alert-dispatch";
@@ -60,4 +61,19 @@ export async function registerStaffAlertDispatchJob(
   await queueClient.work(STAFF_ALERT_DISPATCH_QUEUE, async () => {
     await runStaffAlertDispatchJob(deps);
   });
+}
+
+/** Default cadence of the staff-alert dispatch scan (60s); overridden by the env-driven interval in `main-worker.ts`. */
+export const STAFF_ALERT_DISPATCH_INTERVAL_MS = 60_000;
+
+/**
+ * Periodically enqueues the staff-alert dispatch scan on the worker process (nothing else does).
+ * Delegates to `scheduleQueueScans`: idempotent natural key, logged send
+ * failures retried next tick, returns a stop function.
+ */
+export function scheduleStaffAlertDispatch(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [STAFF_ALERT_DISPATCH_QUEUE], { intervalMs: options.intervalMs ?? STAFF_ALERT_DISPATCH_INTERVAL_MS });
 }

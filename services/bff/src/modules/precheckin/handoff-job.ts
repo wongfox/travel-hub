@@ -11,6 +11,7 @@ import {
   type PrecheckinSubmissionStore,
   type StoredPrecheckinImage,
 } from "./ports.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 
 const HANDOFF_ACTOR = "worker:precheckin-handoff-job";
 
@@ -154,4 +155,19 @@ export async function registerHandoffJob(queueClient: QueueClient, deps: Handoff
   await queueClient.work(PRECHECKIN_HANDOFF_QUEUE, async () => {
     await runHandoffJob(deps);
   });
+}
+
+/** Default cadence of the pre-check-in handoff scan (60s); overridden by the env-driven interval in `main-worker.ts`. */
+export const PRECHECKIN_HANDOFF_SCAN_INTERVAL_MS = 60_000;
+
+/**
+ * Periodically enqueues the pre-check-in handoff scan on the worker process (nothing else does).
+ * Delegates to `scheduleQueueScans`: idempotent natural key, logged send
+ * failures retried next tick, returns a stop function.
+ */
+export function scheduleHandoffScans(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [PRECHECKIN_HANDOFF_QUEUE], { intervalMs: options.intervalMs ?? PRECHECKIN_HANDOFF_SCAN_INTERVAL_MS });
 }

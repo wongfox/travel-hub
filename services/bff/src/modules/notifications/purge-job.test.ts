@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryPushSubscriptionStore } from "./push-subscription-store.js";
 import { createInMemoryPiiAccessAudit } from "../../infra/audit/pii-access-audit.js";
 import { runPushSubscriptionPurgeJob } from "./purge-job.js";
+import { schedulePushSubscriptionPurge, PUSH_SUBSCRIPTION_PURGE_QUEUE } from "./purge-job.js";
 
 const INPUT = {
   linkId: "link-1",
@@ -71,5 +72,33 @@ describe("runPushSubscriptionPurgeJob", () => {
     expect(result.failed).toBe(1);
     expect(await store.findById(willSucceed.id)).toBeNull();
     expect(await store.findById(willFail.id)).not.toBeNull();
+  });
+});
+
+describe("schedulePushSubscriptionPurge", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues an idempotent scan for its queue on every tick, defaults to 3600000 ms, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const sendIdempotent = vi.fn().mockResolvedValue(undefined);
+
+    const stop = schedulePushSubscriptionPurge({ sendIdempotent }, { intervalMs: 1000 });
+    expect(sendIdempotent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    expect(sendIdempotent).toHaveBeenCalledWith(PUSH_SUBSCRIPTION_PURGE_QUEUE, "scan", {});
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+
+    const stopDefault = schedulePushSubscriptionPurge({ sendIdempotent });
+    await vi.advanceTimersByTimeAsync(3600000 - 1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(2);
+    stopDefault();
   });
 });

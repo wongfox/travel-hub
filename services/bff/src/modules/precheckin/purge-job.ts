@@ -1,6 +1,7 @@
 import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import type { PrecheckinDocumentStorePort, PrecheckinSubmissionRecord, PrecheckinSubmissionStore } from "./ports.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 
 const PURGE_ACTOR = "worker:precheckin-purge-job";
 
@@ -68,4 +69,19 @@ export async function registerPurgeJob(queueClient: QueueClient, deps: PurgeJobD
   await queueClient.work(PRECHECKIN_PURGE_QUEUE, async () => {
     await runPurgeJob(deps);
   });
+}
+
+/** Default cadence of the pre-check-in retention purge (3600s); overridden by the env-driven interval in `main-worker.ts`. */
+export const PRECHECKIN_PURGE_INTERVAL_MS = 3_600_000;
+
+/**
+ * Periodically enqueues the pre-check-in retention purge on the worker process (nothing else does).
+ * Delegates to `scheduleQueueScans`: idempotent natural key, logged send
+ * failures retried next tick, returns a stop function.
+ */
+export function schedulePrecheckinPurge(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [PRECHECKIN_PURGE_QUEUE], { intervalMs: options.intervalMs ?? PRECHECKIN_PURGE_INTERVAL_MS });
 }

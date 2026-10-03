@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runPurgeJob } from "./purge-job.js";
 import { createInMemorySubmissionStore } from "./submission-store.js";
 import { createPrecheckinDocumentStoreStub } from "../../adapters/precheckin-document-store/stub.js";
 import { createInMemoryPiiAccessAudit } from "../../infra/audit/pii-access-audit.js";
 import { createKmsStub } from "../../infra/crypto/kms-stub.js";
 import { decryptEnvelope, encryptEnvelope } from "../../infra/crypto/envelope-encryption.js";
+import { schedulePrecheckinPurge, PRECHECKIN_PURGE_QUEUE } from "./purge-job.js";
 
 const KEY_ID = "purge-test-key";
 
@@ -129,5 +130,33 @@ describe("runPurgeJob", () => {
     const second = await runPurgeJob(deps);
 
     expect(second).toEqual({ purged: 0 });
+  });
+});
+
+describe("schedulePrecheckinPurge", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues an idempotent scan for its queue on every tick, defaults to 3600000 ms, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const sendIdempotent = vi.fn().mockResolvedValue(undefined);
+
+    const stop = schedulePrecheckinPurge({ sendIdempotent }, { intervalMs: 1000 });
+    expect(sendIdempotent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    expect(sendIdempotent).toHaveBeenCalledWith(PRECHECKIN_PURGE_QUEUE, "scan", {});
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+
+    const stopDefault = schedulePrecheckinPurge({ sendIdempotent });
+    await vi.advanceTimersByTimeAsync(3600000 - 1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(2);
+    stopDefault();
   });
 });
