@@ -229,3 +229,27 @@ export const pushSubscription = pgTable(
     index("push_subscription_expires_at_idx").on(table.expiresAt),
   ],
 );
+
+/** Mirror `NotificationChannel` / `NotificationStatus` (modules/notifications/ports.ts): closed sets, so enums like `consent_purpose`. */
+export const notificationChannel = pgEnum("notification_channel", ["banner", "push"]);
+export const notificationStatus = pgEnum("notification_status", ["pending", "sent", "failed", "skipped_policy"]);
+
+/**
+ * `notification` (design Data Model, task 11.2): written and updated by the
+ * worker's journey-poll job. `dedupe_key` is UNIQUE: a repeated journey event
+ * can never produce a second row, enforced by Postgres (the adapter relies on
+ * `ON CONFLICT DO NOTHING`, race-safe across processes). Holds no PII beyond
+ * the reservation reference.
+ */
+export const notification = pgTable("notification", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reservationRef: text("reservation_ref").notNull(),
+  alertType: text("alert_type").notNull(),
+  sourceEventId: text("source_event_id").notNull(),
+  channel: notificationChannel("channel").notNull(),
+  dedupeKey: text("dedupe_key").notNull().unique(),
+  status: notificationStatus("status").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

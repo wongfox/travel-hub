@@ -146,3 +146,21 @@ describe("push_subscription migration", () => {
     expect(all).toMatch(/CREATE INDEX "push_subscription_expires_at_idx" ON "push_subscription" USING btree \("expires_at"\)/);
   });
 });
+
+describe("notification migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("enforces dedupe_key as UNIQUE (the journey-poll dedupe guarantee lives in Postgres)", () => {
+    expect(all).toMatch(/CREATE TABLE "notification"/);
+    expect(all).toMatch(/CONSTRAINT "notification_dedupe_key_unique" UNIQUE\("dedupe_key"\)/);
+  });
+
+  it("restricts channel and status to closed enums", () => {
+    expect(all).toMatch(/CREATE TYPE "public"\."notification_channel" AS ENUM\('banner', 'push'\)/);
+    expect(all).toMatch(/CREATE TYPE "public"\."notification_status" AS ENUM\('pending', 'sent', 'failed', 'skipped_policy'\)/);
+  });
+});
