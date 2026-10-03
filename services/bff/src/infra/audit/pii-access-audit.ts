@@ -5,9 +5,9 @@ import { randomUUID } from "node:crypto";
  * unwrap, handoff, or purge of pre check-in ID/photo data must be audited.
  * Modeled as a small port (same in-memory-port convention as the other
  * stores in this codebase) so the pre check-in `HandoffJob`/`PurgeJob` (task
- * 8.5) are unit testable deterministically; a Drizzle-backed adapter over the
- * `pii_access_audit` table (task 3.3's schema) lands once a consumer needs it
- * against a live database.
+ * 8.5) are unit testable deterministically. The in-memory implementation is the
+ * dev/test default; `adapters/pii-access-audit/postgres.ts` is the shared
+ * Postgres one (same conformance suite) for api + worker.
  */
 export interface PiiAccessAuditEntry {
   actor: string;
@@ -30,7 +30,7 @@ export interface InMemoryPiiAccessAudit extends PiiAccessAuditPort {
   readonly entries: PiiAccessAuditRecord[];
 }
 
-export function createInMemoryPiiAccessAudit(): InMemoryPiiAccessAudit {
+export function createInMemoryPiiAccessAudit(now: () => Date = () => new Date()): InMemoryPiiAccessAudit {
   const entries: PiiAccessAuditRecord[] = [];
 
   return {
@@ -40,7 +40,7 @@ export function createInMemoryPiiAccessAudit(): InMemoryPiiAccessAudit {
       const recorded: PiiAccessAuditRecord = {
         ...entry,
         id: randomUUID(),
-        at: new Date().toISOString(),
+        at: now().toISOString(),
       };
       entries.push(recorded);
       return recorded;

@@ -108,3 +108,20 @@ describe("analytics_event migration", () => {
     expect(all).toMatch(/CREATE INDEX "analytics_event_trip_hash_idx" ON "analytics_event" USING btree \("trip_hash"\)/);
   });
 });
+
+describe("pii_access_audit shared-store migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("adds a monotonic seq and an index for per-subject lookups", () => {
+    expect(all).toMatch(/ALTER TABLE "pii_access_audit" ADD COLUMN "seq" bigint NOT NULL GENERATED ALWAYS AS IDENTITY/);
+    expect(all).toMatch(/CREATE INDEX "pii_access_audit_subject_idx" ON "pii_access_audit" USING btree \("subject_type","subject_id","seq"\)/);
+  });
+
+  it("makes the table append-only with a trigger that rejects UPDATE and DELETE", () => {
+    expect(all).toMatch(/CREATE TRIGGER pii_access_audit_append_only\s+BEFORE UPDATE OR DELETE ON "pii_access_audit"/);
+  });
+});

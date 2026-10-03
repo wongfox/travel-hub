@@ -88,14 +88,26 @@ export const featureFlag = pgTable("feature_flag", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const piiAccessAudit = pgTable("pii_access_audit", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  actor: text("actor").notNull(),
-  action: text("action").notNull(),
-  subjectType: text("subject_type").notNull(),
-  subjectId: text("subject_id").notNull(),
-  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * Append-only audit log of every unwrap/handoff/purge of personal data, shared
+ * by `bff-api` (consent-withdrawal cascade) and `bff-worker` (pre check-in,
+ * push-subscription and pulse purge jobs). `seq` is the total order (`at` ties
+ * inside one clock tick); a trigger (migration 0004) makes Postgres itself
+ * reject UPDATE/DELETE, so append-only does not depend on the adapter alone.
+ */
+export const piiAccessAudit = pgTable(
+  "pii_access_audit",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    subjectType: text("subject_type").notNull(),
+    subjectId: text("subject_id").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("pii_access_audit_subject_idx").on(table.subjectType, table.subjectId, table.seq)],
+);
 
 /** Mirrors `WifiOrderStatusSchema` (contracts/src/wifi.ts); a closed set, so an enum like `consent_purpose`. */
 export const wifiOrderStatus = pgEnum("wifi_order_status", [

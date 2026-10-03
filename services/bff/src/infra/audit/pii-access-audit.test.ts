@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { describePiiAccessAuditContract } from "./pii-access-audit.conformance.js";
 import { createInMemoryPiiAccessAudit } from "./pii-access-audit.js";
+
+describePiiAccessAuditContract("in-memory", {
+  async make(now) {
+    const audit = createInMemoryPiiAccessAudit(now);
+    return { audit, readAll: async () => [...audit.entries] };
+  },
+});
 
 describe("createInMemoryPiiAccessAudit", () => {
   it("records an entry with a generated id and timestamp", async () => {
@@ -15,15 +23,5 @@ describe("createInMemoryPiiAccessAudit", () => {
     expect(recorded.id).toEqual(expect.any(String));
     expect(recorded.at).toEqual(expect.any(String));
     expect(audit.entries).toEqual([recorded]);
-  });
-
-  it("appends every recorded entry in call order, never overwriting an earlier one", async () => {
-    const audit = createInMemoryPiiAccessAudit();
-
-    await audit.record({ actor: "a", action: "unwrap", subjectType: "precheckin_submission", subjectId: "sub-1" });
-    await audit.record({ actor: "a", action: "handoff", subjectType: "precheckin_submission", subjectId: "sub-1" });
-    await audit.record({ actor: "b", action: "purge", subjectType: "precheckin_submission", subjectId: "sub-2" });
-
-    expect(audit.entries.map((entry) => entry.action)).toEqual(["unwrap", "handoff", "purge"]);
   });
 });
