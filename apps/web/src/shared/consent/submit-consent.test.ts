@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ApiClient } from "../../../shared/api/client.js";
+import type { ApiClient } from "../api/client.js";
 import { submitConsent } from "./submit-consent.js";
 
 function buildFakeApiClient(post: ApiClient["post"]): ApiClient {

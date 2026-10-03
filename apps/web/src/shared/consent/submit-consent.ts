@@ -1,5 +1,5 @@
 import type { ConsentPurpose, ConsentState, RecordConsentRequest } from "contracts";
-import type { ApiClient } from "../../../shared/api/client.js";
+import type { ApiClient } from "../api/client.js";
 
 /**
  * Calls `POST /api/consents` (task 8.1) to record a purpose-specific
