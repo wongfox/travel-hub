@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { TripDTO } from "contracts";
@@ -75,6 +75,32 @@ describe("TripHomePage", () => {
     expect(screen.getByTestId("theme-provider")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Itinerary" })).toHaveAttribute("href", "/trip/itinerary");
     expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute("href", "/trip/documents");
+  });
+
+  it("links to pre check-in only when the capture flag is on and a consent version is published", async () => {
+    const on = buildFakeApiClient(
+      vi.fn().mockResolvedValue(
+        buildTrip({
+          features: { precheckinCaptureUi: true } as TripDTO["features"],
+          consentTextVersions: { precheckin: "pc-v1" },
+        }),
+      ),
+    );
+    renderPage(on);
+    expect(await screen.findByRole("link", { name: "Pre check-in" })).toHaveAttribute("href", "/trip/precheckin");
+    cleanup();
+
+    const off = buildFakeApiClient(
+      vi.fn().mockResolvedValue(
+        buildTrip({
+          features: { precheckinCaptureUi: false } as TripDTO["features"],
+          consentTextVersions: { precheckin: "pc-v1" },
+        }),
+      ),
+    );
+    renderPage(off);
+    await screen.findByTestId("trip-status");
+    expect(screen.queryByRole("link", { name: "Pre check-in" })).not.toBeInTheDocument();
   });
 
   it("renders relocation alerts alongside the status", async () => {
