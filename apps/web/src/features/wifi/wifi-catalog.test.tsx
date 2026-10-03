@@ -11,8 +11,8 @@ const PACKAGES: WifiPackageDTO[] = [
   { id: "WIFI-120", code: "wifi-120", name: "WiFi 120 min", priceMinor: 2500, currency: "PEN", durationMinutes: 120 },
 ];
 
-function renderWithI18n(ui: React.ReactElement) {
-  const i18n = createI18n({ initialLocale: "en" });
+function renderWithI18n(ui: React.ReactElement, initialLocale: "es" | "en" | "pt" = "en") {
+  const i18n = createI18n({ initialLocale });
   return render(<I18nextProvider i18n={i18n}>{ui}</I18nextProvider>);
 }
 
@@ -40,5 +40,15 @@ describe("WifiCatalog", () => {
     for (const button of screen.getAllByRole("button")) {
       expect(button).toBeDisabled();
     }
+  });
+
+  it("formats prices with the active locale (es keeps es-PE soles, en does not)", () => {
+    const { unmount } = renderWithI18n(<WifiCatalog packages={PACKAGES} onBuy={vi.fn()} isBuying={false} />, "es");
+    expect(screen.getByText(/^S\/\s?15\.00$/)).toBeInTheDocument();
+    unmount();
+
+    renderWithI18n(<WifiCatalog packages={PACKAGES} onBuy={vi.fn()} isBuying={false} />, "en");
+    expect(screen.queryAllByText(/S\//)).toHaveLength(0);
+    expect(screen.getByText(/^PEN\s?15\.00$/)).toBeInTheDocument();
   });
 });

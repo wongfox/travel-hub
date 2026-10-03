@@ -8,8 +8,12 @@ export interface WifiCatalogProps {
   isBuying: boolean;
 }
 
-function formatPrice(amountMinor: number, currency: string): string {
-  return new Intl.NumberFormat("es-PE", { style: "currency", currency }).format(amountMinor / 100);
+/** `es` keeps the Peruvian regional format (soles as `S/`); the other UI locales use their own language's currency format. */
+const INTL_LOCALE_BY_UI_LOCALE: Record<string, string> = { es: "es-PE" };
+
+function formatPrice(amountMinor: number, currency: string, uiLocale: string): string {
+  const intlLocale = INTL_LOCALE_BY_UI_LOCALE[uiLocale] ?? uiLocale;
+  return new Intl.NumberFormat(intlLocale, { style: "currency", currency }).format(amountMinor / 100);
 }
 
 /**
@@ -20,7 +24,7 @@ function formatPrice(amountMinor: number, currency: string): string {
  * `feature_disabled`.
  */
 export function WifiCatalog({ packages, onBuy, isBuying }: WifiCatalogProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   if (packages.length === 0) {
     return <p>{t("wifi.noPackages")}</p>;
@@ -31,7 +35,7 @@ export function WifiCatalog({ packages, onBuy, isBuying }: WifiCatalogProps) {
       {packages.map((pkg) => (
         <li key={pkg.id} data-testid="wifi-package">
           <p>{pkg.name}</p>
-          <p>{formatPrice(pkg.priceMinor, pkg.currency)}</p>
+          <p>{formatPrice(pkg.priceMinor, pkg.currency, i18n.language)}</p>
           <p>{t("wifi.duration", { minutes: pkg.durationMinutes })}</p>
           <button type="button" onClick={() => onBuy(pkg.id)} disabled={isBuying}>
             {t("wifi.buy")}
