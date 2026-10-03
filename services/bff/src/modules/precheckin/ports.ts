@@ -128,7 +128,7 @@ export interface PrecheckinSubmissionStore {
   markHandedOff(id: string, handedOffAt: string, purgeAfter: string): Promise<PrecheckinSubmissionRecord>;
   /** Every submission whose `purgeAfter` has elapsed as of `asOf` and is not already purged; the `PurgeJob`'s (task 8.5) input set. */
   listPastPurgeAfter(asOf: Date): Promise<PrecheckinSubmissionRecord[]>;
-  /** Flips `status` to `"purged"` and records `purgedAt`. Crypto-shredding the image key material itself is this method's responsibility, not the caller's. Throws if `id` is unknown. */
+  /** Flips `status` to `"purged"` and records `purgedAt`. Crypto-shredding the image key material itself is this method's responsibility, not the caller's. Idempotent: purging an already-purged submission returns it unchanged (the first `purgedAt` wins). Throws if `id` is unknown. */
   markPurged(id: string, purgedAt: string): Promise<PrecheckinSubmissionRecord>;
 }
 

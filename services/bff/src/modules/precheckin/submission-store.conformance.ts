@@ -217,6 +217,31 @@ export function describePrecheckinSubmissionStoreContract(
       expect(await store.listPendingHandoff()).toEqual([]);
     });
 
+    it("markPurged is idempotent: a repeated purge keeps the FIRST purgedAt, stays shredded and does not throw", async () => {
+      const created = await store.create(input({ idBack: fakeImage("id-back") }));
+      const first = await store.markPurged(created.id, "2026-06-01T00:00:00.000Z");
+
+      const second = await store.markPurged(created.id, "2026-07-01T00:00:00.000Z");
+
+      expect(second).toEqual(first);
+      expect(second.purgedAt).toBe("2026-06-01T00:00:00.000Z");
+      expect((await store.findByPassenger("RES-1001", "PAX-1"))?.purgedAt).toBe("2026-06-01T00:00:00.000Z");
+      for (const image of [second.photo, second.idFront, second.idBack]) {
+        expect(image?.wrappedDataKey.length).toBe(0);
+      }
+    });
+
+    it("concurrent markPurged calls all resolve and the earliest-applied purgedAt wins (one of the candidates, never overwritten)", async () => {
+      const created = await store.create(input());
+      const candidates = ["2026-06-01T00:00:00.000Z", "2026-06-02T00:00:00.000Z", "2026-06-03T00:00:00.000Z"];
+
+      const results = await Promise.all(candidates.map((at) => store.markPurged(created.id, at)));
+
+      const winner = (await store.findByPassenger("RES-1001", "PAX-1"))?.purgedAt;
+      expect(candidates).toContain(winner);
+      for (const result of results) expect(result.purgedAt).toBe(winner);
+    });
+
     it("markPurged throws for an unknown (or non-uuid) id", async () => {
       await expect(store.markPurged("not-a-real-id", T0)).rejects.toThrow();
       await expect(store.markPurged("00000000-0000-4000-8000-000000000000", T0)).rejects.toThrow();

@@ -90,6 +90,9 @@ export function createInMemorySubmissionStore(now: () => Date = () => new Date()
 
     async markPurged(id: string, purgedAt: string): Promise<PrecheckinSubmissionRecord> {
       const record = requireById(id);
+      // Idempotent: a retried purge (e.g. a crash between the object delete and this call)
+      // keeps the first purgedAt; the key material is already zeroed.
+      if (record.status === "purged") return record;
       record.status = "purged";
       record.purgedAt = purgedAt;
       record.photo = shred(record.photo);

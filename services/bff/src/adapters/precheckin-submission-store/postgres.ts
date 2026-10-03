@@ -74,7 +74,9 @@ function toRecord(row: SubmissionRow): PrecheckinSubmissionRecord {
  * - `markHandedOff` only ever tightens `purge_after` (`LEAST`) and refuses a
  *   purged submission (its key material is gone).
  * - `markPurged` crypto-shreds in the same UPDATE that flips the status (key
- *   material zeroed, object keys kept); a CHECK enforces that invariant too.
+ *   material zeroed, object keys kept); a CHECK enforces that invariant too. It is
+ *   guarded by `status <> 'purged'`, so a retried purge is a no-op that returns the
+ *   stored row: the first `purged_at` wins.
  */
 export function createPostgresPrecheckinSubmissionStore(
   db: Db,
@@ -180,10 +182,14 @@ export function createPostgresPrecheckinSubmissionStore(
           idBackIv: emptyIfPresent,
           idBackAuthTag: emptyIfPresent,
         })
-        .where(eq(precheckinSubmission.id, id))
+        .where(and(eq(precheckinSubmission.id, id), ne(precheckinSubmission.status, "purged")))
         .returning();
-      if (!row) throw unknownSubmission(id);
-      return toRecord(row);
+      if (row) return toRecord(row);
+      // Zero rows: either unknown, or already purged. A retried purge is idempotent and keeps
+      // the FIRST purged_at (first purge wins), so return the stored row rather than overwrite it.
+      const [existing] = await db.select().from(precheckinSubmission).where(eq(precheckinSubmission.id, id)).limit(1);
+      if (!existing) throw unknownSubmission(id);
+      return toRecord(existing);
     },
   };
 }
