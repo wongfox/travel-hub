@@ -35,16 +35,17 @@ const reservation: SirReservation = {
   tickets: [],
 };
 
-function fakeSirBooking(): Pick<SirBookingPort, "getReservation"> {
+function fakeSirBooking(current: SirReservation = reservation): Pick<SirBookingPort, "getReservation"> {
   return {
     async getReservation() {
-      return reservation;
+      return current;
     },
   };
 }
 
 async function buildTestApp(
   flags: Partial<Record<FlagKey, boolean>> = {},
+  reservationOverride: SirReservation = reservation,
 ): Promise<{
   app: FastifyInstance;
   accessLinkStore: AccessLinkStore;
@@ -61,7 +62,7 @@ async function buildTestApp(
   registerWifiCheckoutRoutes(app, {
     accessLinkStore,
     sessionStore,
-    sirBooking: fakeSirBooking(),
+    sirBooking: fakeSirBooking(reservationOverride),
     orderStore,
     packageStore: createWifiPackageStub(),
     paymentGateway,
@@ -224,6 +225,46 @@ describe("POST /api/wifi/orders", () => {
     const stored = await orderStore.findById(body.order.id);
     expect(stored?.legRef).toBe("L1");
     expect(stored?.buyerEmail).toBe("ana@example.com");
+  });
+
+  it("rejects order creation with 422 invalid_request when the reservation has no email contact, creating no order", async () => {
+    const { app, accessLinkStore, sessionStore, orderStore } = await buildTestApp(
+      { "wifi.checkout": true },
+      { ...reservation, contact: { kind: "sms", address: "+51999999999" } },
+    );
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/wifi/orders",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+      headers: { "idempotency-key": "idem-no-email" },
+      payload: { packageId: "WIFI-60" },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ code: "invalid_request" });
+    expect(await orderStore.findByIdempotencyKey("idem-no-email")).toBeNull();
+  });
+
+  it("rejects order creation with 422 invalid_request when no upcoming leg remains, creating no order", async () => {
+    const { app, accessLinkStore, sessionStore, orderStore } = await buildTestApp(
+      { "wifi.checkout": true },
+      { ...reservation, legs: reservation.legs.map((leg) => ({ ...leg, status: "COMPLETED" as const })) },
+    );
+    const rawSessionId = await seedValidSession(accessLinkStore, sessionStore);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/wifi/orders",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: rawSessionId },
+      headers: { "idempotency-key": "idem-no-leg" },
+      payload: { packageId: "WIFI-60" },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ code: "invalid_request" });
+    expect(await orderStore.findByIdempotencyKey("idem-no-leg")).toBeNull();
   });
 });
 

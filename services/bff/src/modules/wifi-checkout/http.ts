@@ -122,8 +122,14 @@ export function registerWifiCheckoutRoutes(app: FastifyInstance, deps: WifiCheck
     // The leg this WiFi entitlement binds to (task 10.3): same next-milestone
     // leg already used for the catalog's tier resolution above.
     const orderNextMilestone = selectNextMilestone(reservation.legs);
-    const legRef = orderNextMilestone?.legId ?? "";
-    const buyerEmail = reservation.contact.kind === "email" ? reservation.contact.address : "";
+    // The spec is silent on orders without these; an order without a leg can
+    // never be entitled and one without an email can never get its e-receipt,
+    // so creation is rejected up front instead of persisting empty strings.
+    const buyerEmail = reservation.contact.kind === "email" ? reservation.contact.address.trim() : "";
+    if (!orderNextMilestone || buyerEmail.length === 0) {
+      return reply.code(422).send({ code: "invalid_request", requestId: request.id });
+    }
+    const legRef = orderNextMilestone.legId;
 
     try {
       const { order, redirectUrl } = await createWifiOrder(
