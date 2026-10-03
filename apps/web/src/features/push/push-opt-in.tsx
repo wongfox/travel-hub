@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Locale } from "contracts";
-import type { ApiClient } from "../../shared/api/client.js";
+import { ApiError, type ApiClient } from "../../shared/api/client.js";
+import { PurposeConsentGate } from "../../shared/consent/purpose-consent-gate.js";
 import { createPushSubscription } from "../../shared/push/get-push.js";
 import {
   detectPushEligibilityEnv,
@@ -30,6 +31,10 @@ export interface PushOptInProps {
   /** `trip.features.pushA2hsPrompt` (design Decision 13): whether the add-to-home-screen explainer is shown at all. */
   a2hsPromptEnabled: boolean;
   locale: Locale;
+  /** `trip.consentTextVersions.push`: the consent text version the BFF currently publishes. */
+  consentTextVersion: string;
+  /** `trip.linkId`: scopes the per-device cache of the granted consent so a reload does not re-ask. */
+  cacheScope: string;
   /** Injectable seam for deterministic tests; defaults to the real browser environment. */
   env?: PushEligibilityEnv;
   /** Injectable seam for deterministic tests; defaults to the real `PushManager` flow. */
@@ -50,11 +55,12 @@ export function PushOptIn({
   apiClient,
   a2hsPromptEnabled,
   locale,
+  consentTextVersion,
+  cacheScope,
   env = detectPushEligibilityEnv(),
   subscribeToBrowserPush = defaultSubscribeToBrowserPush,
 }: PushOptInProps) {
   const { t } = useTranslation();
-  const [state, setState] = useState<"idle" | "subscribing" | "subscribed" | "error">("idle");
   const eligibility = resolvePushEligibility(env);
 
   if (eligibility === "ineligible") {
@@ -68,6 +74,40 @@ export function PushOptIn({
     return <p data-testid="push-a2hs-explainer">{t("push.a2hsExplainer")}</p>;
   }
 
+  // Consent comes BEFORE the browser permission prompt: the enable button
+  // (and so `subscribeToBrowserPush`) only exists once `push` consent is
+  // recorded. A 403 `consent_required` from the BFF re-shows the gate.
+  return (
+    <PurposeConsentGate
+      apiClient={apiClient}
+      purpose="push"
+      textVersion={consentTextVersion}
+      i18nPrefix="consent.push"
+      cacheScope={cacheScope}
+    >
+      {({ onConsentRequired }) => (
+        <PushEnableButton
+          apiClient={apiClient}
+          locale={locale}
+          subscribeToBrowserPush={subscribeToBrowserPush}
+          onConsentRequired={onConsentRequired}
+        />
+      )}
+    </PurposeConsentGate>
+  );
+}
+
+interface PushEnableButtonProps {
+  apiClient: ApiClient;
+  locale: Locale;
+  subscribeToBrowserPush: () => Promise<BrowserPushSubscription>;
+  onConsentRequired: () => void;
+}
+
+function PushEnableButton({ apiClient, locale, subscribeToBrowserPush, onConsentRequired }: PushEnableButtonProps) {
+  const { t } = useTranslation();
+  const [state, setState] = useState<"idle" | "subscribing" | "subscribed" | "error">("idle");
+
   async function handleOptIn(): Promise<void> {
     setState("subscribing");
     try {
@@ -78,7 +118,11 @@ export function PushOptIn({
         locale,
       });
       setState("subscribed");
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "consent_required") {
+        onConsentRequired();
+        return;
+      }
       setState("error");
     }
   }

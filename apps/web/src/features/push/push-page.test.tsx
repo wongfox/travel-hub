@@ -16,8 +16,10 @@ function buildFakeApiClient(overrides: Partial<ApiClient> = {}): ApiClient {
   };
 }
 
-function buildTrip(features: Partial<TripDTO["features"]>): TripDTO {
+function buildTrip(features: Partial<TripDTO["features"]>, consentTextVersions?: TripDTO["consentTextVersions"]): TripDTO {
   return {
+    linkId: "link-1",
+    ...(consentTextVersions ? { consentTextVersions } : {}),
     legs: [],
     nextMilestone: null,
     features: {
@@ -59,17 +61,28 @@ describe("PushPage", () => {
 
   it("renders the opt-in UI when trip.features.pushEnabled is true and the browser is eligible", async () => {
     const apiClient = buildFakeApiClient({
+      get: vi.fn().mockResolvedValue(buildTrip({ pushEnabled: true }, { push: "push-v1" })),
+    });
+
+    renderPage(apiClient, { hasPushManager: true, isIosDevice: false, isStandalone: false });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "I agree" })).toBeInTheDocument());
+  });
+
+  it("shows the unavailable message, not an invented consent, when the BFF exposes no push consent version", async () => {
+    const apiClient = buildFakeApiClient({
       get: vi.fn().mockResolvedValue(buildTrip({ pushEnabled: true })),
     });
 
     renderPage(apiClient, { hasPushManager: true, isIosDevice: false, isStandalone: false });
 
-    await waitFor(() => expect(screen.getByRole("button")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/not available/i)).toBeInTheDocument());
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("shows no opt-in option at all when the browser is ineligible, even if pushEnabled is true", async () => {
     const apiClient = buildFakeApiClient({
-      get: vi.fn().mockResolvedValue(buildTrip({ pushEnabled: true })),
+      get: vi.fn().mockResolvedValue(buildTrip({ pushEnabled: true }, { push: "push-v1" })),
     });
 
     renderPage(apiClient, { hasPushManager: false, isIosDevice: false, isStandalone: false });
