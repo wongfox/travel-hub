@@ -679,6 +679,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     pulseFlags["pulse.capture"] || pulseFlags["pulse.staff_alerts"],
     privacyOptions.piiAccessAudit,
   );
+  // The api writes responses/alerts that the worker's dispatch and purge jobs read: shared Postgres stores.
+  assertSharedPulseStores("buildApp", pulseNodeEnv, {
+    capture: pulseFlags["pulse.capture"],
+    staffAlerts: pulseFlags["pulse.staff_alerts"],
+    pulseResponseStore: pulseOptions.pulseResponseStore,
+    staffAlertStore: pulseOptions.staffAlertStore,
+  });
 
   // R3-002: so a configured STAFF_ALERT_RETENTION_DAYS reaches purgeAfter.
   const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays });
@@ -774,6 +781,41 @@ function assertSharedPushStores(
     );
   }
   assertSharedPiiAccessAudit(who, nodeEnv, true, stores.piiAccessAudit);
+}
+
+/**
+ * Pulse spans two processes (the api stores responses and alerts, the worker's dispatch job
+ * sends pending alerts and its purge job deletes expired responses and alerts), so with
+ * `pulse.capture` / `pulse.staff_alerts` on, a production-like deployment needs the shared
+ * stores. The api needs the store of each feature that is on; the worker (purge scans both
+ * tables) needs both whenever either feature is on.
+ */
+function assertSharedPulseStores(
+  who: "buildApp" | "startWorker",
+  nodeEnv: NodeEnvName | undefined,
+  features: {
+    capture: boolean;
+    staffAlerts: boolean;
+    pulseResponseStore: unknown;
+    staffAlertStore: unknown;
+    requireBothStores?: boolean;
+  },
+): void {
+  if (!(features.capture || features.staffAlerts) || !isProductionLike(nodeEnv ?? "development")) return;
+  const needResponses = features.capture || features.requireBothStores === true;
+  const needAlerts = features.staffAlerts || features.requireBothStores === true;
+  if (needResponses && !features.pulseResponseStore) {
+    throw new Error(
+      `${who}: pulse.capture/pulse.staff_alerts is on in a production-like environment but no shared pulseResponseStore is wired in; ` +
+        "refusing to start with a process-local in-memory PulseResponseStore (api and worker would never see each other's responses, and the purge would delete nothing).",
+    );
+  }
+  if (needAlerts && !features.staffAlertStore) {
+    throw new Error(
+      `${who}: pulse.capture/pulse.staff_alerts is on in a production-like environment but no shared staffAlertStore is wired in; ` +
+        "refusing to start with a process-local in-memory StaffAlertStore (the worker would never dispatch the api's alerts, and exactly-one-alert-per-passenger/leg would not hold across processes).",
+    );
+  }
 }
 
 export interface WorkerBootResult {
@@ -1204,6 +1246,14 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     });
 
     assertSharedPiiAccessAudit("startWorker", nodeEnv, flags["pulse.capture"] || flags["pulse.staff_alerts"], p.piiAccessAudit);
+    // Dispatch reads pending alerts and purge scans both tables: never worker-local in-memory maps once pulse is live.
+    assertSharedPulseStores("startWorker", nodeEnv, {
+      capture: flags["pulse.capture"],
+      staffAlerts: flags["pulse.staff_alerts"],
+      pulseResponseStore: p.pulseResponseStore,
+      staffAlertStore: p.staffAlertStore,
+      requireBothStores: true,
+    });
 
     const sharedStaffAlertStore = p.staffAlertStore ?? createInMemoryStaffAlertStore(pulseNow, pulseRetention);
     const sharedPulseResponseStore = p.pulseResponseStore ?? createInMemoryPulseResponseStore(pulseNow, pulseRetention);

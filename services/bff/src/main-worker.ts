@@ -15,6 +15,9 @@ import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-st
 import { createPostgresPushSubscriptionStore } from "./adapters/push-subscription-store/postgres.js";
 import { createPostgresNotificationStore } from "./adapters/notification-store/postgres.js";
 import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
+import { createPostgresPulseResponseStore } from "./adapters/pulse-response-store/postgres.js";
+import { createPostgresStaffAlertStore } from "./adapters/staff-alert-store/postgres.js";
+import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -25,6 +28,8 @@ async function main(): Promise<void> {
   // Same DATABASE_URL and store implementation as the api process, so the
   // jobs below see every order the api wrote.
   const db = createDb(env.DATABASE_URL);
+  // One retention config for the stores of both processes (purge_after = answered_at + STAFF_ALERT_RETENTION_DAYS).
+  const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: env.STAFF_ALERT_RETENTION_DAYS });
   // One append-only audit sink for every job that audits a handoff/purge.
   const piiAccessAudit = createPostgresPiiAccessAudit(db.db);
   const result = await startWorker({
@@ -90,6 +95,9 @@ async function main(): Promise<void> {
       flags,
       nodeEnv: env.NODE_ENV,
       piiAccessAudit,
+      // The very tables the api writes: pending alerts to dispatch, expired rows to purge.
+      pulseResponseStore: createPostgresPulseResponseStore(db.db, undefined, pulseRetention),
+      staffAlertStore: createPostgresStaffAlertStore(db.db, undefined, pulseRetention),
       adapterStaffAlert: env.ADAPTER_STAFF_ALERT,
       ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),
       ...(env.STAFF_ALERT_PROTOCOL_REF
