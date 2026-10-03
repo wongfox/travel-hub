@@ -8,10 +8,10 @@ Only the wifi and analytics scans are scheduled. Every other job is registered o
 
 ## Scope
 - In: one scheduling call per confirmed unscheduled job via the existing helper; env-configurable intervals (validated, safe defaults); wiring only when the job is registered; shutdown stop; unit tests (RED first); docs/KNOWN-GAPS.
-- Out: Postgres adapters for the stores those jobs read (push subscriptions, pulse, staff alerts, precheckin submissions, access links remain in-memory per process — scheduling them is useful only once stores are shared; document this precisely per job); changing job semantics.
+- Out: changing job semantics; fixing the remaining stubs (precheckin document/ciphertext store and handoff port, SIR polling adapter, web-push and staff-alert ports) and per-process rate limiters — documented per job. (The Postgres stores these jobs read were delivered by S1–S4 / branches 33–36.)
 
 ## Constraints
-Strict TDD; natural-key dedupe via `sendIdempotent`; destructive jobs (purges) must keep their existing per-item isolation and `pii_access_audit` behavior untouched; no TLS weakening, no sudo; agent must not push or touch PRs. Route: delegated direct, one writer. Branch `feat/travel-hub-mvp-33-schedule-remaining-scans` (on top of 32).
+Strict TDD; natural-key dedupe via `sendIdempotent`; destructive jobs (purges) must keep their existing per-item isolation and `pii_access_audit` behavior untouched; no TLS weakening, no sudo; agent must not push or touch PRs. Route: delegated direct, one writer. Branch `feat/travel-hub-mvp-37-schedule-remaining-scans` (S5 of `shared-postgres-stores`, on top of 36; re-based after the stores became Postgres-backed).
 
 ## Tasks
 - [x] T1 Inventory: list every queue the worker registers vs which are scheduled; for each unscheduled one record which stores it reads and whether they are shared (Postgres) or per-process in-memory.
@@ -22,17 +22,19 @@ Strict TDD; natural-key dedupe via `sendIdempotent`; destructive jobs (purges) m
 ### T1 inventory (verified in composition-root.ts `startWorker` + each job module)
 All six `queueClient.work(QUEUE, async () => { await runXxxJob(deps) })` handlers ignore the payload, so each is a genuine payload-free periodic scan.
 
-| Queue | Const | Scheduled today | Reads/writes | Store backing in worker today | Schedule? |
-|---|---|---|---|---|---|
-| sample-job | SAMPLE_JOB_QUEUE | no | test fixture (noop executor) | none | NO (fixture) |
-| wifi-entitlement-activation, wifi-sir-receipt | WIFI_* | yes (branch 32) | wifi orders | Postgres | already |
-| analytics-forward | ANALYTICS_FORWARD_QUEUE | yes (branch 32) | analytics events + consent | Postgres | already |
-| precheckin-handoff | PRECHECKIN_HANDOFF_QUEUE | no | submissionStore.listPendingHandoff/markHandedOff, documentStore.get | in-memory submission store (per process), doc store stub | YES, 60s |
-| precheckin-purge (destructive) | PRECHECKIN_PURGE_QUEUE | no | submissionStore.listPastPurgeAfter/markPurged, documentStore.delete, pii audit | in-memory submission store, doc store stub, in-memory pii audit | YES, 3600s |
-| journey-poll (includes dispatch-journey-events) | JOURNEY_POLL_QUEUE | no | accessLinkStore (via SIR polling adapter), notificationStore, subscriptionStore, webPush | in-memory access links, notifications, push subs; stub SIR/webPush | YES, 60s |
-| push-subscription-purge (destructive) | PUSH_SUBSCRIPTION_PURGE_QUEUE | no | subscriptionStore.listExpired/deleteById, pii audit | in-memory push subs + pii audit | YES, 3600s |
-| pulse-staff-alert-dispatch | STAFF_ALERT_DISPATCH_QUEUE | no | staffAlertStore.listPending/updateStatus, staffAlertPort | in-memory staff alerts; stub port | YES, 60s |
-| pulse-purge (destructive) | PULSE_PURGE_QUEUE | no | pulseResponseStore + staffAlertStore listPastPurgeAfter/deleteById, pii audit | in-memory pulse responses + staff alerts + pii audit | YES, 3600s |
+| Queue | Const | Scheduled | Reads/writes | Store backing in worker (main-worker.ts, after S1-S4) | Still stubbed | Schedule |
+|---|---|---|---|---|---|---|
+| sample-job | SAMPLE_JOB_QUEUE | no | test fixture (noop executor) | none | n/a | NO (fixture) |
+| wifi-entitlement-activation, wifi-sir-receipt | WIFI_* | branch 32 | wifi orders | Postgres | adapters per ADAPTER_* | already |
+| analytics-forward | ANALYTICS_FORWARD_QUEUE | branch 32 | analytics events + consent | Postgres | sink adapter | already |
+| precheckin-handoff | PRECHECKIN_HANDOFF_QUEUE | S5 | submissionStore.listPendingHandoff/markHandedOff, documentStore.get | submissions Postgres, pii audit Postgres | document (ciphertext) store is a per-process stub; handoff port stub | YES, 60s |
+| precheckin-purge (destructive) | PRECHECKIN_PURGE_QUEUE | S5 | submissionStore.listPastPurgeAfter/markPurged, documentStore.delete, pii audit | submissions Postgres, pii audit Postgres | document store stub (delete is on the stub) | YES, 3600s |
+| journey-poll (includes dispatch-journey-events) | JOURNEY_POLL_QUEUE | S5 | accessLinkStore.listActive (SIR polling adapter), notificationStore, subscriptionStore, webPush | access links, notifications, push subs: Postgres | SIR polling adapter and web-push port are stubs | YES, 60s |
+| push-subscription-purge (destructive) | PUSH_SUBSCRIPTION_PURGE_QUEUE | S5 | subscriptionStore.listExpired/deleteById, pii audit | push subs + pii audit: Postgres | none | YES, 3600s |
+| pulse-staff-alert-dispatch | STAFF_ALERT_DISPATCH_QUEUE | S5 | staffAlertStore.listPending/updateStatus, staffAlertPort | staff alerts: Postgres | staff-alert port is a stub | YES, 60s |
+| pulse-purge (destructive) | PULSE_PURGE_QUEUE | S5 | pulseResponseStore + staffAlertStore listPastPurgeAfter/deleteById, pii audit | pulse responses, staff alerts, pii audit: Postgres | none | YES, 3600s |
+
+Re-verified at S5 against `startWorker` and each job module: all six `queueClient.work(QUEUE, async () => { await runXxxJob(deps) })` handlers ignore the payload. Intervals come from `*_INTERVAL_SECONDS` env vars (zod positive integer). Per-process rate limiters are unchanged.
 
 Content has no worker job. Registration is guarded by go-live guards inside `startWorker` (they throw at boot, before any scheduling).
 
