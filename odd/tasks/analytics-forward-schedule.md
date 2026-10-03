@@ -19,4 +19,4 @@ Strict TDD (`pnpm --filter bff exec vitest run --no-file-parallelism`, DB tests 
 - [ ] T3 Docs/KNOWN-GAPS update; final turbo + E2E runs.
 
 ## Progress / evidence
-- T1: RED (missing schedule-queue-scans module, `scheduleAnalyticsForward is not a function`) then GREEN: infra/queue/schedule-queue-scans.ts generic helper; scheduleWifiOrderScans and new scheduleAnalyticsForward delegate to it. 11 files / 67 tests pass incl. unchanged wifi scheduler tests; tsc + eslint clean. Commit: T1_HASH
+- T1: RED (missing schedule-queue-scans module, `scheduleAnalyticsForward is not a function`) then GREEN: infra/queue/schedule-queue-scans.ts generic helper; scheduleWifiOrderScans and new scheduleAnalyticsForward delegate to it. 11 files / 67 tests pass incl. unchanged wifi scheduler tests; tsc + eslint clean. Commit: 2a56b59
