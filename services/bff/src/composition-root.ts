@@ -27,6 +27,8 @@ import { registerTripRoutes } from "./modules/trip/http.js";
 import type { TicketDocumentPort } from "./modules/trip/ports.js";
 import { createTicketDocumentStub } from "./adapters/ticket-document/stub.js";
 import type { FlagKey } from "./config/flags.js";
+import { registerPrivacyRoutes } from "./modules/privacy/http.js";
+import { createInMemoryConsentStore, type ConsentStore } from "./modules/privacy/consent-store.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -81,6 +83,14 @@ export interface BuildAppOptions {
     sirBooking?: Pick<SirBookingPort, "getReservation" | "getRelocations">;
     flags?: Record<FlagKey, boolean>;
     ticketDocument?: TicketDocumentPort;
+  };
+  /**
+   * `personal-data-protection` consent capture wiring (task 8.1). Shares
+   * `tripAccess`'s `accessLinkStore`/`sessionStore` by default — a session
+   * created via `POST /api/session` must be resolvable here too.
+   */
+  privacy?: {
+    consentStore?: ConsentStore;
   };
 }
 
@@ -153,6 +163,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ticketDocument: tripOptions.ticketDocument ?? createTicketDocumentStub(),
     ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
+  });
+
+  const privacyOptions = options.privacy ?? {};
+  registerPrivacyRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    consentStore: privacyOptions.consentStore ?? createInMemoryConsentStore(),
   });
 
   return app;

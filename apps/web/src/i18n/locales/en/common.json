@@ -81,5 +81,34 @@
     "home": "Trip",
     "itinerary": "Itinerary",
     "documents": "Documents"
+  },
+  "precheckin": {
+    "consent": {
+      "title": "Pre check-in: photo & ID consent",
+      "body": "To complete pre check-in we need to capture a photo of you and an image of your ID document. This data is encrypted and used only for check-in purposes.",
+      "accept": "I agree",
+      "decline": "Not now",
+      "declined": "You can complete pre check-in later from this same link.",
+      "error": "Something went wrong recording your consent. Please try again."
+    },
+    "capture": {
+      "roles": {
+        "photo": "Your photo",
+        "id_front": "ID document (front)",
+        "id_back": "ID document (back)"
+      },
+      "captureButton": "Capture",
+      "fallbackLabel": {
+        "photo": "Upload your photo",
+        "id_front": "Upload the front of your ID",
+        "id_back": "Upload the back of your ID"
+      },
+      "recapturePrompt": "This image didn't pass our quality check. Please try again.",
+      "qualityIssues": {
+        "low_resolution": "The image resolution is too low.",
+        "blurry": "The image is too blurry.",
+        "poor_exposure": "The image is too dark or too bright."
+      }
+    }
   }
 }

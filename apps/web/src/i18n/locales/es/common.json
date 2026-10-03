@@ -81,5 +81,34 @@
     "home": "Viaje",
     "itinerary": "Itinerario",
     "documents": "Documentos"
+  },
+  "precheckin": {
+    "consent": {
+      "title": "Pre check-in: consentimiento de foto y documento",
+      "body": "Para completar el pre check-in necesitamos capturar una foto tuya y una imagen de tu documento de identidad. Estos datos se cifran y se usan únicamente para el check-in.",
+      "accept": "Acepto",
+      "decline": "Ahora no",
+      "declined": "Puedes completar el pre check-in más tarde desde este mismo enlace.",
+      "error": "Ocurrió un error al registrar tu consentimiento. Inténtalo de nuevo."
+    },
+    "capture": {
+      "roles": {
+        "photo": "Tu foto",
+        "id_front": "Documento de identidad (frente)",
+        "id_back": "Documento de identidad (reverso)"
+      },
+      "captureButton": "Capturar",
+      "fallbackLabel": {
+        "photo": "Subir tu foto",
+        "id_front": "Subir el frente de tu documento",
+        "id_back": "Subir el reverso de tu documento"
+      },
+      "recapturePrompt": "Esta imagen no superó el control de calidad. Inténtalo de nuevo.",
+      "qualityIssues": {
+        "low_resolution": "La resolución de la imagen es demasiado baja.",
+        "blurry": "La imagen está demasiado borrosa.",
+        "poor_exposure": "La imagen está demasiado oscura o demasiado clara."
+      }
+    }
   }
 }
