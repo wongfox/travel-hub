@@ -122,6 +122,8 @@ const EnvSchema = z.object({
    * correlate historical `trip_hash` values for the same reservation.
    */
   ANALYTICS_TRIP_HASH_SECRET: z.string().min(1).optional(),
+  /** Cadence (seconds) at which the worker enqueues the `analytics-forward` scan. */
+  ANALYTICS_FORWARD_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
   /**
    * Task 13.3 (observability): selects the structured-log sink
    * (`infra/logging/log-sink.ts`). `"stdout"` relies on the deployment
