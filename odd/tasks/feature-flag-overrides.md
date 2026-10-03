@@ -15,10 +15,10 @@ Strict TDD (bff: `pnpm --filter bff exec vitest run --no-file-parallelism`); ove
 
 ## Tasks
 - [x] T1 Explore flags/guards/env conventions; choose and document the override mechanism and precedence (defaults < override).
-- [ ] T2 Implement parsing/validation + wiring in `main-api.ts` and `main-worker.ts` (same source for both processes).
-- [ ] T3 Prove the guards still bite with overrides on (tests per guarded flag) and that api and worker agree.
-- [ ] T4 docker-compose (documented dev values, defaults unchanged) and infra env plumbing.
-- [ ] T5 Real check: compose stack with `wifi.checkout` on serves `GET /api/wifi/packages` and an API-created order is advanced by the worker (no throwaway process); update KNOWN-GAPS/docs.
+- [x] T2 Implement parsing/validation + wiring in `main-api.ts` and `main-worker.ts` (same source for both processes).
+- [x] T3 Prove the guards still bite with overrides on (tests per guarded flag) and that api and worker agree.
+- [x] T4 docker-compose (documented dev values, defaults unchanged) and infra env plumbing.
+- [x] T5 (partially provable, see evidence) Real check: compose stack with `wifi.checkout` on; update KNOWN-GAPS/docs. NOT done: authenticated 200 on packages and API-created order advanced by worker (blocked by Gap A, no token-exposing route by design).
 
 ## Acceptance
 RED-first tests per task, turbo typecheck/lint/test green, real compose evidence, E2E container run still 20 passed, one commit per task.
@@ -31,3 +31,10 @@ Exploration findings: `FLAG_DEFAULTS` passed explicitly by main-worker (all 4 mo
 Route: delegated direct (single writer). TDD: enabled (strict), runner `pnpm --filter bff exec vitest run --no-file-parallelism`.
 
 
+### Evidence
+- Route per task: delegated direct, one writer (this agent), inline edits; no SDD artifacts.
+- T1 8cf2d6c (decision doc). T2 e2cf86a: RED = `vitest src/config/flags.test.ts env.test.ts` 10 failed (parseFlagOverrides not a function / FEATURE_FLAG_OVERRIDES undefined); GREEN = config suite 64 passed; tsc + eslint clean. main-api passes `trip: { flags }`, main-worker `flags` to all 4 modules from `resolveFlags(env.FEATURE_FLAG_OVERRIDES)`.
+- T3 2c9e246: `config/flag-overrides-go-live.test.ts` (14 tests) pass; mutation check (evaluateGoLiveGuard forced allow) -> 10 failed, restored. api guarded: menu, destination, wifi, push, pulse.capture, pulse.staff_alerts; worker: precheckin.production_collection, wifi, push, pulse.staff_alerts. `tier.theming`/`offline.content` have guard fns but no composition consumer (untested at boot).
+- T4 9158c15: compose `FEATURE_FLAG_OVERRIDES: ${FEATURE_FLAG_OVERRIDES:-}` in shared anchor; infra var `feature_flag_overrides` (default "", json validation) in both ECS tasks. terraform binary not available: not validated.
+- T5 compose (Windows docker needs `WSLENV=FEATURE_FLAG_OVERRIDES`): flag on -> bff-api and bff-worker env `{"wifi.checkout":true}`; `GET :3000/api/wifi/packages` 401 link_expired (flag off: 403 feature_disabled), same via web :8080 after restarting web (stale nginx upstream after recreate). Boot failures verified in containers: unknown key, non-boolean, bad JSON -> exit 1 with clear error; NODE_ENV=production + wifi.checkout -> GoLiveGuardError in api and worker. `POST /internal/links` returns 201 with only accessLinkId/expiresAt (token only via stub delivery) -> no session, no order. Stack reset to default (var unset): 403 on both ports.
+- Final: turbo typecheck/lint/test 13/13 successful (bff 785 passed, 14 DB skipped by turbo env); DB tests with TEST_DATABASE_URL: 33 passed; E2E container: 20 passed.

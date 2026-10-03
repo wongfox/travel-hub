@@ -29,11 +29,11 @@ records real behavior so the fallbacks can be confirmed or adjusted.
    (camera, service worker, and push require a secure context). The local stack is
    `docker-compose.yml` on port 8080; expose it with an HTTPS tunnel.
 2. Flags enabled for the test build: `precheckin.capture_ui`, `push.enabled`,
-   `push.a2hs_prompt`. NOTE: `e2e/KNOWN-GAPS.md` Gaps A, B, and D mean there is
-   currently no way to obtain a link token black-box, no runtime flag override, and no
-   web route composing the pre check-in capture flow. These must be resolved (or a
-   dev build with hard-coded flags and a test harness page used) before steps
-   S1 to S3 can be executed. Record any workaround used in the Notes column.
+   `push.a2hs_prompt`. NOTE: flags can now be switched on per deployment with
+   `FEATURE_FLAG_OVERRIDES` (e.g. `{"precheckin.capture_ui":true,"push.enabled":true,"push.a2hs_prompt":true}`;
+   see `e2e/KNOWN-GAPS.md` Gap B). `e2e/KNOWN-GAPS.md` Gap A still means there is
+   currently no way to obtain a link token black-box; that must be resolved (or a
+   dev build and a test harness page used) before steps S1 to S3 can be executed. Record any workaround used in the Notes column.
 3. A valid issued link URL for a test reservation, sent to each test device.
 4. Record device model, OS version, and browser version for every run.
 

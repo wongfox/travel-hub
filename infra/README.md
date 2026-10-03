@@ -91,3 +91,14 @@ no `aws_secretsmanager_secret_version` populates a real value, except
 `database_url`, which is derived from `var.db_password` (supplied by the
 operator, never hardcoded) and the provisioned RDS endpoint. Populate every
 other secret's real value out-of-band once that integration is chosen.
+
+## Feature flags
+
+`var.feature_flag_overrides` (default empty) sets the `FEATURE_FLAG_OVERRIDES`
+env var on both the api and worker task definitions: a JSON object of known
+flag keys to booleans, e.g. `{"wifi.checkout":true}` (precedence:
+`FLAG_DEFAULTS` < overrides, see `services/bff/src/config/flags.ts`). Plain
+config, never secrets. Unknown keys or malformed JSON fail the task at boot,
+and a guarded flag still fails boot unless its go-live prerequisites are met
+(`services/bff/src/config/go-live-guards.ts`), so enabling one in
+production/staging also requires the matching non-stub `ADAPTER_*` values.
