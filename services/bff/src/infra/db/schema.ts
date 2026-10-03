@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -156,4 +157,29 @@ export const wifiOrderEvent = pgTable(
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("wifi_order_event_order_id_idx").on(table.orderId, table.seq)],
+);
+
+/**
+ * `analytics_event` (design Data Model, task 12.1): shared by `bff-api`
+ * (writes) and `bff-worker` (forward job). Stores ONLY the pseudonymous
+ * `trip_hash` (HMAC of the reservation reference) - there is deliberately no
+ * reservation/passenger column, so a raw reference cannot be persisted.
+ * `seq` is the insertion order; `forwarded_at` null = pending forward.
+ */
+export const analyticsEvent = pgTable(
+  "analytics_event",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    tripHash: text("trip_hash").notNull(),
+    name: text("name").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    props: jsonb("props").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    forwardedAt: timestamp("forwarded_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("analytics_event_pending_idx").on(table.seq).where(sql`${table.forwardedAt} is null`),
+    index("analytics_event_trip_hash_idx").on(table.tripHash),
+  ],
 );

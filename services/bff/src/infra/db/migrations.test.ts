@@ -89,3 +89,22 @@ describe("consent_record shared-store migration", () => {
     expect(all).toMatch(/CREATE INDEX "consent_record_latest_idx" ON "consent_record" USING btree \("reservation_ref","purpose","seq"\)/);
   });
 });
+
+describe("analytics_event migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+  const table = all.match(/CREATE TABLE "analytics_event" \(([\s\S]*?)\n\);/)?.[1] ?? "";
+
+  it("stores only the pseudonymous trip_hash, never a reservation or passenger reference", () => {
+    expect(table).toMatch(/"trip_hash" text NOT NULL/);
+    expect(table).not.toMatch(/reservation|passenger/i);
+  });
+
+  it("indexes the pending scan and the delete-by-trip_hash cascade", () => {
+    expect(all).toMatch(/CREATE INDEX "analytics_event_pending_idx" ON "analytics_event" USING btree \("seq"\) WHERE "analytics_event"\."forwarded_at" is null/);
+    expect(all).toMatch(/CREATE INDEX "analytics_event_trip_hash_idx" ON "analytics_event" USING btree \("trip_hash"\)/);
+  });
+});

@@ -8,12 +8,20 @@ import type { AnalyticsEventRecord, AnalyticsEventStore, CreateAnalyticsEventInp
  * `PseudonymousAnalyticsEvent`) structurally has no `reservationRef` field,
  * so this store cannot persist one even if a caller tried.
  */
+/** Same rejection the Postgres `timestamptz` column gives an unparseable `occurredAt`: the batch fails as a whole. */
+function assertValidOccurredAt(input: CreateAnalyticsEventInput): void {
+  if (Number.isNaN(new Date(input.occurredAt).getTime())) {
+    throw new Error(`invalid occurredAt: ${input.occurredAt}`);
+  }
+}
+
 export function createInMemoryAnalyticsEventStore(now: () => Date = () => new Date()): AnalyticsEventStore {
   const byId = new Map<string, AnalyticsEventRecord>();
   const order: string[] = [];
 
   return {
     async create(input: CreateAnalyticsEventInput): Promise<AnalyticsEventRecord> {
+      assertValidOccurredAt(input);
       const record: AnalyticsEventRecord = {
         ...input,
         id: randomUUID(),
@@ -26,6 +34,7 @@ export function createInMemoryAnalyticsEventStore(now: () => Date = () => new Da
     },
 
     async createMany(inputs: CreateAnalyticsEventInput[]): Promise<AnalyticsEventRecord[]> {
+      inputs.forEach(assertValidOccurredAt);
       // Build every record first, then commit: nothing is visible unless the whole batch is.
       const records: AnalyticsEventRecord[] = inputs.map((input) => ({
         ...input,
