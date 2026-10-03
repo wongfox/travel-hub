@@ -1,16 +1,16 @@
-import type { AnalyticsEventName } from "contracts";
+import type { ClientAnalyticsEventName } from "contracts";
 import { ANALYTICS_QUEUE_STORE, getTravelHubDb } from "../offline/travelhub-db.js";
 
 /** One queued, not-yet-sent analytics event (task 12.1, design Data Model "Client-side": IndexedDB `analyticsQueue`). */
 export interface QueuedAnalyticsEvent {
   id: string;
-  name: AnalyticsEventName;
+  name: ClientAnalyticsEventName;
   occurredAt: string;
   props?: Record<string, unknown>;
 }
 
 export interface EnqueueAnalyticsEventInput {
-  name: AnalyticsEventName;
+  name: ClientAnalyticsEventName;
   props?: Record<string, unknown>;
 }
 

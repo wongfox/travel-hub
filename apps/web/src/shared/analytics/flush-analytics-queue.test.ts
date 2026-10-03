@@ -165,7 +165,7 @@ describe("flushAnalyticsQueue", () => {
 
   it("leaves the queue intact when the apiClient.post fallback fails — never drops an unsent event", async () => {
     const marker = crypto.randomUUID();
-    await enqueueAnalyticsEvent({ name: "push_opt_in", props: { marker } });
+    await enqueueAnalyticsEvent({ name: "screen_view", props: { marker } });
     const apiClient = fakeApiClient(async () => {
       throw new Error("simulated network failure");
     });

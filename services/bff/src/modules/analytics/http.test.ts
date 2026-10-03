@@ -100,11 +100,34 @@ describe("POST /api/events", () => {
       method: "POST",
       url: "/api/events",
       cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
-      payload: { events: [{ name: "screen_view" }, { name: "wifi_offer_viewed" }] },
+      payload: { events: [{ name: "screen_view" }, { name: "screen_view", props: { screen: "wifi" } }] },
     });
 
     expect(response.statusCode).toBe(202);
     expect(await analyticsEventStore.list()).toHaveLength(2);
+  });
+
+  it("rejects a client-submitted server-only funnel event name with 400, recording nothing", async () => {
+    const { app, accessLinkStore, sessionStore, consentStore, analyticsEventStore } = await buildTestApp();
+    const sessionId = await createSession(accessLinkStore, sessionStore);
+    await consentStore.record({
+      linkId: "ignored",
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "analytics",
+      textVersion: "v1",
+      granted: true,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: sessionId },
+      payload: { events: [{ name: "wifi_payment_succeeded" }] },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(await analyticsEventStore.list()).toHaveLength(0);
   });
 
   it("accepts a sendBeacon-style text/plain body (JSON-encoded) once consent is granted", async () => {

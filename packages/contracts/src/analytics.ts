@@ -2,14 +2,24 @@ import { z } from "zod";
 
 /**
  * `usage-analytics` event names (design-interfaces `AnalyticsSinkPort`,
- * spec's named funnel/event coverage — tasks 12.1-12.2). A closed enum
- * (rather than an open string) so a typo in a call site fails validation
+ * spec's named funnel/event coverage — tasks 12.1-12.2). Closed enums
+ * (rather than open strings) so a typo in a call site fails validation
  * instead of silently creating an unrecognized event name no KPI mapping
  * will ever match.
+ *
+ * Split by who may emit the event: `POST /api/events` accepts only
+ * `ClientAnalyticsEventNameSchema` names, so a passenger-controlled client
+ * can never forge a funnel/KPI event the server records itself. The
+ * server-side recorder and store use the full `AnalyticsEventNameSchema`.
  */
-export const AnalyticsEventNameSchema = z.enum([
+export const ClientAnalyticsEventNameSchema = z.enum([
   // Navigation and interaction tracking (spec's generic requirement).
   "screen_view",
+]);
+export type ClientAnalyticsEventName = z.infer<typeof ClientAnalyticsEventNameSchema>;
+
+/** Events only the BFF records, from its own authoritative call sites (never client-submittable). */
+export const ServerAnalyticsEventNameSchema = z.enum([
   // WiFi purchase funnel (spec's five named steps).
   "wifi_offer_viewed",
   "wifi_package_selected",
@@ -25,6 +35,13 @@ export const AnalyticsEventNameSchema = z.enum([
   "pulse_response_submitted",
   "pulse_alert_dispatched",
 ]);
+export type ServerAnalyticsEventName = z.infer<typeof ServerAnalyticsEventNameSchema>;
+
+/** Every event name the server may record or forward. */
+export const AnalyticsEventNameSchema = z.enum([
+  ...ClientAnalyticsEventNameSchema.options,
+  ...ServerAnalyticsEventNameSchema.options,
+]);
 export type AnalyticsEventName = z.infer<typeof AnalyticsEventNameSchema>;
 
 /** `props` enforcement: primitives only (no nested objects/arrays hiding PII) and no PII-shaped key names — a real control, not just a comment. */
@@ -33,9 +50,9 @@ const DISALLOWED_PROP_KEY_PATTERN = /reservation|passenger|email|phone|document|
 
 const AnalyticsPropValueSchema = z.union([z.string().max(ANALYTICS_PROP_VALUE_MAX_LENGTH), z.number(), z.boolean()]);
 
-/** One event as submitted by a client (web `shared/analytics` queue, task 12.1). */
+/** One event as submitted by a client (web `shared/analytics` queue, task 12.1): client-submittable names only. */
 export const AnalyticsEventSchema = z.object({
-  name: AnalyticsEventNameSchema,
+  name: ClientAnalyticsEventNameSchema,
   occurredAt: z.string().min(1).optional(),
   props: z
     .record(z.string(), AnalyticsPropValueSchema)

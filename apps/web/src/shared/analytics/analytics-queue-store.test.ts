@@ -24,18 +24,18 @@ describe("analytics-queue-store", () => {
 
   it("preserves insertion order across multiple enqueues sharing the same marker", async () => {
     const marker = crypto.randomUUID();
-    await enqueueAnalyticsEvent({ name: "wifi_offer_viewed", props: { marker } });
-    await enqueueAnalyticsEvent({ name: "wifi_package_selected", props: { marker } });
+    await enqueueAnalyticsEvent({ name: "screen_view", props: { marker, step: "first" } });
+    await enqueueAnalyticsEvent({ name: "screen_view", props: { marker, step: "second" } });
 
     const queued = (await listQueuedAnalyticsEvents()).filter((e) => e.props?.marker === marker);
 
-    expect(queued.map((e) => e.name)).toEqual(["wifi_offer_viewed", "wifi_package_selected"]);
+    expect(queued.map((e) => e.props?.step)).toEqual(["first", "second"]);
   });
 
   it("removeQueuedAnalyticsEvents deletes only the given ids, leaving the rest queued", async () => {
     const marker = crypto.randomUUID();
     await enqueueAnalyticsEvent({ name: "screen_view", props: { marker } });
-    await enqueueAnalyticsEvent({ name: "tfe_click_out", props: { marker } });
+    await enqueueAnalyticsEvent({ name: "screen_view", props: { marker } });
     const [first, second] = (await listQueuedAnalyticsEvents()).filter((e) => e.props?.marker === marker);
 
     await removeQueuedAnalyticsEvents([first!.id]);

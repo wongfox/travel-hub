@@ -1,9 +1,9 @@
-import type { AnalyticsEventName } from "contracts";
+import type { ClientAnalyticsEventName } from "contracts";
 import { hasAnalyticsConsentGranted } from "./analytics-consent.js";
 import { enqueueAnalyticsEvent } from "./analytics-queue-store.js";
 
 export interface TrackEventInput {
-  name: AnalyticsEventName;
+  name: ClientAnalyticsEventName;
   props?: Record<string, unknown>;
 }
 
