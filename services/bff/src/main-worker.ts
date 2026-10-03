@@ -65,6 +65,15 @@ async function main(): Promise<void> {
       ...(env.STAFF_ALERT_PROTOCOL_REF ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF } : {}),
       ...(env.STAFF_ALERT_RETENTION_DAYS ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS } : {}),
     },
+    // Task 12.1: registers the analytics forward job. `analyticsEventStore`
+    // defaults to a fresh in-memory instance — same documented gap as
+    // `notifications.accessLinkStore` above (a real deployment needs this to
+    // be the SAME store the `api` process's `buildApp({ analytics })`
+    // writes to, pending a Drizzle-backed `analytics_event` adapter; see
+    // `sdd/travel-hub-mvp/apply-progress`).
+    analytics: {
+      adapterAnalyticsSink: env.ADAPTER_ANALYTICS_SINK,
+    },
   });
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
 }

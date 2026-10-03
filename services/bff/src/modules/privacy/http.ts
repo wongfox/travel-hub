@@ -5,6 +5,8 @@ import { DEFAULT_SESSION_COOKIE_NAME } from "../trip-access/http.js";
 import { resolveActiveSession, type ResolveSessionDeps } from "../trip-access/session-auth.js";
 import { recordConsent } from "./record-consent.js";
 import type { ConsentStore } from "./consent-store.js";
+import type { PushSubscriptionStore } from "../notifications/ports.js";
+import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
 
 const RecordConsentBodySchema = z.object({
   purpose: ConsentPurposeSchema,
@@ -14,6 +16,9 @@ const RecordConsentBodySchema = z.object({
 
 export interface PrivacyRouteDeps extends ResolveSessionDeps {
   consentStore: ConsentStore;
+  /** Consent-withdrawal cascade (task 12.3): omitted entirely, `POST /api/consents` behaves exactly as before this task. */
+  pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByReservation">;
+  piiAccessAudit?: PiiAccessAuditPort;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
   sessionCookieName?: string;
 }
@@ -50,7 +55,11 @@ export function registerPrivacyRoutes(app: FastifyInstance, deps: PrivacyRouteDe
         textVersion: parsed.data.textVersion,
         granted: parsed.data.granted,
       },
-      { consentStore: deps.consentStore },
+      {
+        consentStore: deps.consentStore,
+        ...(deps.pushSubscriptionStore ? { pushSubscriptionStore: deps.pushSubscriptionStore } : {}),
+        ...(deps.piiAccessAudit ? { piiAccessAudit: deps.piiAccessAudit } : {}),
+      },
     );
 
     return reply.code(201).send(state);

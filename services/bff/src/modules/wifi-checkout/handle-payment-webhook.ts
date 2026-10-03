@@ -1,11 +1,21 @@
-import type { PaymentEventType, WifiOrderStatus } from "contracts";
+import type { AnalyticsEventName, PaymentEventType, WifiOrderStatus } from "contracts";
 import { WifiOrderNotFoundError } from "./errors.js";
 import type { PaymentGatewayPort, WifiOrderStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
+import { recordAnalyticsBestEffort } from "../analytics/analytics-recorder.js";
 
 export interface HandlePaymentWebhookDeps {
   paymentGateway: Pick<PaymentGatewayPort, "parseWebhook">;
   orderStore: Pick<WifiOrderStore, "findByIdempotencyKey" | "transition">;
+  /** `usage-analytics` funnel instrumentation (task 12.2); omitted entirely, this use case behaves exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
 }
+
+/** Funnel event 4/5 (task 12.2): only `payment_succeeded`/`payment_failed` map to a funnel event — `refund_completed` is not part of the five named funnel steps. */
+const FUNNEL_EVENT_FOR_PAYMENT_EVENT: Partial<Record<PaymentEventType, AnalyticsEventName>> = {
+  payment_succeeded: "wifi_payment_succeeded",
+  payment_failed: "wifi_payment_failed",
+};
 
 export interface HandlePaymentWebhookResult {
   applied: boolean;
@@ -78,5 +88,15 @@ export async function handlePaymentWebhook(
 
   const toStatus = TARGET_STATUS_FOR_EVENT[event.type];
   await deps.orderStore.transition(order.id, toStatus, { gatewayPaymentRef: event.providerRef });
+
+  const funnelEventName = FUNNEL_EVENT_FOR_PAYMENT_EVENT[event.type];
+  if (funnelEventName) {
+    await recordAnalyticsBestEffort(deps.analytics, {
+      reservationRef: order.reservationRef,
+      name: funnelEventName,
+      props: { packageId: order.packageId },
+    });
+  }
+
   return { applied: true, orderId: order.id };
 }

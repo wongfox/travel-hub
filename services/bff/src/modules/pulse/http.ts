@@ -16,6 +16,7 @@ import {
   type PulseResponseStore,
   type StaffAlertStore,
 } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
 
 export interface PulseRouteDeps extends ResolveSessionDeps {
   sirBooking: Pick<SirBookingPort, "getReservation">;
@@ -26,6 +27,8 @@ export interface PulseRouteDeps extends ResolveSessionDeps {
   subscriptionStore: Pick<PushSubscriptionStore, "findActiveByReservation">;
   webPush: WebPushPort;
   negativePulseRule: NegativePulseRule;
+  /** `usage-analytics` instrumentation (task 12.2); omitted entirely, these routes behave exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
   /** Server-side flag table; defaults to the compiled-in defaults (task 3.2) when omitted. */
   flags?: Record<FlagKey, boolean>;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
@@ -121,6 +124,7 @@ export function registerPulseRoutes(app: FastifyInstance, deps: PulseRouteDeps):
           staffAlertStore: deps.staffAlertStore,
           negativePulseRule: deps.negativePulseRule,
           staffAlertsEnabled: flags["pulse.staff_alerts"],
+          ...(deps.analytics ? { analytics: deps.analytics } : {}),
         },
       );
     } catch (error) {
@@ -146,6 +150,19 @@ export function registerPulseRoutes(app: FastifyInstance, deps: PulseRouteDeps):
     const parsed = PulsePromptRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ code: "invalid_request", requestId: request.id });
+    }
+
+    // Consent-withdrawal cascade (task 12.3): withdrawing `pulse` consent
+    // "stops future prompts" — checked here (the ONLY path a prompt can be
+    // requested through) rather than at `POST /api/pulse` capture time,
+    // since the spec's withdrawal requirement is specifically about future
+    // prompting, not about this request's own best-effort/always-202
+    // contract. A withdrawn/never-granted consent makes this request a
+    // silent no-op, same uniform response as every other best-effort branch
+    // below.
+    const pulseConsent = await deps.consentStore.findLatest(session.accessLink.reservationRef, null, "pulse");
+    if (!pulseConsent || !pulseConsent.granted) {
+      return reply.code(202).send({ status: "requested" });
     }
 
     // Best-effort, always: a repeated request for the same (reservation, leg)

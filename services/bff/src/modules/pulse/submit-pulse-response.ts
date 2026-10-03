@@ -2,6 +2,8 @@ import type { Locale, ServiceTier } from "contracts";
 import { buildStaffAlertPayload } from "./build-staff-alert-payload.js";
 import { evaluateNegativePulseRule, type NegativePulseRule } from "./negative-pulse-rule.js";
 import type { PulseResponseRecord, PulseResponseStore, StaffAlertStore } from "./ports.js";
+import type { AnalyticsRecorder } from "../analytics/analytics-recorder.js";
+import { recordAnalyticsBestEffort } from "../analytics/analytics-recorder.js";
 
 export interface SubmitPulseResponseInput {
   reservationRef: string;
@@ -25,6 +27,8 @@ export interface SubmitPulseResponseDeps {
   negativePulseRule: NegativePulseRule;
   /** `pulse.staff_alerts` flag value — kept as a plain boolean rather than the full flag table, since this is the only flag this use case reads. */
   staffAlertsEnabled: boolean;
+  /** `usage-analytics` instrumentation (task 12.2); omitted entirely, this use case behaves exactly as before this task. */
+  analytics?: Pick<AnalyticsRecorder, "record">;
 }
 
 export interface SubmitPulseResponseResult {
@@ -63,6 +67,15 @@ export async function submitPulseResponse(
     locale: input.locale,
   });
 
+  // usage-analytics (task 12.2): the response event is recorded regardless
+  // of negative-rule evaluation/flag state below — "a pulse response was
+  // submitted" is true either way.
+  await recordAnalyticsBestEffort(deps.analytics, {
+    reservationRef: input.reservationRef,
+    name: "pulse_response_submitted",
+    props: { legRef: input.legRef },
+  });
+
   const isNegative = evaluateNegativePulseRule(
     { score: input.score, hasReturnLegPending: input.hasReturnLegPending },
     deps.negativePulseRule,
@@ -86,6 +99,15 @@ export async function submitPulseResponse(
   });
 
   await deps.staffAlertStore.create({ pulseResponseId: response.id, payload });
+
+  // usage-analytics (task 12.2): recorded AFTER the pulse_response_submitted
+  // event above, in the same function call, so a negative response always
+  // produces both events in order (spec acceptance).
+  await recordAnalyticsBestEffort(deps.analytics, {
+    reservationRef: input.reservationRef,
+    name: "pulse_alert_dispatched",
+    props: { legRef: input.legRef },
+  });
 
   return { response, staffAlertDispatched: true };
 }

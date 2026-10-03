@@ -51,6 +51,11 @@ async function main(): Promise<void> {
       ...(env.STAFF_ALERT_PROTOCOL_REF ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF } : {}),
       ...(env.STAFF_ALERT_RETENTION_DAYS ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS } : {}),
     },
+    analytics: {
+      // Task 12.1: real env-sourced secret, so `trip_hash` pseudonymization
+      // is stable across this api process's restarts.
+      secret: env.ANALYTICS_TRIP_HASH_SECRET ?? "dev-only-analytics-trip-hash-secret",
+    },
   });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });

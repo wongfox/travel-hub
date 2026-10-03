@@ -102,6 +102,25 @@ const EnvSchema = z.object({
   STAFF_ALERT_PROTOCOL_REF: z.string().min(1).optional(),
   /** Retention period (days) for `pulse_response`/`staff_alert` records; a `pulse.staff_alerts` go-live prerequisite. */
   STAFF_ALERT_RETENTION_DAYS: z.coerce.number().int().positive().optional(),
+  /**
+   * `AnalyticsSinkPort` adapter selection (design Decision 6,
+   * `ADAPTER_<PORT>=stub|<vendor>`). `usage-analytics` is not in
+   * `GuardedFlagKey` (task 12.1: unlike push/pulse/wifi/precheckin, nothing
+   * in the design's own go-live-guard table names an analytics
+   * prerequisite), so this selection is not enforced by a go-live guard —
+   * it is read here purely for consistency with every other port's
+   * per-adapter-name convention and for future real-adapter wiring.
+   */
+  ADAPTER_ANALYTICS_SINK: z.string().min(1).default("stub"),
+  /**
+   * HMAC-SHA256 secret for `trip_hash` pseudonymization (design Data Model:
+   * "analytics never sees raw references"). Optional here so
+   * `development`/`test` can fall back to the composition root's dev-only
+   * default (same convention as `INTERNAL_LINKS_API_KEY`); a real deployment
+   * MUST set a real secret, since rotating it invalidates the ability to
+   * correlate historical `trip_hash` values for the same reservation.
+   */
+  ANALYTICS_TRIP_HASH_SECRET: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

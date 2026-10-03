@@ -290,10 +290,11 @@ describe("POST /api/pulse/prompt", () => {
   });
 
   it("returns 202 and delivers push to every active subscription on the reservation", async () => {
-    const { app, accessLinkStore, sessionStore, subscriptionStore, webPush } = await buildTestApp({
+    const { app, accessLinkStore, sessionStore, consentStore, subscriptionStore, webPush } = await buildTestApp({
       flags: { "pulse.capture": true },
     });
     const { cookieValue, accessLinkId } = await buildSession(accessLinkStore, sessionStore);
+    await grantPulseConsent(consentStore, accessLinkId);
     await subscriptionStore.create({
       linkId: accessLinkId,
       reservationRef: "RES-1001",
@@ -319,10 +320,11 @@ describe("POST /api/pulse/prompt", () => {
   });
 
   it("is idempotent per (reservation, leg): a second request for the same moment does not send a second push", async () => {
-    const { app, accessLinkStore, sessionStore, subscriptionStore, webPush } = await buildTestApp({
+    const { app, accessLinkStore, sessionStore, consentStore, subscriptionStore, webPush } = await buildTestApp({
       flags: { "pulse.capture": true },
     });
     const { cookieValue, accessLinkId } = await buildSession(accessLinkStore, sessionStore);
+    await grantPulseConsent(consentStore, accessLinkId);
     await subscriptionStore.create({
       linkId: accessLinkId,
       reservationRef: "RES-1001",
@@ -350,5 +352,61 @@ describe("POST /api/pulse/prompt", () => {
 
     expect(response.statusCode).toBe(202);
     expect(webPush.sentPayloads).toHaveLength(1);
+  });
+
+  it("stops future prompts once pulse consent is withdrawn (task 12.3): returns 202 but delivers nothing, in-app or push", async () => {
+    const { app, accessLinkStore, sessionStore, consentStore, subscriptionStore, webPush } = await buildTestApp({
+      flags: { "pulse.capture": true },
+    });
+    const { cookieValue, accessLinkId } = await buildSession(accessLinkStore, sessionStore);
+    await grantPulseConsent(consentStore, accessLinkId);
+    await subscriptionStore.create({
+      linkId: accessLinkId,
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      endpoint: "https://push.example.com/endpoint-1",
+      p256dh: "p256dh-1",
+      auth: "auth-1",
+      locale: "es",
+      consentRecordId: "consent-1",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+    // Withdrawal: a new `granted: false` record for the same purpose,
+    // same append-only convention as every other consent withdrawal.
+    await consentStore.record({
+      linkId: accessLinkId,
+      reservationRef: "RES-1001",
+      passengerRef: null,
+      purpose: "pulse",
+      textVersion: "v1",
+      granted: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/pulse/prompt",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: { legId: "L1" },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(webPush.sentPayloads).toHaveLength(0);
+  });
+
+  it("never requests a prompt at all when pulse consent was never granted", async () => {
+    const { app, accessLinkStore, sessionStore, webPush } = await buildTestApp({
+      flags: { "pulse.capture": true },
+    });
+    const { cookieValue } = await buildSession(accessLinkStore, sessionStore);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/pulse/prompt",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      payload: { legId: "L1" },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(webPush.sentPayloads).toHaveLength(0);
   });
 });

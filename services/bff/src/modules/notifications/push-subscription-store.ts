@@ -51,5 +51,18 @@ export function createInMemoryPushSubscriptionStore(now: () => Date = () => new 
         }
       }
     },
+
+    async deleteByReservation(reservationRef: string): Promise<void> {
+      for (const record of [...byId.values()]) {
+        if (record.reservationRef === reservationRef) {
+          byId.delete(record.id);
+        }
+      }
+    },
+
+    async listExpired(asOf: Date): Promise<PushSubscriptionRecord[]> {
+      const asOfMs = asOf.getTime();
+      return [...byId.values()].filter((record) => new Date(record.expiresAt).getTime() <= asOfMs);
+    },
   };
 }

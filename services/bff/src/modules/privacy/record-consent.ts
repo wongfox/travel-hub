@@ -1,5 +1,9 @@
 import type { ConsentPurpose, ConsentState } from "contracts";
 import type { ConsentStore } from "./consent-store.js";
+import type { PushSubscriptionStore } from "../notifications/ports.js";
+import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
+
+const WITHDRAWAL_ACTOR = "api:consent-withdrawal-cascade";
 
 export interface RecordConsentUseCaseInput {
   linkId: string;
@@ -11,6 +15,10 @@ export interface RecordConsentUseCaseInput {
 
 export interface RecordConsentDeps {
   consentStore: Pick<ConsentStore, "record">;
+  /** Consent-withdrawal cascade (task 12.3): deletes push subscriptions immediately on withdrawal; a deletion failure is audited as `"purge_failed"`, never thrown (R4), since the consent itself is already recorded. */
+  pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByReservation">;
+  /** `pii_access_audit` write point for this cascade's deletion (task 12.3). */
+  piiAccessAudit?: PiiAccessAuditPort;
 }
 
 /**
@@ -31,6 +39,25 @@ export async function recordConsent(
     textVersion: input.textVersion,
     granted: input.granted,
   });
+
+  if (input.purpose === "push" && !input.granted && deps.pushSubscriptionStore) {
+    let action: "purge" | "purge_failed" = "purge";
+    try {
+      await deps.pushSubscriptionStore.deleteByReservation(input.reservationRef);
+    } catch {
+      action = "purge_failed";
+    }
+    try {
+      await deps.piiAccessAudit?.record({
+        actor: WITHDRAWAL_ACTOR,
+        action,
+        subjectType: "push_subscription",
+        subjectId: input.reservationRef,
+      });
+    } catch {
+      // Swallowed intentionally — see doc comment above: audit-write failure must not surface as an HTTP error either.
+    }
+  }
 
   return {
     purpose: record.purpose,

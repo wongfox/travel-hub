@@ -108,4 +108,42 @@ describe("createInMemoryPushSubscriptionStore", () => {
 
     await expect(store.deleteByLinkId("no-such-link")).resolves.toBeUndefined();
   });
+
+  it("deleteByReservation removes every subscription for that reservation, across different links, leaving other reservations untouched (task 12.3)", async () => {
+    const store = createInMemoryPushSubscriptionStore();
+    const subA = await store.create({ ...INPUT, linkId: "link-a", endpoint: "https://push.example.com/endpoint-a" });
+    const subB = await store.create({ ...INPUT, linkId: "link-b", endpoint: "https://push.example.com/endpoint-b" });
+    const subOther = await store.create({
+      ...INPUT,
+      reservationRef: "RES-2002",
+      endpoint: "https://push.example.com/endpoint-c",
+    });
+
+    await store.deleteByReservation("RES-1001");
+
+    expect(await store.findById(subA.id)).toBeNull();
+    expect(await store.findById(subB.id)).toBeNull();
+    expect(await store.findById(subOther.id)).toEqual(subOther);
+  });
+
+  it("deleteByReservation for a reservation with no subscriptions is a harmless no-op", async () => {
+    const store = createInMemoryPushSubscriptionStore();
+
+    await expect(store.deleteByReservation("RES-UNKNOWN")).resolves.toBeUndefined();
+  });
+
+  it("listExpired returns only subscriptions whose expiresAt has already passed as of the given time (task 12.3)", async () => {
+    const store = createInMemoryPushSubscriptionStore();
+    const expired = await store.create(INPUT); // expiresAt: 2026-11-05
+    const active = await store.create({
+      ...INPUT,
+      endpoint: "https://push.example.com/endpoint-active",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+
+    const found = await store.listExpired(new Date("2026-12-01T00:00:00.000Z"));
+
+    expect(found.map((r) => r.id)).toEqual([expired.id]);
+    expect(found.find((r) => r.id === active.id)).toBeUndefined();
+  });
 });

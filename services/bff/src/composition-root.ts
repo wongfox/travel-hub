@@ -94,6 +94,18 @@ import {
   registerStaffAlertDispatchJob,
   STAFF_ALERT_DISPATCH_QUEUE,
 } from "./modules/pulse/dispatch-staff-alerts-job.js";
+import { registerPushSubscriptionPurgeJob, PUSH_SUBSCRIPTION_PURGE_QUEUE } from "./modules/notifications/purge-job.js";
+import { registerPulsePurgeJob, PULSE_PURGE_QUEUE } from "./modules/pulse/purge-job.js";
+import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
+import { registerAnalyticsRoutes } from "./modules/analytics/http.js";
+import { createInMemoryAnalyticsEventStore } from "./modules/analytics/analytics-event-store.js";
+import { createAnalyticsRecorder, type AnalyticsRecorder } from "./modules/analytics/analytics-recorder.js";
+import type { AnalyticsEventStore, AnalyticsSinkPort } from "./modules/analytics/ports.js";
+import { createAnalyticsSinkStub } from "./adapters/analytics-sink/stub.js";
+import {
+  registerForwardAnalyticsEventsJob,
+  ANALYTICS_FORWARD_QUEUE,
+} from "./modules/analytics/forward-analytics-events-job.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -115,6 +127,8 @@ const DEFAULT_PRECHECKIN_KEY_ID = "dev-only-precheckin-key";
  * unnamed) — same "documented dev-only default" convention as
  * `DEFAULT_DEV_INTERNAL_LINKS_API_KEY` above.
  */
+/** Dev-only default; a real deployment names a real secret via `ANALYTICS_TRIP_HASH_SECRET` (env.ts). */
+const DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET = "dev-only-analytics-trip-hash-secret";
 const DEFAULT_TFE_REDIRECT_CONFIG: TfeRedirectConfig = {
   baseUrl: "https://www.trainexperience.local",
   allowedPlacements: {
@@ -173,6 +187,8 @@ export interface BuildAppOptions {
    */
   privacy?: {
     consentStore?: ConsentStore;
+    /** Consent-withdrawal cascade's `pii_access_audit` write point (task 12.3); defaults to a fresh in-memory instance. */
+    piiAccessAudit?: PiiAccessAuditPort;
   };
   /**
    * `pre-check-in` submission/status wiring (tasks 8.3-8.4). Shares
@@ -291,6 +307,19 @@ export interface BuildAppOptions {
     webPush?: WebPushPort;
     pulsePromptDeliveryStore?: Pick<ReturnType<typeof createInMemoryPulsePromptDeliveryStore>, "create">;
   };
+  /**
+   * `usage-analytics` core wiring (task 12.1): `POST /api/events` plus the
+   * `AnalyticsRecorder` shared by every task 12.2 funnel-event call site
+   * (wifi-checkout, notifications, pulse, outbound) below. Shares `privacy`'s
+   * `consentStore` by default — a consent recorded via `POST /api/consents`
+   * must be visible to `POST /api/events`'s own `assertConsentGranted` check
+   * too.
+   */
+  analytics?: {
+    analyticsEventStore?: AnalyticsEventStore;
+    /** `ANALYTICS_TRIP_HASH_SECRET` (env.ts); defaults to a dev-only secret. */
+    secret?: string;
+  };
 }
 
 /**
@@ -383,10 +412,38 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   // `POST /api/consents` must be visible to pre check-in's own
   // `assertConsentGranted` check — they MUST be the same store instance.
   const sharedConsentStore = privacyOptions.consentStore ?? createInMemoryConsentStore();
+  const sharedPrivacyPiiAccessAudit = privacyOptions.piiAccessAudit ?? createInMemoryPiiAccessAudit();
   registerPrivacyRoutes(app, {
     accessLinkStore,
     sessionStore,
     consentStore: sharedConsentStore,
+    // Consent-withdrawal cascade (task 12.3): shares the exact same
+    // `sharedPushSubscriptionStore` instance `registerNotificationRoutes`
+    // below writes to, so withdrawing `push` consent here is visible to
+    // every other route reading that store too.
+    pushSubscriptionStore: sharedPushSubscriptionStore,
+    piiAccessAudit: sharedPrivacyPiiAccessAudit,
+  });
+
+  // `usage-analytics` (task 12.1): the shared store + recorder every task
+  // 12.2 funnel-event call site below is threaded `analytics` from. Created
+  // early so every later module registration can share the exact same
+  // `analyticsRecorder` instance (same "shared store instance" convention as
+  // `sharedConsentStore`/`sharedPushSubscriptionStore`).
+  const analyticsOptions = options.analytics ?? {};
+  const sharedAnalyticsEventStore = analyticsOptions.analyticsEventStore ?? createInMemoryAnalyticsEventStore();
+  const analyticsSecret = analyticsOptions.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET;
+  const analyticsRecorder: AnalyticsRecorder = createAnalyticsRecorder({
+    analyticsEventStore: sharedAnalyticsEventStore,
+    consentStore: sharedConsentStore,
+    secret: analyticsSecret,
+  });
+  registerAnalyticsRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    consentStore: sharedConsentStore,
+    analyticsEventStore: sharedAnalyticsEventStore,
+    secret: analyticsSecret,
   });
 
   registerPrecheckinRoutes(app, {
@@ -467,11 +524,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     paymentGateway: wifiCheckoutOptions.paymentGateway ?? createPaymentGatewayStub(),
     flags: wifiCheckoutFlags,
     ...(wifiCheckoutOptions.buildReturnUrl ? { buildReturnUrl: wifiCheckoutOptions.buildReturnUrl } : {}),
+    analytics: analyticsRecorder,
   });
 
   const outboundOptions = options.outbound ?? {};
   registerOutboundRoutes(app, {
     tfeConfig: outboundOptions.tfeConfig ?? DEFAULT_TFE_REDIRECT_CONFIG,
+    accessLinkStore,
+    sessionStore,
+    analytics: analyticsRecorder,
   });
 
   const notificationsFlags = notificationsOptions.flags ?? wifiCheckoutFlags;
@@ -505,6 +566,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     consentStore: sharedConsentStore,
     subscriptionStore: sharedPushSubscriptionStore,
     flags: notificationsFlags,
+    analytics: analyticsRecorder,
   });
 
   const pulseOptions = options.pulse ?? {};
@@ -531,18 +593,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   assertGoLiveGuard("pulse.capture", pulseFlags["pulse.capture"], pulseGoLiveContext);
   assertGoLiveGuard("pulse.staff_alerts", pulseFlags["pulse.staff_alerts"], pulseGoLiveContext);
 
+  // R3-002: so a configured STAFF_ALERT_RETENTION_DAYS reaches purgeAfter.
+  const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays });
+
   registerPulseRoutes(app, {
     accessLinkStore,
     sessionStore,
     sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
     consentStore: sharedConsentStore,
-    pulseResponseStore: pulseOptions.pulseResponseStore ?? createInMemoryPulseResponseStore(),
-    staffAlertStore: pulseOptions.staffAlertStore ?? createInMemoryStaffAlertStore(),
+    pulseResponseStore: pulseOptions.pulseResponseStore ?? createInMemoryPulseResponseStore(undefined, pulseRetention),
+    staffAlertStore: pulseOptions.staffAlertStore ?? createInMemoryStaffAlertStore(undefined, pulseRetention),
     pulsePromptDeliveryStore: pulseOptions.pulsePromptDeliveryStore ?? createInMemoryPulsePromptDeliveryStore(),
     subscriptionStore: sharedPushSubscriptionStore,
     webPush: pulseOptions.webPush ?? createWebPushStub(),
     negativePulseRule: pulseOptions.negativePulseRule ?? DEFAULT_NEGATIVE_PULSE_RULE,
     flags: pulseFlags,
+    analytics: analyticsRecorder,
   });
 
   return app;
@@ -610,6 +676,8 @@ export interface StartWorkerOptions {
     /** `ADAPTER_WIFI_ENTITLEMENT` (env.ts); defaults to `"stub"`. */
     adapterWifiEntitlement?: string;
     now?: () => Date;
+    /** `usage-analytics` funnel instrumentation (task 12.2) for the entitlement-activated event, recorded from this worker's own activation scan. */
+    analytics?: Pick<AnalyticsRecorder, "record">;
   };
   /**
    * Journey-poll job wiring (task 11.2). Same opt-in convention as
@@ -638,6 +706,8 @@ export interface StartWorkerOptions {
     vapidConfigured?: boolean;
     pushConsentTextVersion?: string;
     now?: () => Date;
+    /** Push-subscription retention/purge scheduler wiring (task 12.3); shares `piiAccessAudit` with `precheckin`'s own purge job when both are configured. Defaults to a fresh in-memory audit instance. */
+    piiAccessAudit?: PiiAccessAuditPort;
   };
   /**
    * D4a staff-alert dispatch job wiring (task 11.5). Same opt-in convention
@@ -658,6 +728,24 @@ export interface StartWorkerOptions {
     staffAlertReceiverId?: string;
     staffAlertProtocolRef?: string;
     staffAlertRetentionDays?: number;
+    now?: () => Date;
+    /** `pulse_response`/`staff_alert` retention/purge scheduler wiring (task 12.3). Should be the SAME `pulseResponseStore` instance `buildApp({ pulse })`'s `POST /api/pulse` route writes to, in a real deployment. */
+    pulseResponseStore?: Pick<PulseResponseStore, "listPastPurgeAfter" | "deleteById">;
+    piiAccessAudit?: PiiAccessAuditPort;
+  };
+  /**
+   * `usage-analytics` forward-job wiring (task 12.1). Same opt-in convention
+   * as `precheckin`/`wifiCheckout`/`notifications`/`pulse` above: omitted
+   * entirely, `startWorker` registers no analytics forward job. When given,
+   * `analyticsEventStore` should be the SAME instance the `api` process's
+   * `buildApp({ analytics })` was given, so events recorded via `POST
+   * /api/events` or any task 12.2 funnel call site are visible to this job.
+   */
+  analytics?: {
+    analyticsEventStore?: AnalyticsEventStore;
+    analyticsSink?: Pick<AnalyticsSinkPort, "forward">;
+    /** `ADAPTER_ANALYTICS_SINK` (env.ts); defaults to `"stub"`. Not go-live-guarded (task 12.1: `usage-analytics` is not a `GuardedFlagKey`). */
+    adapterAnalyticsSink?: string;
     now?: () => Date;
   };
 }
@@ -810,6 +898,7 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       sirPos: w.sirPos ?? createSirPosStub(),
       eReceipt: w.eReceipt ?? createEReceiptStub(),
       ...(w.now ? { now: w.now } : {}),
+      ...(w.analytics ? { analytics: w.analytics } : {}),
     });
     jobsRegistered.push(WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE);
   }
@@ -871,6 +960,16 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       ...(n.now ? { now: n.now } : {}),
     });
     jobsRegistered.push(JOURNEY_POLL_QUEUE);
+
+    // Push-subscription retention/purge scheduler (task 12.3): registered
+    // alongside the journey-poll job since both share this same
+    // `notifications` options block and its `subscriptionStore`.
+    await registerPushSubscriptionPurgeJob(options.queueClient, {
+      subscriptionStore: n.subscriptionStore ?? createInMemoryPushSubscriptionStore(),
+      piiAccessAudit: n.piiAccessAudit ?? createInMemoryPiiAccessAudit(),
+      ...(n.now ? { now: n.now } : {}),
+    });
+    jobsRegistered.push(PUSH_SUBSCRIPTION_PURGE_QUEUE);
   }
 
   if (options.pulse) {
@@ -878,6 +977,9 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     const flags = p.flags ?? FLAG_DEFAULTS;
     const nodeEnv = p.nodeEnv ?? "development";
     const adapterStaffAlert = p.adapterStaffAlert ?? "stub";
+    // R3-002: see buildApp's identical comment above.
+    const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: p.staffAlertRetentionDays });
+    const pulseNow = p.now ?? (() => new Date());
 
     // Same defense-in-depth check as precheckin's `handoffPort`/wifiCheckout's/
     // notifications' adapter guards above: without it, declaring a non-stub
@@ -912,12 +1014,60 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       },
     });
 
+    const sharedStaffAlertStore = p.staffAlertStore ?? createInMemoryStaffAlertStore(pulseNow, pulseRetention);
+    const sharedPulseResponseStore = p.pulseResponseStore ?? createInMemoryPulseResponseStore(pulseNow, pulseRetention);
+
     await registerStaffAlertDispatchJob(options.queueClient, {
-      staffAlertStore: p.staffAlertStore ?? createInMemoryStaffAlertStore(),
+      staffAlertStore: sharedStaffAlertStore,
       staffAlertPort: p.staffAlertPort ?? createStaffAlertStub(),
       ...(p.now ? { now: p.now } : {}),
     });
     jobsRegistered.push(STAFF_ALERT_DISPATCH_QUEUE);
+
+    // `pulse_response`/`staff_alert` retention/purge scheduler (task 12.3):
+    // registered alongside the D4a dispatch job since both share this same
+    // `pulse` options block.
+    await registerPulsePurgeJob(options.queueClient, {
+      pulseResponseStore: sharedPulseResponseStore,
+      staffAlertStore: sharedStaffAlertStore,
+      piiAccessAudit: p.piiAccessAudit ?? createInMemoryPiiAccessAudit(),
+      ...(p.now ? { now: p.now } : {}),
+    });
+    jobsRegistered.push(PULSE_PURGE_QUEUE);
+  }
+
+  if (options.analytics) {
+    const a = options.analytics;
+    const adapterAnalyticsSink = a.adapterAnalyticsSink ?? "stub";
+
+    // Same defense-in-depth check as every other adapter above: without it,
+    // declaring a non-stub ADAPTER_ANALYTICS_SINK without also wiring a real
+    // `analyticsSink` would let this job silently fall back to
+    // `createAnalyticsSinkStub()`, so no event would ever actually reach the
+    // declared adapter. Not go-live-guarded (task 12.1: `usage-analytics` is
+    // not a `GuardedFlagKey`), but still fails loudly on a misconfiguration.
+    if (adapterAnalyticsSink !== "stub" && !a.analyticsSink) {
+      throw new Error(
+        `ADAPTER_ANALYTICS_SINK="${adapterAnalyticsSink}" has no real adapter wired in; ` +
+          'startWorker\'s analytics.analyticsSink must be provided, or ADAPTER_ANALYTICS_SINK must stay "stub".',
+      );
+    }
+    // R4: a default store here is a separate process's map from api's own —
+    // with a real sink that silently forwards nothing forever, no error.
+    if (adapterAnalyticsSink !== "stub" && !a.analyticsEventStore) {
+      throw new Error(
+        `ADAPTER_ANALYTICS_SINK="${adapterAnalyticsSink}" has no shared analyticsEventStore wired in; ` +
+          "startWorker's analytics.analyticsEventStore must be the SAME instance the api process's " +
+          'buildApp({ analytics }) was given, or ADAPTER_ANALYTICS_SINK must stay "stub".',
+      );
+    }
+
+    await registerForwardAnalyticsEventsJob(options.queueClient, {
+      analyticsEventStore: a.analyticsEventStore ?? createInMemoryAnalyticsEventStore(),
+      analyticsSink: a.analyticsSink ?? createAnalyticsSinkStub(),
+      ...(a.now ? { now: a.now } : {}),
+    });
+    jobsRegistered.push(ANALYTICS_FORWARD_QUEUE);
   }
 
   return { jobsRegistered };
