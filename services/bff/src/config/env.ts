@@ -124,6 +124,13 @@ const EnvSchema = z.object({
   ANALYTICS_TRIP_HASH_SECRET: z.string().min(1).optional(),
   /** Cadence (seconds) at which the worker enqueues the `analytics-forward` scan. */
   ANALYTICS_FORWARD_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  /** Cadences (seconds) at which the worker enqueues the remaining periodic scan jobs (each only when its queue is registered). */
+  PRECHECKIN_HANDOFF_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  PRECHECKIN_PURGE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(3600),
+  JOURNEY_POLL_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  PUSH_SUBSCRIPTION_PURGE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(3600),
+  STAFF_ALERT_DISPATCH_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  PULSE_PURGE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(3600),
   /**
    * Task 13.3 (observability): selects the structured-log sink
    * (`infra/logging/log-sink.ts`). `"stdout"` relies on the deployment
