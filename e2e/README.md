@@ -36,4 +36,6 @@ tar (`ADD work.tar`) because Docker Desktop rejects the symlinks of pnpm's
 container. Env: `DOCKER`, `E2E_IMAGE`, `E2E_DOCKER_CTX`, `SKIP_BUILD=1`,
 `SKIP_DEPLOY=1`. Traces/screenshots of a run are copied back to `e2e/test-results/`.
 
+Scenario 5 (pre check-in) is Chromium-only: it needs Chromium's fake-media launch flags, and the harness enables both `precheckin.*` flags and publishes a test consent version for it.
+
 Known gaps and their status: [`KNOWN-GAPS.md`](./KNOWN-GAPS.md).
