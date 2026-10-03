@@ -6,9 +6,8 @@ import type { ConsentPurpose } from "contracts";
  * `services/bff/src/infra/db/schema.ts`, task 3.3). Same in-memory-port
  * convention as `AccessLinkStore`/`SessionStore` (tasks 5.2/5.3): a small
  * port so the consent use cases (task 8.1) are unit testable deterministically
- * without a live Postgres. A Drizzle-backed adapter over the existing
- * `consentRecord` table lands once a consumer needs it against a live
- * database.
+ * without a live Postgres. The Postgres adapter lives in
+ * `adapters/consent-store/postgres.ts`; both run the same conformance suite.
  *
  * `passengerRef` is always `null` for now: `RecordConsentRequestSchema`
  * (task 2.4, frozen) carries no passenger identifier, consistent with the
