@@ -62,6 +62,40 @@ async function encryptAndStore(
 }
 
 /**
+ * Decides whether the ciphertext uploaded by a call whose `submissionStore.create` failed may be deleted.
+ * The original error is ALWAYS rethrown by the caller; nothing here may throw or log submission data.
+ *
+ * - `AlreadySubmittedError` (confirmed duplicate: we lost the race, the winner has its own keys): delete.
+ * - Any other failure (connection error, timeout, CHECK violation...) is ambiguous: the INSERT may have
+ *   committed before the failure surfaced, in which case a row now references these keys and deleting the
+ *   objects would leave a dangling reference (data loss). So look the row up:
+ *     - found, and it references one of our object keys: KEEP the objects;
+ *     - not found, or found but referencing other keys: nothing points at ours, DELETE them;
+ *     - the lookup itself fails (state unknown): KEEP. A leaked object is recoverable by an operator;
+ *       a dangling reference is not.
+ */
+async function cleanupAfterFailedCreate(
+  error: unknown,
+  stored: StoredPrecheckinImage[],
+  input: SubmitPrecheckinInput,
+  deps: SubmitPrecheckinDeps,
+): Promise<void> {
+  try {
+    if (!(error instanceof AlreadySubmittedError)) {
+      const row = await deps.submissionStore.findByPassenger(input.reservationRef, input.passengerRef);
+      if (row) {
+        const referenced = [row.photo.objectKey, row.idFront.objectKey];
+        if (row.idBack) referenced.push(row.idBack.objectKey);
+        if (stored.some((image) => referenced.includes(image.objectKey))) return;
+      }
+    }
+    await Promise.allSettled(stored.map((image) => deps.documentStore.delete(image.objectKey)));
+  } catch {
+    // Lookup failed (state unknown): keep the objects and let the caller surface the original error.
+  }
+}
+
+/**
  * `POST /api/precheckin/:passengerOrdinal` use case (task 8.3): per design's
  * pre check-in Security section, each image gets its own fresh DEK (a unique
  * `encryptEnvelope` call per image — never one DEK shared across images) and
@@ -126,12 +160,7 @@ export async function submitPrecheckin(
       purgeAfter: computeInitialPurgeAfter(deps.tripEndLocal, deps.retention),
     });
   } catch (error) {
-    // Lost a concurrent race for this passenger (the store enforces one submission per
-    // passenger): the ciphertext just stored is referenced by no record, so remove it
-    // instead of leaving untrackable encrypted objects behind.
-    if (error instanceof AlreadySubmittedError) {
-      await Promise.allSettled(stored.map((image) => deps.documentStore.delete(image.objectKey)));
-    }
+    await cleanupAfterFailedCreate(error, stored, input, deps);
     throw error;
   }
 }

@@ -152,6 +152,126 @@ describe("submitPrecheckin", () => {
     expect(realDocumentStore.contents.size).toBe(0);
   });
 
+  describe("when submissionStore.create fails for a reason other than a confirmed duplicate", () => {
+    const CREATE_FAILURE = new Error("simulated connection reset");
+
+    type Store = ReturnType<typeof createInMemorySubmissionStore>;
+
+    /** `create` throws `error` (optionally AFTER really inserting the row: a commit whose ack was lost); `findByPassenger` can fail from its Nth call on. */
+    function faultyStore(
+      real: Store,
+      options: { commitBeforeThrow?: boolean; failLookupFromCall?: number; error?: Error },
+    ): Store {
+      let lookups = 0;
+      return {
+        ...real,
+        async findByPassenger(reservationRef, passengerRef) {
+          lookups += 1;
+          if (options.failLookupFromCall !== undefined && lookups >= options.failLookupFromCall) {
+            throw new Error("simulated lookup failure");
+          }
+          return real.findByPassenger(reservationRef, passengerRef);
+        },
+        async create(input) {
+          if (options.commitBeforeThrow) await real.create(input);
+          throw options.error ?? CREATE_FAILURE;
+        },
+      };
+    }
+
+    it("deletes the just-uploaded objects when no row references them (plain failure), and rethrows the original error", async () => {
+      const deps = buildDeps();
+      const submissionStore = faultyStore(deps.submissionStore, {});
+
+      await expect(submitPrecheckin(baseInput(), { ...deps, submissionStore })).rejects.toBe(CREATE_FAILURE);
+
+      expect(deps.documentStore.contents.size).toBe(0);
+      expect(await deps.submissionStore.findByPassenger("RES-1001", "PAX-1")).toBeNull();
+    });
+
+    it("KEEPS the objects when the failed create actually committed a row that references them (lost ack), and rethrows the original error", async () => {
+      const deps = buildDeps();
+      const submissionStore = faultyStore(deps.submissionStore, { commitBeforeThrow: true });
+
+      await expect(submitPrecheckin(baseInput(), { ...deps, submissionStore })).rejects.toBe(CREATE_FAILURE);
+
+      const row = await deps.submissionStore.findByPassenger("RES-1001", "PAX-1");
+      expect(row).not.toBeNull();
+      // No dangling reference: every object key the row points at is still in the document store.
+      expect(deps.documentStore.contents.has(row!.photo.objectKey)).toBe(true);
+      expect(deps.documentStore.contents.has(row!.idFront.objectKey)).toBe(true);
+      expect(deps.documentStore.contents.size).toBe(2);
+    });
+
+    it("KEEPS the objects when the lookup itself fails (state unknown), and rethrows the ORIGINAL create error, not the lookup error", async () => {
+      const deps = buildDeps();
+      // call 1 is the use case's own up-front duplicate check; the cleanup lookup is call 2.
+      const submissionStore = faultyStore(deps.submissionStore, { failLookupFromCall: 2 });
+
+      await expect(submitPrecheckin(baseInput(), { ...deps, submissionStore })).rejects.toBe(CREATE_FAILURE);
+
+      expect(deps.documentStore.contents.size).toBe(2);
+    });
+
+    it("deletes our objects when the row found belongs to someone else's keys (not referenced by it)", async () => {
+      const deps = buildDeps();
+      const other = createInMemorySubmissionStore();
+      const winner = await submitPrecheckin(baseInput(), { ...deps, submissionStore: other });
+      // `create` fails (e.g. a CHECK/timeout) while the up-front duplicate check had seen nothing; the lookup now
+      // returns the winner's row, which references the winner's keys, not ours.
+      let lookups = 0;
+      const submissionStore: Store = {
+        ...other,
+        async findByPassenger(reservationRef, passengerRef) {
+          lookups += 1;
+          return lookups === 1 ? null : other.findByPassenger(reservationRef, passengerRef);
+        },
+        async create() {
+          throw CREATE_FAILURE;
+        },
+      };
+
+      await expect(submitPrecheckin(baseInput(), { ...deps, submissionStore })).rejects.toBe(CREATE_FAILURE);
+
+      expect([...deps.documentStore.contents.keys()].sort()).toEqual([winner.idFront.objectKey, winner.photo.objectKey].sort());
+    });
+
+    it("keeps the original duplicate behavior: AlreadySubmittedError deletes the loser's objects without consulting the store", async () => {
+      const deps = buildDeps();
+      const submissionStore = faultyStore(deps.submissionStore, {
+        error: new AlreadySubmittedError("RES-1001", "PAX-1"),
+        failLookupFromCall: 2,
+      });
+
+      await expect(submitPrecheckin(baseInput(), { ...deps, submissionStore })).rejects.toBeInstanceOf(AlreadySubmittedError);
+
+      expect(deps.documentStore.contents.size).toBe(0);
+    });
+
+    it("isolates each delete: one failing delete neither stops the others nor masks the original error", async () => {
+      const real = createPrecheckinDocumentStoreStub();
+      let failedKey: string | undefined;
+      const documentStore = {
+        contents: real.contents,
+        put: real.put.bind(real),
+        async delete(key: string) {
+          if (failedKey === undefined) {
+            failedKey = key;
+            throw new Error("simulated delete failure");
+          }
+          await real.delete(key);
+        },
+      };
+      const deps = { ...buildDeps(), documentStore };
+      const submissionStore = faultyStore(deps.submissionStore, {});
+
+      await expect(submitPrecheckin(baseInput(), { ...deps, submissionStore })).rejects.toBe(CREATE_FAILURE);
+
+      // 2 objects were uploaded; exactly the one whose delete failed remains.
+      expect([...real.contents.keys()]).toEqual([failedKey]);
+    });
+  });
+
   it("computes purgeAfter from tripEndLocal + retention and starts status as 'received' (task 8.5)", async () => {
     const deps = buildDeps();
 
