@@ -44,7 +44,9 @@ async function createPaidOrder(orderStore: ReturnType<typeof createInMemoryWifiO
     legRef: "LEG-1",
     buyerEmail: "ana@example.com",
   });
-  return orderStore.transition(created.id, "PAID", { gatewayPaymentRef: `payment-${idempotencyKey}` });
+  const paid = await orderStore.transition(created.id, "CREATED", "PAID", { gatewayPaymentRef: `payment-${idempotencyKey}` });
+  if (!paid) throw new Error("fixture: CREATED -> PAID CAS unexpectedly missed");
+  return paid;
 }
 
 describe("runSirAndReceiptJob e-receipt line", () => {
@@ -185,7 +187,7 @@ describe("runSirAndReceiptJob", () => {
       legRef: "LEG-1",
       buyerEmail: "ana@example.com",
     });
-    await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    await orderStore.transition(created.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
     const sirPos = createSirPosStub();
     sirPos.simulateFailureOnce();
     const eReceipt = createEReceiptStub();
@@ -218,7 +220,7 @@ describe("runSirAndReceiptJob", () => {
       legRef: "LEG-1",
       buyerEmail: "ana@example.com",
     });
-    await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    await orderStore.transition(created.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
 
     const alwaysFailingSirPos = {
       registerCalls: [] as { idempotencyKey: string }[],
@@ -271,7 +273,7 @@ describe("runSirAndReceiptJob", () => {
       legRef: "LEG-1",
       buyerEmail: "ana@example.com",
     });
-    await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    await orderStore.transition(created.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
     const sirPos = createSirPosStub();
     const eReceipt = createEReceiptStub();
 
@@ -305,7 +307,7 @@ describe("runSirAndReceiptJob", () => {
       legRef: "LEG-1",
       buyerEmail: "ana@example.com",
     });
-    await orderStore.transition(failing.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    await orderStore.transition(failing.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
     const healthy = await orderStore.create({
       reservationRef: "RES-1002",
       passengerRef: "PAX-2",
@@ -316,7 +318,7 @@ describe("runSirAndReceiptJob", () => {
       legRef: "LEG-1",
       buyerEmail: "ana2@example.com",
     });
-    await orderStore.transition(healthy.id, "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-2" });
+    await orderStore.transition(healthy.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-2" });
 
     const sirPos = createSirPosStub();
     sirPos.simulateFailureOnce();
@@ -428,5 +430,42 @@ describe("scheduleWifiOrderScans", () => {
 
     expect(calls).toBe(4);
     errors.mockRestore();
+  });
+});
+
+describe("stale reads in the SIR/receipt scan (compare-and-swap)", () => {
+  it("a refund transition that lands mid-scan is never undone: status stays REFUND_PENDING and progress is still recorded", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const created = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "WIFI-60",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-stale",
+      legRef: "LEG-1",
+      buyerEmail: "ana@example.com",
+    });
+    await orderStore.transition(created.id, "CREATED", "ENTITLEMENT_ACTIVE", { entitlementRef: "ENT-1" });
+    const sirPos = {
+      async registerSale() {
+        await orderStore.transition(created.id, "ENTITLEMENT_ACTIVE", "REFUND_PENDING", {});
+        return { saleRef: "SALE-1" };
+      },
+      async voidSale() {},
+    };
+
+    const result = await runSirAndReceiptJob({
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      entitlement: createWifiEntitlementStub(),
+      sirPos,
+      eReceipt: createEReceiptStub(),
+    });
+
+    const order = await orderStore.findById(created.id);
+    expect(order?.status).toBe("REFUND_PENDING");
+    expect(order?.sirSaleRef).toBe("SALE-1");
+    expect(result.sirFailed).toBe(0);
   });
 });

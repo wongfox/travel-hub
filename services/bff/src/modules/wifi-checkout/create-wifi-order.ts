@@ -18,7 +18,7 @@ export interface CreateWifiOrderInput {
 }
 
 export interface CreateWifiOrderDeps {
-  orderStore: Pick<WifiOrderStore, "create" | "transition" | "findByIdempotencyKey">;
+  orderStore: Pick<WifiOrderStore, "create" | "findById" | "transition" | "findByIdempotencyKey">;
   packageStore: Pick<WifiPackageStore, "findById">;
   paymentGateway: Pick<PaymentGatewayPort, "createHostedSession">;
   /** `usage-analytics` funnel instrumentation (task 12.2); omitted entirely, this use case behaves exactly as before this task. */
@@ -96,7 +96,11 @@ export async function createWifiOrder(
 
   const resolvedOrder =
     order.status === "CREATED"
-      ? await deps.orderStore.transition(order.id, "PAYMENT_PENDING", { gatewaySessionRef: session.sessionRef })
+      ? // CAS miss (null): another writer (e.g. the payment webhook) already
+        // advanced the order, so report its current state instead of erroring.
+        ((await deps.orderStore.transition(order.id, "CREATED", "PAYMENT_PENDING", {
+          gatewaySessionRef: session.sessionRef,
+        })) ?? (await deps.orderStore.findById(order.id)) ?? order)
       : order;
 
   return { order: resolvedOrder, redirectUrl: session.redirectUrl };

@@ -34,7 +34,7 @@ describe("activateWifiOrder", () => {
       idempotencyKey: "idem-1",
       legRef: "LEG-1",
     });
-    await orderStore.transition(created.id, "PAID", { gatewayPaymentRef: "payment-1" });
+    await orderStore.transition(created.id, "CREATED", "PAID", { gatewayPaymentRef: "payment-1" });
     const entitlement = createWifiEntitlementStub();
 
     const activated = await activateWifiOrder(created.id, {
@@ -60,7 +60,7 @@ describe("activateWifiOrder", () => {
       idempotencyKey: "idem-2",
       legRef: "LEG-42",
     });
-    await orderStore.transition(created.id, "PAID", {});
+    await orderStore.transition(created.id, "CREATED", "PAID", {});
     const grantInputs: unknown[] = [];
     const entitlement = {
       async grant(input: unknown) {
@@ -87,7 +87,7 @@ describe("activateWifiOrder", () => {
       idempotencyKey: "idem-3",
       legRef: "LEG-1",
     });
-    await orderStore.transition(created.id, "PAID", {});
+    await orderStore.transition(created.id, "CREATED", "PAID", {});
     const entitlement = createWifiEntitlementStub();
 
     await activateWifiOrder(created.id, { orderStore, packageStore: packageStoreOf([PACKAGE]), entitlement });
@@ -144,11 +144,43 @@ describe("activateWifiOrder", () => {
       idempotencyKey: "idem-5",
       legRef: "LEG-1",
     });
-    await orderStore.transition(created.id, "PAID", {});
+    await orderStore.transition(created.id, "CREATED", "PAID", {});
     const entitlement = createWifiEntitlementStub();
 
     await expect(
       activateWifiOrder(created.id, { orderStore, packageStore: packageStoreOf([]), entitlement }),
     ).rejects.toBeInstanceOf(WifiPackageNotFoundError);
+  });
+
+  it("a CAS miss (order moved to REFUND_PENDING during the grant) returns the current order without throwing or recording analytics", async () => {
+    const orderStore = createInMemoryWifiOrderStore();
+    const created = await orderStore.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "WIFI-60",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-cas-miss",
+      legRef: "LEG-1",
+    });
+    await orderStore.transition(created.id, "CREATED", "PAID", {});
+    const recorded: unknown[] = [];
+    const entitlement = {
+      async grant() {
+        await orderStore.transition(created.id, "PAID", "REFUND_PENDING", {});
+        return { entitlementRef: "ENT-late" };
+      },
+    };
+
+    const result = await activateWifiOrder(created.id, {
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      entitlement,
+      analytics: { async record(event) { recorded.push(event); } },
+    });
+
+    expect(result.status).toBe("REFUND_PENDING");
+    expect((await orderStore.findById(created.id))?.entitlementRef).toBeNull();
+    expect(recorded).toHaveLength(0);
   });
 });

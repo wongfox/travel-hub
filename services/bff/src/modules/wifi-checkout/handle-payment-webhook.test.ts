@@ -174,7 +174,7 @@ describe("handlePaymentWebhook", () => {
       currency: "PEN",
       idempotencyKey: "idem-key-4",
     });
-    await orderStore.transition(created.id, "PAID", { gatewayPaymentRef: "provider-ref-4a" });
+    await orderStore.transition(created.id, "CREATED", "PAID", { gatewayPaymentRef: "provider-ref-4a" });
 
     const result = await handlePaymentWebhook(RAW_BODY, HEADERS, {
       paymentGateway: gatewayResolving({
@@ -191,5 +191,31 @@ describe("handlePaymentWebhook", () => {
     expect(result.applied).toBe(false);
     const unchanged = await orderStore.findById(created.id);
     expect(unchanged?.gatewayPaymentRef).toBe("provider-ref-4a");
+  });
+
+  it("a CAS miss (another writer advanced the order first) is a no-op, not an error", async () => {
+    const inner = createInMemoryWifiOrderStore();
+    const created = await inner.create({
+      reservationRef: "RES-1001",
+      passengerRef: "PAX-1",
+      packageId: "WIFI-60",
+      amountMinor: 1500,
+      currency: "PEN",
+      idempotencyKey: "idem-cas",
+    });
+    const orderStore = { ...inner, transition: async () => null };
+
+    const result = await handlePaymentWebhook(RAW_BODY, HEADERS, {
+      paymentGateway: gatewayResolving({
+        type: "payment_succeeded",
+        providerRef: "pay-1",
+        orderIdempotencyKey: "idem-cas",
+        amountMinor: 1500,
+        currency: "PEN",
+      } as PaymentEvent),
+      orderStore,
+    });
+
+    expect(result).toEqual({ applied: false, orderId: created.id });
   });
 });

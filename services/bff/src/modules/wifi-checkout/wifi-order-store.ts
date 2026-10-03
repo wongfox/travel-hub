@@ -14,6 +14,10 @@ import type {
  * `wifi_order`/`wifi_order_event` Drizzle schema + migration lands once a
  * consumer needs it against a live Postgres.
  */
+function definedOnly<T extends object>(patch: T): T {
+  return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as T;
+}
+
 export function createInMemoryWifiOrderStore(now: () => Date = () => new Date()): WifiOrderStore {
   const ordersById = new Map<string, WifiOrderRecord>();
   const orderIdByIdempotencyKey = new Map<string, string>();
@@ -67,16 +71,21 @@ export function createInMemoryWifiOrderStore(now: () => Date = () => new Date())
       return record;
     },
 
-    async transition(id, toStatus, patch) {
+    async transition(id, expectedStatus, toStatus, patch) {
       const existing = ordersById.get(id);
       if (!existing) {
         throw new WifiOrderNotFoundError(id);
+      }
+      // Compare-and-swap: no await between this check and the write below, so
+      // it is atomic within the single-threaded event loop.
+      if (existing.status !== expectedStatus) {
+        return null;
       }
 
       const at = now().toISOString();
       const updated: WifiOrderRecord = {
         ...existing,
-        ...patch,
+        ...definedOnly(patch),
         status: toStatus,
         updatedAt: at,
       };
@@ -88,7 +97,7 @@ export function createInMemoryWifiOrderStore(now: () => Date = () => new Date())
         orderId: id,
         fromStatus: existing.status,
         toStatus,
-        detail: patch,
+        detail: definedOnly(patch),
         at,
       });
       eventsByOrderId.set(id, events);

@@ -325,7 +325,7 @@ describe("GET /api/wifi/orders/:id", () => {
       currency: "PEN",
       idempotencyKey: "idem-active-1",
     });
-    await orderStore.transition(order.id, "ENTITLEMENT_ACTIVE", {
+    await orderStore.transition(order.id, "CREATED", "ENTITLEMENT_ACTIVE", {
       entitlementRef: "ENT-1",
       entitlementExpiresAt: "2026-01-02T00:00:00.000Z",
       sirRegisteredAt: "2026-01-01T12:00:00.000Z",

@@ -16,7 +16,7 @@ Strict TDD (bff: `pnpm --filter bff exec vitest run --no-file-parallelism`); fol
 ## Tasks
 - [x] T1 Explore conventions (Drizzle schema, migrations, how existing Postgres stores are built/tested) and record the exact `WifiOrderStore` contract.
 - [x] T2 Schema + migration for `wifi_order` (+ idempotency-key uniqueness).
-- [ ] T3 Postgres adapter implementing the full store contract incl. atomic compare-and-swap `transition`; contract/conformance tests run against both in-memory and Postgres.
+- [x] T3 Postgres adapter implementing the full store contract incl. atomic compare-and-swap `transition`; contract/conformance tests run against both in-memory and Postgres.
 - [ ] T4 Wire it in `main-api.ts` and `main-worker.ts` (same `DATABASE_URL`); keep the production guard; compose/infra env consistent.
 - [ ] T5 Real end-to-end check: api + worker against Postgres in docker compose (order created via API, activated by the worker); update KNOWN-GAPS/docs.
 
@@ -38,3 +38,10 @@ RED-first tests per task, turbo typecheck/lint/test green, real Postgres run evi
 - RED: schema.test.ts/migrations.test.ts new cases failed (6 failed) before schema; migrate.test.ts failed (`./client.js` missing). GREEN after `drizzle-kit generate` -> `0001_low_wind_dancer.sql`, `infra/db/client.ts` (createDb), `infra/db/migrate.ts` (runMigrations + CLI), `test-database.ts`.
 - Real Postgres (compose postgres 16, db `travel_hub_test` created via `docker exec ... psql`): `TEST_DATABASE_URL=postgres://travel_hub:travel_hub@localhost:5432/travel_hub_test pnpm --filter bff exec vitest run src/infra/db` -> 3 files, 18 passed (migration applied twice, idempotent). information_schema shows 22 wifi_order columns; constraints wifi_order_pkey + wifi_order_idempotency_key_unique; indexes wifi_order_status_idx, wifi_order_event_order_id_idx.
 - tsc and eslint clean.
+
+### T3 evidence
+- Port change: `transition(id, expectedStatus, toStatus, patch): Promise<WifiOrderRecord | null>` (CAS; null = miss, nothing written, no event; unknown/malformed id throws `WifiOrderNotFoundError`). The in-memory store did NOT enforce an expected status before; both stores now do (this closes the review finding that SIR/receipt writes could undo REFUND_PENDING/REFUNDED).
+- Callers on a miss: webhook -> `applied:false`; create -> returns current order; activate -> returns current order, no analytics; SIR/receipt jobs -> `recordProgress` re-reads once and patches flags against the CURRENT status (status never overwritten; second miss dropped, no loop).
+- Conformance suite `modules/wifi-checkout/wifi-order-store.conformance.ts` (13 cases incl. concurrent create, concurrent CAS exactly-one-wins, stale progress write vs REFUND_PENDING) run against in-memory (`wifi-order-store.test.ts`) and Postgres (`adapters/wifi-order-store/postgres.test.ts`, gated by TEST_DATABASE_URL).
+- RED: in-memory contract 7 failed before the port change; caller CAS tests failed before caller changes; postgres test failed (module missing). GREEN: full `vitest run --no-file-parallelism` with TEST_DATABASE_URL: 120 files, 773 passed. Mutation check (dropping the status predicate from the UPDATE) made 3 Postgres CAS tests fail, then restored.
+- Postgres adapter: single `UPDATE ... WHERE id AND status RETURNING` + event insert in one transaction; create via `ON CONFLICT (idempotency_key) DO NOTHING`.

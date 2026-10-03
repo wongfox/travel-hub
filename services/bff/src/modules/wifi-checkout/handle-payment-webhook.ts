@@ -87,7 +87,14 @@ export async function handlePaymentWebhook(
   }
 
   const toStatus = TARGET_STATUS_FOR_EVENT[event.type];
-  await deps.orderStore.transition(order.id, toStatus, { gatewayPaymentRef: event.providerRef });
+  const transitioned = await deps.orderStore.transition(order.id, order.status, toStatus, {
+    gatewayPaymentRef: event.providerRef,
+  });
+  if (!transitioned) {
+    // CAS miss: another writer advanced the order since we read it (e.g. a
+    // concurrent delivery of the same webhook); nothing was written.
+    return { applied: false, orderId: order.id };
+  }
 
   const funnelEventName = FUNNEL_EVENT_FOR_PAYMENT_EVENT[event.type];
   if (funnelEventName) {
