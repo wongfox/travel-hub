@@ -74,6 +74,7 @@ async function main(): Promise<void> {
     // `sdd/travel-hub-mvp/apply-progress`).
     analytics: {
       adapterAnalyticsSink: env.ADAPTER_ANALYTICS_SINK,
+      ...(env.ANALYTICS_TRIP_HASH_SECRET ? { secret: env.ANALYTICS_TRIP_HASH_SECRET } : {}),
     },
   });
   // The scan jobs only run when something enqueues them; nothing else does

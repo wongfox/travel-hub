@@ -32,6 +32,8 @@ export interface AnalyticsEventStore {
   /** Every row with `forwardedAt: null` (the forward job's own scan, task 12.1). */
   listPendingForward(): Promise<AnalyticsEventRecord[]>;
   markForwarded(ids: string[], forwardedAt: string): Promise<void>;
+  /** Deletes every NOT-yet-forwarded row of one pseudonymous trip (consent-withdrawal cascade); returns how many rows were removed. */
+  deletePendingByTripHash(tripHash: string): Promise<number>;
   /** Every recorded event, in insertion order (test/reporting introspection only). */
   list(): Promise<AnalyticsEventRecord[]>;
 }

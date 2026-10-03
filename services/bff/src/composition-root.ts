@@ -409,6 +409,21 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 
+  // `usage-analytics` (task 12.1): the shared store + recorder every task
+  // 12.2 funnel-event call site below is threaded `analytics` from. Created
+  // early so every later module registration can share the exact same
+  // `analyticsRecorder` instance (same "shared store instance" convention as
+  // `sharedConsentStore`/`sharedPushSubscriptionStore`).
+  const analyticsOptions = options.analytics ?? {};
+  const sharedAnalyticsEventStore = analyticsOptions.analyticsEventStore ?? createInMemoryAnalyticsEventStore();
+  if (!analyticsOptions.secret && isProductionLike(analyticsOptions.nodeEnv ?? "development")) {
+    throw new Error(
+      "ANALYTICS_TRIP_HASH_SECRET is required in a production-like environment (production/staging); " +
+        "refusing to start with the public dev-only trip_hash HMAC secret.",
+    );
+  }
+  const analyticsSecret = analyticsOptions.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET;
+
   const privacyOptions = options.privacy ?? {};
   // Shared with `registerPrecheckinRoutes` below: a consent granted via
   // `POST /api/consents` must be visible to pre check-in's own
@@ -425,22 +440,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // every other route reading that store too.
     pushSubscriptionStore: sharedPushSubscriptionStore,
     piiAccessAudit: sharedPrivacyPiiAccessAudit,
+    // Analytics consent-withdrawal cascade: drops this reservation's
+    // not-yet-forwarded analytics rows immediately (same shared store
+    // instance the recorder/forward job use).
+    analyticsEventStore: sharedAnalyticsEventStore,
+    analyticsSecret,
   });
 
-  // `usage-analytics` (task 12.1): the shared store + recorder every task
-  // 12.2 funnel-event call site below is threaded `analytics` from. Created
-  // early so every later module registration can share the exact same
-  // `analyticsRecorder` instance (same "shared store instance" convention as
-  // `sharedConsentStore`/`sharedPushSubscriptionStore`).
-  const analyticsOptions = options.analytics ?? {};
-  const sharedAnalyticsEventStore = analyticsOptions.analyticsEventStore ?? createInMemoryAnalyticsEventStore();
-  if (!analyticsOptions.secret && isProductionLike(analyticsOptions.nodeEnv ?? "development")) {
-    throw new Error(
-      "ANALYTICS_TRIP_HASH_SECRET is required in a production-like environment (production/staging); " +
-        "refusing to start with the public dev-only trip_hash HMAC secret.",
-    );
-  }
-  const analyticsSecret = analyticsOptions.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET;
   const analyticsRecorder: AnalyticsRecorder = createAnalyticsRecorder({
     analyticsEventStore: sharedAnalyticsEventStore,
     consentStore: sharedConsentStore,
@@ -768,6 +774,10 @@ export interface StartWorkerOptions {
   analytics?: {
     analyticsEventStore?: AnalyticsEventStore;
     analyticsSink?: Pick<AnalyticsSinkPort, "forward">;
+    /** Consent is re-checked per trip at forward time; must be the SAME store instance the api process records consent in (defaults to a fresh in-memory store, which forwards nothing). */
+    consentStore?: Pick<ConsentStore, "listLatestByPurpose">;
+    /** `ANALYTICS_TRIP_HASH_SECRET` (env.ts), shared with the api process; defaults to the dev-only secret outside production-like environments. */
+    secret?: string;
     /** `ADAPTER_ANALYTICS_SINK` (env.ts); defaults to `"stub"`. Not go-live-guarded (task 12.1: `usage-analytics` is not a `GuardedFlagKey`). */
     adapterAnalyticsSink?: string;
     now?: () => Date;
@@ -1099,6 +1109,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     await registerForwardAnalyticsEventsJob(options.queueClient, {
       analyticsEventStore: a.analyticsEventStore ?? createInMemoryAnalyticsEventStore(),
       analyticsSink: a.analyticsSink ?? createAnalyticsSinkStub(),
+      consentStore: a.consentStore ?? createInMemoryConsentStore(),
+      secret: a.secret ?? DEFAULT_DEV_ANALYTICS_TRIP_HASH_SECRET,
       ...(a.now ? { now: a.now } : {}),
     });
     jobsRegistered.push(ANALYTICS_FORWARD_QUEUE);

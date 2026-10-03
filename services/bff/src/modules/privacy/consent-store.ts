@@ -55,6 +55,13 @@ export interface ConsentStore {
     passengerRef: string | null,
     purpose: ConsentPurpose,
   ): Promise<ConsentRecordEntry | null>;
+  /**
+   * The latest record per reservation (reservation scope, `passengerRef:
+   * null`) for one purpose, granted or withdrawn. Lets a job that only holds
+   * pseudonymous data (the analytics forward scan) re-check consent without
+   * a reservation reference of its own.
+   */
+  listLatestByPurpose(purpose: ConsentPurpose): Promise<ConsentRecordEntry[]>;
 }
 
 export function createInMemoryConsentStore(): ConsentStore {
@@ -94,6 +101,18 @@ export function createInMemoryConsentStore(): ConsentStore {
         }
       }
       return latest;
+    },
+
+    async listLatestByPurpose(purpose: ConsentPurpose): Promise<ConsentRecordEntry[]> {
+      const latestByReservation = new Map<string, ConsentRecordEntry>();
+      for (const record of records) {
+        if (record.purpose !== purpose || record.passengerRef !== null) continue;
+        const current = latestByReservation.get(record.reservationRef);
+        if (!current || new Date(record.recordedAt).getTime() >= new Date(current.recordedAt).getTime()) {
+          latestByReservation.set(record.reservationRef, record);
+        }
+      }
+      return [...latestByReservation.values()];
     },
   };
 }

@@ -94,4 +94,20 @@ describe("createInMemoryConsentStore", () => {
     expect(await store.findLatest("RES-1001", "P1", "precheckin_biometric")).toBeNull();
     expect(await store.findLatest("RES-1001", null, "push")).toBeNull();
   });
+
+  it("listLatestByPurpose returns the latest record per reservation for that purpose only", async () => {
+    const store = createInMemoryConsentStore();
+    const base = { linkId: "link-1", passengerRef: null, textVersion: "v1" } as const;
+    await store.record({ ...base, reservationRef: "RES-1", purpose: "analytics", granted: true });
+    await store.record({ ...base, reservationRef: "RES-1", purpose: "analytics", granted: false });
+    await store.record({ ...base, reservationRef: "RES-2", purpose: "analytics", granted: true });
+    await store.record({ ...base, reservationRef: "RES-3", purpose: "push", granted: true });
+
+    const latest = await store.listLatestByPurpose("analytics");
+
+    expect(latest.map((r) => [r.reservationRef, r.granted]).sort()).toEqual([
+      ["RES-1", false],
+      ["RES-2", true],
+    ]);
+  });
 });

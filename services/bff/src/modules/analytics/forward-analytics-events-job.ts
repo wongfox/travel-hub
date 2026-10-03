@@ -1,4 +1,6 @@
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
+import type { ConsentStore } from "../privacy/consent-store.js";
+import { computeTripHash } from "./trip-hash.js";
 import type { AnalyticsEventStore, AnalyticsSinkPort, PseudonymousAnalyticsEvent } from "./ports.js";
 
 /** Worker queue this module registers on (task 12.1), following `registerPurgeJob`/`registerStaffAlertDispatchJob`'s exact `registerXxxJob(queueClient, deps)` convention. */
@@ -6,8 +8,12 @@ export const ANALYTICS_FORWARD_QUEUE = "analytics-forward";
 export const ANALYTICS_FORWARD_RETRY_POLICY: QueueRetryPolicy = { retryLimit: 5, retryBackoffSeconds: 30 };
 
 export interface ForwardAnalyticsEventsJobDeps {
-  analyticsEventStore: Pick<AnalyticsEventStore, "listPendingForward" | "markForwarded">;
+  analyticsEventStore: Pick<AnalyticsEventStore, "listPendingForward" | "markForwarded" | "deletePendingByTripHash">;
   analyticsSink: Pick<AnalyticsSinkPort, "forward">;
+  /** Consent is re-checked at forward time: a row is only ever sent while its trip's latest `analytics` consent is granted. */
+  consentStore: Pick<ConsentStore, "listLatestByPurpose">;
+  /** `ANALYTICS_TRIP_HASH_SECRET`: maps each granted reservation to the `tripHash` its rows carry. */
+  secret: string;
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
 }
@@ -48,7 +54,25 @@ function toPseudonymousPayload(record: {
 export async function runForwardAnalyticsEventsJob(
   deps: ForwardAnalyticsEventsJobDeps,
 ): Promise<ForwardAnalyticsEventsJobResult> {
-  const pending = await deps.analyticsEventStore.listPendingForward();
+  const allPending = await deps.analyticsEventStore.listPendingForward();
+  if (allPending.length === 0) {
+    return { forwarded: 0 };
+  }
+
+  // Fail closed: only trips whose latest analytics consent is granted may be
+  // forwarded. Rows of a withdrawn (or unknown) trip are deleted, never sent.
+  const grantedTripHashes = new Set(
+    (await deps.consentStore.listLatestByPurpose("analytics"))
+      .filter((entry) => entry.granted)
+      .map((entry) => computeTripHash(entry.reservationRef, deps.secret)),
+  );
+  const unconsentedTripHashes = new Set(
+    allPending.filter((record) => !grantedTripHashes.has(record.tripHash)).map((record) => record.tripHash),
+  );
+  for (const tripHash of unconsentedTripHashes) {
+    await deps.analyticsEventStore.deletePendingByTripHash(tripHash);
+  }
+  const pending = allPending.filter((record) => grantedTripHashes.has(record.tripHash));
   if (pending.length === 0) {
     return { forwarded: 0 };
   }

@@ -3,6 +3,8 @@ import { createInMemoryConsentStore } from "./consent-store.js";
 import { createInMemoryPushSubscriptionStore } from "../notifications/push-subscription-store.js";
 import { createInMemoryPiiAccessAudit } from "../../infra/audit/pii-access-audit.js";
 import { recordConsent } from "./record-consent.js";
+import { createInMemoryAnalyticsEventStore } from "../analytics/analytics-event-store.js";
+import { computeTripHash } from "../analytics/trip-hash.js";
 
 describe("recordConsent", () => {
   it("appends a consent record and returns it as a ConsentState", async () => {
@@ -169,5 +171,34 @@ describe("recordConsent", () => {
     );
 
     expect(result.granted).toBe(false);
+  });
+
+  it("withdrawing analytics consent deletes that reservation's not-yet-forwarded analytics rows in the same call, leaving other trips untouched", async () => {
+    const consentStore = createInMemoryConsentStore();
+    const analyticsEventStore = createInMemoryAnalyticsEventStore();
+    const mine = computeTripHash("RES-1001", "secret");
+    const theirs = computeTripHash("RES-2002", "secret");
+    await analyticsEventStore.create({ name: "screen_view", tripHash: mine, occurredAt: "2026-10-01T00:00:00.000Z" });
+    await analyticsEventStore.create({ name: "screen_view", tripHash: theirs, occurredAt: "2026-10-01T00:00:01.000Z" });
+
+    await recordConsent(
+      { linkId: "link-1", reservationRef: "RES-1001", purpose: "analytics", textVersion: "v1", granted: false },
+      { consentStore, analyticsEventStore, analyticsSecret: "secret" },
+    );
+
+    expect((await analyticsEventStore.list()).map((r) => r.tripHash)).toEqual([theirs]);
+  });
+
+  it("granting analytics consent leaves analytics rows alone", async () => {
+    const consentStore = createInMemoryConsentStore();
+    const analyticsEventStore = createInMemoryAnalyticsEventStore();
+    await analyticsEventStore.create({ name: "screen_view", tripHash: computeTripHash("RES-1001", "secret"), occurredAt: "2026-10-01T00:00:00.000Z" });
+
+    await recordConsent(
+      { linkId: "link-1", reservationRef: "RES-1001", purpose: "analytics", textVersion: "v1", granted: true },
+      { consentStore, analyticsEventStore, analyticsSecret: "secret" },
+    );
+
+    expect(await analyticsEventStore.list()).toHaveLength(1);
   });
 });

@@ -7,6 +7,7 @@ import { recordConsent } from "./record-consent.js";
 import type { ConsentStore } from "./consent-store.js";
 import type { PushSubscriptionStore } from "../notifications/ports.js";
 import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
+import type { AnalyticsEventStore } from "../analytics/ports.js";
 
 const RecordConsentBodySchema = z.object({
   purpose: ConsentPurposeSchema,
@@ -19,6 +20,9 @@ export interface PrivacyRouteDeps extends ResolveSessionDeps {
   /** Consent-withdrawal cascade (task 12.3): omitted entirely, `POST /api/consents` behaves exactly as before this task. */
   pushSubscriptionStore?: Pick<PushSubscriptionStore, "deleteByReservation">;
   piiAccessAudit?: PiiAccessAuditPort;
+  /** Analytics consent-withdrawal cascade: the shared analytics event store and trip-hash secret; omit both and withdrawal only records the consent. */
+  analyticsEventStore?: Pick<AnalyticsEventStore, "deletePendingByTripHash">;
+  analyticsSecret?: string;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
   sessionCookieName?: string;
 }
@@ -59,6 +63,8 @@ export function registerPrivacyRoutes(app: FastifyInstance, deps: PrivacyRouteDe
         consentStore: deps.consentStore,
         ...(deps.pushSubscriptionStore ? { pushSubscriptionStore: deps.pushSubscriptionStore } : {}),
         ...(deps.piiAccessAudit ? { piiAccessAudit: deps.piiAccessAudit } : {}),
+        ...(deps.analyticsEventStore ? { analyticsEventStore: deps.analyticsEventStore } : {}),
+        ...(deps.analyticsSecret ? { analyticsSecret: deps.analyticsSecret } : {}),
       },
     );
 

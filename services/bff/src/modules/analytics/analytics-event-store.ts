@@ -36,6 +36,19 @@ export function createInMemoryAnalyticsEventStore(now: () => Date = () => new Da
       }
     },
 
+    async deletePendingByTripHash(tripHash: string): Promise<number> {
+      let deleted = 0;
+      for (let index = order.length - 1; index >= 0; index -= 1) {
+        const record = byId.get(order[index]!)!;
+        if (record.tripHash === tripHash && record.forwardedAt === null) {
+          byId.delete(record.id);
+          order.splice(index, 1);
+          deleted += 1;
+        }
+      }
+      return deleted;
+    },
+
     async list(): Promise<AnalyticsEventRecord[]> {
       return order.map((id) => byId.get(id)!);
     },
