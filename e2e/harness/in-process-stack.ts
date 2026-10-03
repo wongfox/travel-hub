@@ -25,6 +25,10 @@ import { STAFF_ALERT_DISPATCH_QUEUE } from "../../services/bff/dist/modules/puls
 
 export const E2E_INTERNAL_LINKS_API_KEY = "e2e-in-process-internal-links-key";
 
+/** Consent text versions the BFF publishes on `GET /api/trip`; the web records them through its own consent gates. */
+const E2E_PUSH_CONSENT_TEXT_VERSION = "e2e-push-1";
+const E2E_PULSE_CONSENT_TEXT_VERSION = "e2e-pulse-1";
+
 /** Flags the scenarios need; `precheckin.capture_ui` stays off (gap D: no web route exists for it). */
 const E2E_FLAG_OVERRIDES: Partial<Record<FlagKey, boolean>> = {
   "wifi.checkout": true,
@@ -187,8 +191,8 @@ export async function startInProcessStack(options: StartInProcessStackOptions = 
     trip: { flags },
     content: { nodeEnv, flags },
     wifiCheckout: { nodeEnv, flags, orderStore: wifiOrderStore, paymentGateway },
-    notifications: { nodeEnv, flags, subscriptionStore },
-    pulse: { nodeEnv, flags, staffAlertStore, pulseResponseStore },
+    notifications: { nodeEnv, flags, subscriptionStore, pushConsentTextVersion: E2E_PUSH_CONSENT_TEXT_VERSION },
+    pulse: { nodeEnv, flags, staffAlertStore, pulseResponseStore, pulseConsentTextVersion: E2E_PULSE_CONSENT_TEXT_VERSION },
     analytics: { analyticsEventStore },
   });
 
