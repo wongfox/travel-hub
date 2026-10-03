@@ -67,7 +67,12 @@ resource "aws_ecs_task_definition" "api" {
       environment = concat(local.shared_container_environment, [
         { name = "PORT", value = tostring(var.api_container_port) },
       ])
-      secrets = local.shared_container_secrets
+      # The api refuses to boot in production/staging without the trip_hash
+      # HMAC secret (config: ANALYTICS_TRIP_HASH_SECRET); populate the secret
+      # out-of-band before deploying (infra/README.md "Secrets").
+      secrets = concat(local.shared_container_secrets, [
+        { name = "ANALYTICS_TRIP_HASH_SECRET", valueFrom = aws_secretsmanager_secret.analytics_trip_hash_secret.arn },
+      ])
       logConfiguration = {
         logDriver = "awslogs"
         options = {

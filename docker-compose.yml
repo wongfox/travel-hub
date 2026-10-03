@@ -45,6 +45,9 @@ services:
       PORT: "3000"
       DATABASE_URL: postgres://travel_hub:travel_hub@postgres:5432/travel_hub
       INTERNAL_LINKS_API_KEY: local-dev-internal-links-key
+      # Dev-only HMAC secret for trip_hash; production-like environments
+      # (NODE_ENV=production/staging) refuse to boot the api without a real one.
+      ANALYTICS_TRIP_HASH_SECRET: local-dev-analytics-trip-hash-secret
       # Stub-adapter selection (design Decision 6): every external
       # integration runs against its deterministic stub, so the stack boots
       # and the acceptance scenario above works with no real vendor
