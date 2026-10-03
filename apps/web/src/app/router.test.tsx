@@ -1,9 +1,48 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
+import type { TripDTO } from "contracts";
 import { createAppRouter } from "./router.js";
 import { AppProviders } from "./providers.js";
 import { createI18n } from "../i18n/index.js";
+
+function buildTripFixture(overrides: Partial<TripDTO> = {}): TripDTO {
+  return {
+    linkId: "link-1",
+    reservationRefMasked: "RES***01",
+    expiresAt: "2026-12-01T00:00:00.000Z",
+    passengers: [],
+    legs: [
+      {
+        id: "leg-1",
+        origin: "Poroy",
+        destination: "Machu Picchu",
+        departureLocal: "2026-11-10T08:00:00",
+        arrivalLocal: "2026-11-10T11:30:00",
+        tier: "PRIME",
+        status: "SCHEDULED",
+      },
+    ],
+    boardingPasses: [],
+    documents: [],
+    alerts: [],
+    nextMilestone: { legId: "leg-1", kind: "departure", atLocal: "2026-11-10T08:00:00" },
+    features: {} as TripDTO["features"],
+    fetchedAt: "2026-11-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** Routes fetch mock calls by URL, since a full `/t` → `/trip` flow now issues both a session-exchange POST and a trip-overview GET. */
+function stubFetchByUrl(responses: Record<string, unknown>) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url in responses) {
+      return Promise.resolve(new Response(JSON.stringify(responses[url]), { status: 200 }));
+    }
+    return Promise.reject(new Error(`unexpected fetch to ${url}`));
+  });
+}
 
 describe("app router", () => {
   it("renders a localized not-found boundary for an undefined route instead of crashing", async () => {
@@ -45,17 +84,18 @@ describe("trip-access landing route (task 5.5)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("exchanges the fragment token and lands on the trip-home stub in one step", async () => {
+  it("exchanges the fragment token and lands on the real trip home in one step", async () => {
     window.location.hash = "#a-real-token";
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ expiresAt: "2026-11-05T00:00:00.000Z" }), { status: 200 }),
-    );
+    const fetchMock = stubFetchByUrl({
+      "/api/session": { expiresAt: "2026-11-05T00:00:00.000Z" },
+      "/api/trip": buildTripFixture(),
+    });
     vi.stubGlobal("fetch", fetchMock);
     const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/t"] }) });
 
     render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
 
-    expect(await screen.findByTestId("trip-home-stub")).toBeInTheDocument();
+    expect(await screen.findByTestId("trip-status")).toHaveTextContent("Upcoming trip");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/session",
       expect.objectContaining({ method: "POST" }),
@@ -69,5 +109,43 @@ describe("trip-access landing route (task 5.5)", () => {
     render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("This link is no longer valid.");
+  });
+});
+
+describe("trip-home, trip-itinerary, and travel-documents routes (task 6.5)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the tier-themed trip home directly at /trip", async () => {
+    vi.stubGlobal("fetch", stubFetchByUrl({ "/api/trip": buildTripFixture() }));
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByTestId("trip-status")).toHaveTextContent("Upcoming trip");
+  });
+
+  it("renders the itinerary timeline at /trip/itinerary", async () => {
+    vi.stubGlobal("fetch", stubFetchByUrl({ "/api/trip": buildTripFixture() }));
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/itinerary"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByTestId("itinerary-milestone")).toBeInTheDocument();
+  });
+
+  it("renders the travel documents at /trip/documents", async () => {
+    const trip = buildTripFixture({
+      documents: [
+        { id: "ticket-1", kind: "TRAIN", title: "Train Poroy → Machu Picchu", milestoneId: "leg-1", barcodePayload: "BP-1" },
+      ],
+    });
+    vi.stubGlobal("fetch", stubFetchByUrl({ "/api/trip": trip }));
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/documents"] }) });
+
+    render(<AppProviders router={router} i18n={createI18n({ initialLocale: "en" })} />);
+
+    expect(await screen.findByTestId("ticket-item")).toBeInTheDocument();
   });
 });

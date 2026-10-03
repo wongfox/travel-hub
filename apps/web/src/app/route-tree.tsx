@@ -3,6 +3,9 @@ import { AppShell } from "./app-shell.js";
 import { NotFoundBoundary } from "./not-found.js";
 import { createApiClient } from "../shared/api/client.js";
 import { LinkLandingPage } from "../features/trip-access/link-landing-page.js";
+import { TripHomePage } from "../features/home/trip-home-page.js";
+import { ItineraryPage } from "../features/itinerary/itinerary-page.js";
+import { DocumentsPage } from "../features/documents/documents-page.js";
 
 /**
  * Code-based route tree stub (task 4.2). File-based routing/codegen is not
@@ -46,13 +49,22 @@ function TripAccessLandingRoute() {
 }
 
 /**
- * Placeholder trip-home destination for the link-landing redirect. The real
- * trip-home UI (status, next milestone, alert banner) lands in a later work
- * unit (task 6.5) — this route exists now purely so 5.5's redirect has a
- * real, testable navigation target.
+ * `trip-home` destination for the link-landing redirect (task 6.5, replacing
+ * the earlier `TripHomeStub` placeholder). `itinerary`/`documents` (also task
+ * 6.5) are separate sibling routes rather than sections of this one, since
+ * the capability map treats `home`, `itinerary`, and `documents` as distinct
+ * web features that each own their route.
  */
-function TripHomeStub() {
-  return <p data-testid="trip-home-stub">Trip home</p>;
+function TripHomeRoute() {
+  return <TripHomePage apiClient={defaultApiClient} />;
+}
+
+function TripItineraryRoute() {
+  return <ItineraryPage apiClient={defaultApiClient} />;
+}
+
+function TripDocumentsRoute() {
+  return <DocumentsPage apiClient={defaultApiClient} />;
 }
 
 const tripAccessLandingRoute = createRoute({
@@ -64,7 +76,25 @@ const tripAccessLandingRoute = createRoute({
 const tripHomeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/trip",
-  component: TripHomeStub,
+  component: TripHomeRoute,
 });
 
-export const routeTree = rootRoute.addChildren([indexRoute, tripAccessLandingRoute, tripHomeRoute]);
+const tripItineraryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/itinerary",
+  component: TripItineraryRoute,
+});
+
+const tripDocumentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/trip/documents",
+  component: TripDocumentsRoute,
+});
+
+export const routeTree = rootRoute.addChildren([
+  indexRoute,
+  tripAccessLandingRoute,
+  tripHomeRoute,
+  tripItineraryRoute,
+  tripDocumentsRoute,
+]);

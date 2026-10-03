@@ -31,5 +31,51 @@
       "confirmation": "If those details match a booking, we've sent a new link.",
       "error": "Something went wrong. Please try again."
     }
+  },
+  "trip": {
+    "loading": "Loading your trip…",
+    "loadError": "We couldn't load your trip. Please try again.",
+    "status": {
+      "upcoming": "Upcoming trip",
+      "inProgress": "Trip in progress",
+      "completed": "Trip complete"
+    },
+    "nextMilestone": {
+      "label": "Next departure: {origin} → {destination} at {time}",
+      "none": "Your trip is complete — no further milestones."
+    }
+  },
+  "alerts": {
+    "relocation": {
+      "title": "You've been relocated",
+      "body": "Your train, car, or seat assignment has changed. Check your updated boarding pass."
+    }
+  },
+  "itinerary": {
+    "heading": "Itinerary",
+    "status": {
+      "pending": "Pending",
+      "next": "Next",
+      "inProgress": "In progress",
+      "completed": "Completed"
+    },
+    "documentsHeading": "Documents"
+  },
+  "documents": {
+    "heading": "Travel documents",
+    "kind": {
+      "train": "Train ticket",
+      "consettur": "Consettur bus",
+      "incEntry": "Machu Picchu entry",
+      "mealTeatime": "Meal / tea time",
+      "other": "Other"
+    },
+    "viewFile": "View document",
+    "barcodeLabel": "Barcode"
+  },
+  "nav": {
+    "home": "Trip",
+    "itinerary": "Itinerary",
+    "documents": "Documents"
   }
 }
