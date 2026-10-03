@@ -262,6 +262,48 @@ describe("buildApp — trip overview (task 6.2)", () => {
   });
 });
 
+describe("buildApp — consent text versions on GET /api/trip", () => {
+  async function fetchTrip(options: Parameters<typeof buildApp>[0]) {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({ ...options, tripAccess: { accessLinkStore, sessionStore } });
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/trip",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    return response.json() as { consentTextVersions?: { push?: string; pulse?: string } };
+  }
+
+  it("exposes the configured push and pulse consent text versions to the web", async () => {
+    const body = await fetchTrip({
+      notifications: { pushConsentTextVersion: "push-v1" },
+      pulse: { pulseConsentTextVersion: "pulse-v1" },
+    });
+
+    expect(body.consentTextVersions).toEqual({ push: "push-v1", pulse: "pulse-v1" });
+  });
+
+  it("omits consentTextVersions when no version is configured", async () => {
+    const body = await fetchTrip({});
+
+    expect(body.consentTextVersions).toBeUndefined();
+  });
+});
+
 describe("buildApp — trip-itinerary + travel-documents (task 6.3/6.4)", () => {
   it("returns boardingPasses and documents built from the seed fixture, end to end for a real session", async () => {
     const accessLinkStore = createInMemoryAccessLinkStore();

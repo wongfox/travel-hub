@@ -437,6 +437,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     // sees it on their very next `GET /api/trip`.
     precheckinSubmissionStore: sharedSubmissionStore,
     ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
+    consentTextVersions: {
+      ...(notificationsOptions.pushConsentTextVersion ? { push: notificationsOptions.pushConsentTextVersion } : {}),
+      ...(options.pulse?.pulseConsentTextVersion ? { pulse: options.pulse.pulseConsentTextVersion } : {}),
+    },
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 
