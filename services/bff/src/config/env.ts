@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseFlagOverrides } from "./flags.js";
 
 /**
  * Environments the BFF can run in. `staging` and `production` are treated
@@ -131,6 +132,25 @@ const EnvSchema = z.object({
   LOG_SINK: z.enum(["stdout", "file"]).default("stdout"),
   /** Required when `LOG_SINK=file`; enforced by `resolveLogSinkConfig`, not here (same "cross-field validation lives in its own resolver" convention as `PRECHECKIN_RETENTION_DAYS`/`resolveRetentionConfig`). */
   LOG_SINK_FILE_PATH: z.string().min(1).optional(),
+  /**
+   * Operator feature-flag overrides: a JSON object of known flag keys to
+   * booleans, e.g. `{"wifi.checkout":true}` (precedence: `FLAG_DEFAULTS` <
+   * overrides). Parsed here so api and worker share one validated source and
+   * fail at boot on unknown keys, non-boolean values or malformed JSON. A
+   * flipped guarded flag still has to pass `config/go-live-guards.ts`. Plain
+   * config only — never put secrets in it.
+   */
+  FEATURE_FLAG_OVERRIDES: z
+    .string()
+    .optional()
+    .transform((raw, ctx) => {
+      try {
+        return parseFlagOverrides(raw);
+      } catch (error) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: (error as Error).message });
+        return z.NEVER;
+      }
+    }),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

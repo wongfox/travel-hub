@@ -4,7 +4,7 @@
 import { startWorker } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
 import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
-import { FLAG_DEFAULTS } from "./config/flags.js";
+import { resolveFlags } from "./config/flags.js";
 import { scheduleWifiOrderScans, WIFI_ENTITLEMENT_ACTIVATION_QUEUE } from "./modules/wifi-checkout/wifi-order-jobs.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 import { createDb } from "./infra/db/client.js";
@@ -12,6 +12,9 @@ import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgr
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  // FLAG_DEFAULTS < FEATURE_FLAG_OVERRIDES; validated by loadEnv (same source
+  // as main-api.ts) and enforced by each module's go-live guard below.
+  const flags = resolveFlags(env.FEATURE_FLAG_OVERRIDES);
   const queueClient = createPgBossQueueClient(env.DATABASE_URL);
   // Same DATABASE_URL and store implementation as the api process, so the
   // jobs below see every order the api wrote.
@@ -22,7 +25,7 @@ async function main(): Promise<void> {
       // Task 8.5: real env-sourced config, so the go-live guard
       // (config/go-live-guards.ts) actually enforces its prerequisites
       // against this worker's real boot-time configuration, not a stub.
-      flags: FLAG_DEFAULTS,
+      flags,
       nodeEnv: env.NODE_ENV,
       adapterPrecheckinHandoff: env.ADAPTER_PRECHECKIN_HANDOFF,
       ...(env.PRECHECKIN_RETENTION_POLICY_ID
@@ -46,7 +49,7 @@ async function main(): Promise<void> {
       // Task 10.3: real env-sourced config, so the go-live guard
       // (config/go-live-guards.ts) actually enforces its prerequisites
       // against this worker's real boot-time configuration, not a stub.
-      flags: FLAG_DEFAULTS,
+      flags,
       nodeEnv: env.NODE_ENV,
       adapterPayment: env.ADAPTER_PAYMENT,
       adapterReceipt: env.ADAPTER_RECEIPT,
@@ -58,7 +61,7 @@ async function main(): Promise<void> {
       // Task 11.2: real env-sourced config, so the go-live guard
       // (config/go-live-guards.ts) actually enforces its prerequisites
       // against this worker's real boot-time configuration, not a stub.
-      flags: FLAG_DEFAULTS,
+      flags,
       nodeEnv: env.NODE_ENV,
       adapterWebPush: env.ADAPTER_WEB_PUSH,
       vapidConfigured: Boolean(env.PUSH_VAPID_PUBLIC_KEY && env.PUSH_VAPID_PRIVATE_KEY),
@@ -71,7 +74,7 @@ async function main(): Promise<void> {
       // Task 11.5: real env-sourced config, so the go-live guard
       // (config/go-live-guards.ts) actually enforces its prerequisites
       // against this worker's real boot-time configuration, not a stub.
-      flags: FLAG_DEFAULTS,
+      flags,
       nodeEnv: env.NODE_ENV,
       adapterStaffAlert: env.ADAPTER_STAFF_ALERT,
       ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),

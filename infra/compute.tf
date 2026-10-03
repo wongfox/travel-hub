@@ -40,6 +40,9 @@ locals {
     { name = "ADAPTER_ANALYTICS_SINK", value = "stub" },
     { name = "ADAPTER_PRECHECKIN_HANDOFF", value = "stub" },
     { name = "LOG_SINK", value = "stdout" },
+    # Same JSON for api and worker so both processes agree on every flag;
+    # empty keeps the compiled-in FLAG_DEFAULTS. Never put secrets here.
+    { name = "FEATURE_FLAG_OVERRIDES", value = var.feature_flag_overrides },
   ]
 
   shared_container_secrets = [

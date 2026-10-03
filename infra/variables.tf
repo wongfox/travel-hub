@@ -95,6 +95,17 @@ variable "worker_container_image" {
   default     = "123456789012.dkr.ecr.us-east-1.amazonaws.com/travel-hub-bff:latest"
 }
 
+variable "feature_flag_overrides" {
+  description = "Operator feature-flag overrides for BOTH the api and worker tasks: a JSON object of known flag keys to booleans, e.g. {\"wifi.checkout\":true} (services/bff/src/config/flags.ts, env var FEATURE_FLAG_OVERRIDES). Empty (default) keeps every FLAG_DEFAULTS value. Plain config, never secrets. A guarded flag still fails boot unless its go-live prerequisites (config/go-live-guards.ts) are met; unknown keys or malformed JSON also fail boot."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.feature_flag_overrides == "" || can(jsondecode(var.feature_flag_overrides))
+    error_message = "feature_flag_overrides must be empty or a valid JSON object such as {\"wifi.checkout\":true}."
+  }
+}
+
 variable "api_task_cpu" {
   description = "Fargate task CPU units for the `api` service."
   type        = number

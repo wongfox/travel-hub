@@ -183,3 +183,23 @@ describe("loadEnv", () => {
     ).toThrow();
   });
 });
+
+describe("loadEnv — FEATURE_FLAG_OVERRIDES", () => {
+  const base = { DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" };
+
+  it("defaults to no overrides", () => {
+    expect(loadEnv(base).FEATURE_FLAG_OVERRIDES).toEqual({});
+  });
+
+  it("parses a valid JSON override map", () => {
+    const env = loadEnv({ ...base, FEATURE_FLAG_OVERRIDES: '{"wifi.checkout":true}' });
+
+    expect(env.FEATURE_FLAG_OVERRIDES).toEqual({ "wifi.checkout": true });
+  });
+
+  it("fails at load time on an unknown key, a non-boolean value and malformed JSON", () => {
+    expect(() => loadEnv({ ...base, FEATURE_FLAG_OVERRIDES: '{"nope":true}' })).toThrow(/FEATURE_FLAG_OVERRIDES/);
+    expect(() => loadEnv({ ...base, FEATURE_FLAG_OVERRIDES: '{"wifi.checkout":"yes"}' })).toThrow(/FEATURE_FLAG_OVERRIDES/);
+    expect(() => loadEnv({ ...base, FEATURE_FLAG_OVERRIDES: "not json" })).toThrow(/FEATURE_FLAG_OVERRIDES/);
+  });
+});

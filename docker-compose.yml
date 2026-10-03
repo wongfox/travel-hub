@@ -81,6 +81,16 @@ services:
       # Task 13.3 (observability): structured JSON logs to stdout, picked up
       # by Docker's own log driver locally (`docker-compose logs bff-api`).
       LOG_SINK: stdout
+      # Feature-flag overrides (FLAG_DEFAULTS < overrides): a JSON object of
+      # known flag keys to booleans, shared by bff-api and bff-worker via this
+      # anchor. Empty by default, so every flag keeps its default (off). To
+      # serve WiFi checkout locally, export the variable (or put it in an
+      # uncommitted .env next to this file) before `docker compose up`:
+      #   FEATURE_FLAG_OVERRIDES='{"wifi.checkout":true}' docker compose up -d --build
+      # Unknown keys / non-boolean values / bad JSON fail the container at boot,
+      # and guarded flags still need their go-live prerequisites outside
+      # development (NODE_ENV=development here, so stubs are allowed).
+      FEATURE_FLAG_OVERRIDES: ${FEATURE_FLAG_OVERRIDES:-}
     ports:
       - "3000:3000"
     depends_on:
