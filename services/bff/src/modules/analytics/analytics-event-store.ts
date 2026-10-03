@@ -25,6 +25,21 @@ export function createInMemoryAnalyticsEventStore(now: () => Date = () => new Da
       return record;
     },
 
+    async createMany(inputs: CreateAnalyticsEventInput[]): Promise<AnalyticsEventRecord[]> {
+      // Build every record first, then commit: nothing is visible unless the whole batch is.
+      const records: AnalyticsEventRecord[] = inputs.map((input) => ({
+        ...input,
+        id: randomUUID(),
+        createdAt: now().toISOString(),
+        forwardedAt: null,
+      }));
+      for (const record of records) {
+        byId.set(record.id, record);
+        order.push(record.id);
+      }
+      return records;
+    },
+
     async listPendingForward(): Promise<AnalyticsEventRecord[]> {
       return order.map((id) => byId.get(id)!).filter((record) => record.forwardedAt === null);
     },

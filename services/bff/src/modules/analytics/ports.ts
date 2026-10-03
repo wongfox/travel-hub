@@ -29,6 +29,8 @@ export type CreateAnalyticsEventInput = PseudonymousAnalyticsEvent;
 
 export interface AnalyticsEventStore {
   create(input: CreateAnalyticsEventInput): Promise<AnalyticsEventRecord>;
+  /** Persists the whole batch or none of it: a failure must leave nothing behind, so a client retry of the same batch cannot duplicate events. */
+  createMany(inputs: CreateAnalyticsEventInput[]): Promise<AnalyticsEventRecord[]>;
   /** Every row with `forwardedAt: null` (the forward job's own scan, task 12.1). */
   listPendingForward(): Promise<AnalyticsEventRecord[]>;
   markForwarded(ids: string[], forwardedAt: string): Promise<void>;

@@ -54,4 +54,16 @@ describe("createInMemoryAnalyticsEventStore", () => {
     const remaining = await store.list();
     expect(remaining.map((r) => r.id).sort()).toEqual([forwarded.id, other.id].sort());
   });
+
+  it("createMany persists the whole batch in order and returns the created rows", async () => {
+    const store = createInMemoryAnalyticsEventStore();
+
+    const created = await store.createMany([
+      { name: "screen_view", tripHash: "a".repeat(64), occurredAt: "2026-10-01T00:00:00.000Z", props: { n: 1 } },
+      { name: "screen_view", tripHash: "a".repeat(64), occurredAt: "2026-10-01T00:00:01.000Z", props: { n: 2 } },
+    ]);
+
+    expect(created).toHaveLength(2);
+    expect((await store.list()).map((r) => r.props?.n)).toEqual([1, 2]);
+  });
 });

@@ -9,7 +9,7 @@ import type { AnalyticsEventStore } from "./ports.js";
 
 export interface AnalyticsRouteDeps extends ResolveSessionDeps {
   consentStore: Pick<ConsentStore, "findLatest">;
-  analyticsEventStore: Pick<AnalyticsEventStore, "create">;
+  analyticsEventStore: Pick<AnalyticsEventStore, "createMany">;
   secret: string;
   /** Overridable only for tests; production always shares `trip-access`'s `DEFAULT_SESSION_COOKIE_NAME`. */
   sessionCookieName?: string;

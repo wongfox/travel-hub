@@ -38,7 +38,7 @@ describe("recordAnalyticsEvents", () => {
     const result = await recordAnalyticsEvents(
       {
         reservationRef: "RES-1001",
-        events: [{ name: "screen_view" }, { name: "tfe_click_out", props: { placement: "home_banner" } }],
+        events: [{ name: "screen_view" }, { name: "screen_view", props: { placement: "home_banner" } }],
       },
       { analyticsEventStore, consentStore, secret: "secret-1" },
     );
@@ -48,5 +48,27 @@ describe("recordAnalyticsEvents", () => {
     expect(all).toHaveLength(2);
     expect(all.every((record) => !("reservationRef" in record))).toBe(true);
     expect(new Set(all.map((record) => record.tripHash)).size).toBe(1);
+  });
+
+  it("hands the whole batch to the store in ONE atomic createMany call, so a failure persists nothing and a retry cannot duplicate a partial batch", async () => {
+    const consentStore = createInMemoryConsentStore();
+    await grantAnalyticsConsent(consentStore);
+    const batches: unknown[][] = [];
+    const analyticsEventStore = {
+      async createMany(inputs: unknown[]): Promise<never> {
+        batches.push(inputs);
+        throw new Error("simulated store failure");
+      },
+    };
+
+    await expect(
+      recordAnalyticsEvents(
+        { reservationRef: "RES-1001", events: [{ name: "screen_view" }, { name: "screen_view" }, { name: "screen_view" }] },
+        { analyticsEventStore, consentStore, secret: "secret-1" },
+      ),
+    ).rejects.toThrow(/simulated store failure/);
+
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toHaveLength(3);
   });
 });

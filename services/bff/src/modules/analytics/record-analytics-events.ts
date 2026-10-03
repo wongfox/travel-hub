@@ -10,7 +10,7 @@ export interface RecordAnalyticsEventsInput {
 }
 
 export interface RecordAnalyticsEventsDeps {
-  analyticsEventStore: Pick<AnalyticsEventStore, "create">;
+  analyticsEventStore: Pick<AnalyticsEventStore, "createMany">;
   consentStore: Pick<ConsentStore, "findLatest">;
   secret: string;
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
@@ -39,14 +39,16 @@ export async function recordAnalyticsEvents(
   const tripHash = computeTripHash(input.reservationRef, deps.secret);
   const now = deps.now ? deps.now() : new Date();
 
-  for (const event of input.events) {
-    await deps.analyticsEventStore.create({
+  // One atomic write for the whole batch: a mid-batch failure persists
+  // nothing, so the client's retry of the same batch cannot duplicate rows.
+  await deps.analyticsEventStore.createMany(
+    input.events.map((event) => ({
       name: event.name,
       tripHash,
       occurredAt: event.occurredAt ?? now.toISOString(),
       ...(event.props ? { props: event.props } : {}),
-    });
-  }
+    })),
+  );
 
   return { recorded: input.events.length };
 }
