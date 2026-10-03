@@ -125,3 +125,24 @@ describe("pii_access_audit shared-store migration", () => {
     expect(all).toMatch(/CREATE TRIGGER pii_access_audit_append_only\s+BEFORE UPDATE OR DELETE ON "pii_access_audit"/);
   });
 });
+
+describe("push_subscription migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+  const table = all.match(/CREATE TABLE "push_subscription" \(([\s\S]*?)\n\);/)?.[1] ?? "";
+
+  it("keeps link_id and consent_record_id as plain uuid references (access links are still in-memory: no FK)", () => {
+    expect(table).toMatch(/"link_id" uuid NOT NULL/);
+    expect(table).toMatch(/"consent_record_id" uuid NOT NULL/);
+    expect(all).not.toMatch(/ALTER TABLE "push_subscription" ADD CONSTRAINT/);
+  });
+
+  it("indexes the reservation/link lookups and the expires_at purge scan", () => {
+    expect(all).toMatch(/CREATE INDEX "push_subscription_reservation_idx" ON "push_subscription" USING btree \("reservation_ref"\)/);
+    expect(all).toMatch(/CREATE INDEX "push_subscription_link_idx" ON "push_subscription" USING btree \("link_id"\)/);
+    expect(all).toMatch(/CREATE INDEX "push_subscription_expires_at_idx" ON "push_subscription" USING btree \("expires_at"\)/);
+  });
+});

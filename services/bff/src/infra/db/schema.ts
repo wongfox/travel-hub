@@ -195,3 +195,37 @@ export const analyticsEvent = pgTable(
     index("analytics_event_trip_hash_idx").on(table.tripHash),
   ],
 );
+
+/**
+ * `push_subscription` (design Data Model, task 11.1): written by `bff-api`
+ * (subscribe, consent-withdrawal and link-reissue deletes), read/purged by
+ * `bff-worker` (journey fan-out, retention purge). `link_id` and
+ * `consent_record_id` are uuid audit references WITHOUT foreign keys: access
+ * links are still process-local in-memory stores, so an FK to `access_link`
+ * would reject every insert (same reason as `consent_record.link_id`).
+ * `endpoint`/`p256dh`/`auth` are push secrets: stored as given, never logged.
+ * `seq` is the insertion order; `expires_at` (= link expiry) drives the purge.
+ */
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    linkId: uuid("link_id").notNull(),
+    reservationRef: text("reservation_ref").notNull(),
+    /** Empty array means "all passengers on the reservation". */
+    passengerScope: text("passenger_scope").array().notNull().default([]),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    locale: text("locale").notNull(),
+    consentRecordId: uuid("consent_record_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("push_subscription_reservation_idx").on(table.reservationRef),
+    index("push_subscription_link_idx").on(table.linkId),
+    index("push_subscription_expires_at_idx").on(table.expiresAt),
+  ],
+);

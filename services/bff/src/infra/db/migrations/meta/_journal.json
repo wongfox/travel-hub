@@ -36,6 +36,13 @@
       "when": 1791039778448,
       "tag": "0004_pii_access_audit_shared_store",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791039874988,
+      "tag": "0005_push_subscription",
+      "breakpoints": true
     }
   ]
 }
