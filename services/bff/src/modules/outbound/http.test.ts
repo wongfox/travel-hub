@@ -116,4 +116,26 @@ describe("GET /api/out/tfe", () => {
 
     expect(response.statusCode).toBe(302);
   });
+
+  it("still redirects 302 when the session store throws while resolving the optional session (analytics must never block the redirect)", async () => {
+    const app = Fastify();
+    await app.register(cookie);
+    const sessionStore = {
+      ...createInMemorySessionStore(),
+      async findByIdHash(): Promise<never> {
+        throw new Error("simulated session store outage");
+      },
+    };
+    registerOutboundRoutes(app, { tfeConfig: CONFIG, sessionStore, accessLinkStore: createInMemoryAccessLinkStore() });
+    await app.ready();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/out/tfe?placement=home_banner",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: "some-session-id" },
+    });
+
+    expect(response.statusCode).toBe(302);
+    expect(response.headers.location).toContain("https://www.trainexperience.example/");
+  });
 });

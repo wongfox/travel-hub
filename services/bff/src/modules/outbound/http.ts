@@ -47,10 +47,12 @@ export function registerOutboundRoutes(app: FastifyInstance, deps: OutboundRoute
 
     if (deps.sessionStore && deps.accessLinkStore) {
       const raw = request.cookies[cookieName];
+      // A store error here only costs the analytics attribution: it must
+      // never turn a plain click-out into a 500.
       const session = await resolveActiveSession(raw, {
         sessionStore: deps.sessionStore,
         accessLinkStore: deps.accessLinkStore,
-      });
+      }).catch(() => null);
       if (session) {
         await recordAnalyticsBestEffort(deps.analytics, {
           reservationRef: session.accessLink.reservationRef,
