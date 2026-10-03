@@ -1,4 +1,4 @@
-import type { LegStatus, ServiceTier } from "contracts";
+import type { LegStatus, ServiceTier, TicketKind } from "contracts";
 import type { ContactChannel } from "../trip-access/ports.js";
 
 /**
@@ -26,6 +26,35 @@ export interface SirLeg {
   arrivalLocal: string;
   tier: ServiceTier;
   status: LegStatus;
+  /**
+   * Boarding-pass fields (`trip-itinerary`, task 6.3): the assigned seat and
+   * coach for this leg's train segment, and the barcode rendered client-side
+   * on the boarding pass view. `seat` is the pre-relocation assignment — a
+   * recorded `SirRelocation.newSeat` for the same `legRef` overrides it.
+   */
+  seat: string;
+  coach: string;
+  barcodeFormat: string;
+  barcodePayload: string;
+}
+
+/**
+ * A purchased ancillary ticket (`travel-documents`, task 6.4): Consettur,
+ * INC entry, meal/tea-time, or another non-train service. Train tickets are
+ * not modeled here — they derive directly from `SirLeg`'s boarding-pass
+ * fields, since a train segment's own leg data is already the source of
+ * truth for its ticket.
+ */
+export interface SirTicket {
+  ticketRef: string;
+  kind: TicketKind;
+  title: string;
+  /** The itinerary milestone (leg) this ticket is associated with (`travel-documents` "Ticket-to-milestone association"), or `null` when it has none. */
+  milestoneLegRef: string | null;
+  /** Present when the ticket renders as a client-side barcode; mutually typical with `fileId`, not enforced exclusive. */
+  barcodePayload?: string;
+  /** Present when the ticket is a third-party binary file fetched via `TicketDocumentPort`. */
+  fileId?: string;
 }
 
 export interface SirReservation {
@@ -33,6 +62,7 @@ export interface SirReservation {
   passengers: SirPassenger[];
   legs: SirLeg[];
   contact: ContactChannel;
+  tickets: SirTicket[];
 }
 
 export interface SirRelocation {

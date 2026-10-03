@@ -14,6 +14,19 @@ const validSeedReservation = {
       arrivalLocal: "2026-11-02T09:40:00-05:00",
       tier: "PRIME",
       status: "SCHEDULED",
+      seat: "5A",
+      coach: "3",
+      barcodeFormat: "CODE128",
+      barcodePayload: "BP-RES-1001-L1",
+    },
+  ],
+  tickets: [
+    {
+      ticketRef: "TCK-1001-INC",
+      kind: "INC_ENTRY",
+      title: "INC entry ticket",
+      milestoneLegRef: "L1",
+      barcodePayload: "INC-1001-BARCODE",
     },
   ],
   relocations: [],
@@ -59,9 +72,39 @@ describe("mapSeedReservationToDomain", () => {
           arrivalLocal: "2026-11-02T09:40:00-05:00",
           tier: "PRIME",
           status: "SCHEDULED",
+          seat: "5A",
+          coach: "3",
+          barcodeFormat: "CODE128",
+          barcodePayload: "BP-RES-1001-L1",
+        },
+      ],
+      tickets: [
+        {
+          ticketRef: "TCK-1001-INC",
+          kind: "INC_ENTRY",
+          title: "INC entry ticket",
+          milestoneLegRef: "L1",
+          barcodePayload: "INC-1001-BARCODE",
         },
       ],
     });
+  });
+
+  it("omits a ticket's optional barcodePayload/fileId entirely when the seed did not provide them", () => {
+    const seedWithFileTicket = {
+      ...validSeedReservation,
+      tickets: [
+        { ticketRef: "TCK-1001-CONSETTUR", kind: "CONSETTUR", title: "Consettur bus", milestoneLegRef: "L1" },
+      ],
+    };
+    const [seed] = parseSeedReservations([seedWithFileTicket]);
+    const domain = mapSeedReservationToDomain(seed!);
+
+    expect(domain.tickets).toEqual([
+      { ticketRef: "TCK-1001-CONSETTUR", kind: "CONSETTUR", title: "Consettur bus", milestoneLegRef: "L1" },
+    ]);
+    expect("barcodePayload" in domain.tickets[0]!).toBe(false);
+    expect("fileId" in domain.tickets[0]!).toBe(false);
   });
 });
 

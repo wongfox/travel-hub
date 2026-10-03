@@ -24,6 +24,8 @@ import { createLinkDeliveryStub } from "./adapters/link-delivery/stub.js";
 import type { SirBookingPort } from "./modules/booking/ports.js";
 import { createSirBookingStub } from "./adapters/sir-booking/stub.js";
 import { registerTripRoutes } from "./modules/trip/http.js";
+import type { TicketDocumentPort } from "./modules/trip/ports.js";
+import { createTicketDocumentStub } from "./adapters/ticket-document/stub.js";
 import type { FlagKey } from "./config/flags.js";
 
 /**
@@ -78,6 +80,7 @@ export interface BuildAppOptions {
   trip?: {
     sirBooking?: Pick<SirBookingPort, "getReservation" | "getRelocations">;
     flags?: Record<FlagKey, boolean>;
+    ticketDocument?: TicketDocumentPort;
   };
 }
 
@@ -147,6 +150,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     accessLinkStore,
     sessionStore,
     sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
+    ticketDocument: tripOptions.ticketDocument ?? createTicketDocumentStub(),
     ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });

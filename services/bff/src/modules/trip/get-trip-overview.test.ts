@@ -49,7 +49,14 @@ const reservation: SirReservation = {
       arrivalLocal: "2026-11-02T09:40:00-05:00",
       tier: "PRIME",
       status: "SCHEDULED",
+      seat: "5A",
+      coach: "3",
+      barcodeFormat: "CODE128",
+      barcodePayload: "BP-L1",
     },
+  ],
+  tickets: [
+    { ticketRef: "TCK-INC", kind: "INC_ENTRY", title: "INC entry ticket", milestoneLegRef: "L1", barcodePayload: "INC-1" },
   ],
 };
 
@@ -123,5 +130,34 @@ describe("getTripOverview", () => {
     const trip = await getTripOverview(accessLink(), { sirBooking: fakeSirBooking(reservation) });
 
     expect(() => TripDTOSchema.parse(trip)).not.toThrow();
+  });
+
+  it("populates boardingPasses with one entry per leg (trip-itinerary, task 6.3)", async () => {
+    const trip = await getTripOverview(accessLink(), { sirBooking: fakeSirBooking(reservation) });
+
+    expect(trip.boardingPasses).toEqual([
+      { legId: "L1", barcodeFormat: "CODE128", barcodePayload: "BP-L1", seat: "5A", coach: "3", tier: "PRIME" },
+    ]);
+  });
+
+  it("reflects a relocation's updated seat in the boarding pass automatically, consistent with the same relocation's alert", async () => {
+    const relocation: SirRelocation = { legRef: "L1", recordedAt: "2026-10-30T12:00:00-05:00", newSeat: "3C" };
+
+    const trip = await getTripOverview(accessLink(), {
+      sirBooking: fakeSirBooking(reservation, [relocation]),
+    });
+
+    expect(trip.boardingPasses[0]?.seat).toBe("3C");
+    expect(trip.alerts).toHaveLength(1);
+  });
+
+  it("populates documents with the derived train ticket plus every purchased ancillary ticket (travel-documents, task 6.4)", async () => {
+    const trip = await getTripOverview(accessLink(), { sirBooking: fakeSirBooking(reservation) });
+
+    expect(trip.documents).toHaveLength(2);
+    const kinds = trip.documents.map((doc) => doc.kind).sort();
+    expect(kinds).toEqual(["INC_ENTRY", "TRAIN"]);
+    const incTicket = trip.documents.find((doc) => doc.kind === "INC_ENTRY");
+    expect(incTicket).toMatchObject({ milestoneId: "L1", barcodePayload: "INC-1" });
   });
 });
