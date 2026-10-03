@@ -890,7 +890,7 @@ describe("startWorker — WiFi entitlement/SIR/receipt job wiring (task 10.3)", 
       legRef: "LEG-1",
       buyerEmail: "ana@example.com",
     });
-    await orderStore.transition(created.id, "PAID", { gatewayPaymentRef: "payment-1" });
+    await orderStore.transition(created.id, "CREATED", "PAID", { gatewayPaymentRef: "payment-1" });
 
     await startWorker({
       queueClient,

@@ -166,16 +166,24 @@ export interface WifiOrderStore {
    */
   create(input: CreateWifiOrderRecordInput): Promise<WifiOrderRecord>;
   /**
-   * Transitions `id` from its current status to `toStatus`, applies `patch`,
-   * and appends one `wifi_order_event` row. `toStatus` MAY equal the current
-   * status (task 10.3's SIR-registration/e-receipt steps record progress —
-   * `sirRegisteredAt`, `receiptIssuedAt` — without a saga state change, per
-   * design Decision 8's "independent flags" rule); the event row still
-   * records that attempt for audit purposes. Throws `WifiOrderNotFoundError`
-   * if `id` is unknown.
+   * ATOMIC compare-and-swap: transitions `id` from `expectedStatus` to
+   * `toStatus`, applies `patch` (merge semantics; `undefined` keys are
+   * ignored) and appends one `wifi_order_event` row, all-or-nothing, only if
+   * the order's CURRENT status still equals `expectedStatus`. Returns the
+   * updated order, or `null` on a CAS miss (the status moved since the caller
+   * read it: nothing is written, no event is appended) — callers treat a miss
+   * as "someone else advanced this order" and never throw/retry-storm on it.
+   * This is what stops a stale SIR/receipt progress write (which passes the
+   * status it read) from undoing a concurrent `REFUND_PENDING`/`REFUNDED`
+   * transition. `toStatus` MAY equal `expectedStatus` (task 10.3's
+   * SIR-registration/e-receipt steps record progress without a saga state
+   * change, design Decision 8's "independent flags" rule); the event row
+   * still records that attempt. Throws `WifiOrderNotFoundError` if `id` is
+   * unknown (including a malformed id).
    */
   transition(
     id: string,
+    expectedStatus: WifiOrderStatus,
     toStatus: WifiOrderStatus,
     patch: Partial<
       Pick<
@@ -192,7 +200,7 @@ export interface WifiOrderStore {
         | "receiptRef"
       >
     >,
-  ): Promise<WifiOrderRecord>;
+  ): Promise<WifiOrderRecord | null>;
   /** Every event recorded for `id`, in transition order; test/audit introspection. */
   listEventsForOrder(id: string): Promise<WifiOrderEventRecord[]>;
   /** Every order currently in `status`; the activation/SIR-registration/e-receipt-issuance jobs' (task 10.3) input set. */

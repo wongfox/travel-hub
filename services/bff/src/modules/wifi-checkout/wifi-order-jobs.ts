@@ -92,6 +92,26 @@ export interface SirAndReceiptJobResult {
   receiptsFailed: number;
 }
 
+/**
+ * Records same-status progress (SIR/receipt flags) with a compare-and-swap on
+ * the status the scan read. On a miss the order moved on (e.g. REFUND_PENDING);
+ * re-read once and apply the progress against the CURRENT status, so the flags
+ * are kept but the status is never overwritten. A second miss is dropped (the
+ * next scan reconciles) — never a retry loop.
+ */
+async function recordProgress(
+  order: WifiOrderRecord,
+  patch: Parameters<WifiOrderStore["transition"]>[3],
+  deps: WifiOrderJobsDeps,
+): Promise<void> {
+  const written = await deps.orderStore.transition(order.id, order.status, order.status, patch);
+  if (written) return;
+  const fresh = await deps.orderStore.findById(order.id);
+  if (fresh) {
+    await deps.orderStore.transition(fresh.id, fresh.status, fresh.status, patch);
+  }
+}
+
 async function attemptSirRegistration(
   order: WifiOrderRecord,
   deps: WifiOrderJobsDeps,
@@ -119,18 +139,16 @@ async function attemptSirRegistration(
       },
       order.id,
     );
-    await deps.orderStore.transition(order.id, order.status, {
-      sirRegisteredAt: (deps.now ? deps.now() : new Date()).toISOString(),
-      sirSaleRef: saleRef,
-    });
+    await recordProgress(
+      order,
+      { sirRegisteredAt: (deps.now ? deps.now() : new Date()).toISOString(), sirSaleRef: saleRef },
+      deps,
+    );
     return "registered";
   } catch {
     const attempts = order.sirRegistrationAttempts + 1;
     const reconciliationRequired = attempts > SIR_REGISTRATION_RETRY_LIMIT;
-    await deps.orderStore.transition(order.id, order.status, {
-      sirRegistrationAttempts: attempts,
-      sirReconciliationRequired: reconciliationRequired,
-    });
+    await recordProgress(order, { sirRegistrationAttempts: attempts, sirReconciliationRequired: reconciliationRequired }, deps);
     return reconciliationRequired ? "reconciliation" : "failed";
   }
 }
@@ -157,10 +175,11 @@ async function attemptReceiptIssuance(
       // already succeeded.
       idempotencyKey: order.id,
     });
-    await deps.orderStore.transition(order.id, order.status, {
-      receiptIssuedAt: (deps.now ? deps.now() : new Date()).toISOString(),
-      receiptRef,
-    });
+    await recordProgress(
+      order,
+      { receiptIssuedAt: (deps.now ? deps.now() : new Date()).toISOString(), receiptRef },
+      deps,
+    );
     return "issued";
   } catch {
     return "failed";

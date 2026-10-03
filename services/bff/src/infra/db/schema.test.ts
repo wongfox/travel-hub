@@ -1,4 +1,5 @@
 import { getTableColumns, getTableName } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   accessLink,
@@ -6,6 +7,8 @@ import {
   featureFlag,
   piiAccessAudit,
   session,
+  wifiOrder,
+  wifiOrderEvent,
 } from "./schema.js";
 
 describe("access_link table", () => {
@@ -97,5 +100,63 @@ describe("pii_access_audit table", () => {
     );
     expect(columns.actor.notNull).toBe(true);
     expect(columns.action.notNull).toBe(true);
+  });
+});
+
+describe("wifi_order table", () => {
+  it("has every field the WifiOrderStore port persists", () => {
+    expect(getTableName(wifiOrder)).toBe("wifi_order");
+    expect(Object.keys(getTableColumns(wifiOrder)).sort()).toEqual(
+      [
+        "id",
+        "reservationRef",
+        "passengerRef",
+        "packageId",
+        "legRef",
+        "buyerEmail",
+        "amountMinor",
+        "currency",
+        "status",
+        "idempotencyKey",
+        "gatewaySessionRef",
+        "gatewayPaymentRef",
+        "entitlementRef",
+        "entitlementExpiresAt",
+        "sirRegisteredAt",
+        "sirSaleRef",
+        "sirRegistrationAttempts",
+        "sirReconciliationRequired",
+        "receiptIssuedAt",
+        "receiptRef",
+        "createdAt",
+        "updatedAt",
+      ].sort(),
+    );
+  });
+
+  it("makes idempotencyKey unique and not-null, and keeps the nullable progress columns nullable", () => {
+    const columns = getTableColumns(wifiOrder);
+    expect(columns.idempotencyKey.isUnique).toBe(true);
+    expect(columns.idempotencyKey.notNull).toBe(true);
+    expect(columns.status.notNull).toBe(true);
+    expect(columns.entitlementRef.notNull).toBe(false);
+    expect(columns.sirRegisteredAt.notNull).toBe(false);
+    expect(columns.receiptRef.notNull).toBe(false);
+  });
+
+  it("indexes status for listByStatus", () => {
+    const names = getTableConfig(wifiOrder).indexes.map((i) => i.config.name);
+    expect(names).toContain("wifi_order_status_idx");
+  });
+});
+
+describe("wifi_order_event table", () => {
+  it("records every transition with order FK, from/to status and detail", () => {
+    expect(getTableName(wifiOrderEvent)).toBe("wifi_order_event");
+    expect(Object.keys(getTableColumns(wifiOrderEvent)).sort()).toEqual(
+      ["seq", "id", "orderId", "fromStatus", "toStatus", "detail", "at"].sort(),
+    );
+    const names = getTableConfig(wifiOrderEvent).indexes.map((i) => i.config.name);
+    expect(names).toContain("wifi_order_event_order_id_idx");
   });
 });

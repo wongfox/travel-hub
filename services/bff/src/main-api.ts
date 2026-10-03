@@ -8,6 +8,8 @@ import { createLogDestination, resolveLogSinkConfig } from "./infra/logging/log-
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
 import { createPgBossQueueClient } from "./infra/queue/pg-boss-queue-client.js";
 import { createDeadLetterAlertLogOnlyAdapter } from "./adapters/dead-letter-alert/log-only.js";
+import { createDb } from "./infra/db/client.js";
+import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -32,6 +34,11 @@ async function main(): Promise<void> {
   // will answer `getQueue` calls; this never calls `.work()`/`.sendIdempotent()`.
   const observabilityQueueClient = createPgBossQueueClient(env.DATABASE_URL);
   await observabilityQueueClient.start();
+
+  // Shared WiFi order store: the api writes orders here and the worker's
+  // activation/SIR/receipt jobs read the very same `wifi_order` table through
+  // the same DATABASE_URL (migrations: `node dist/infra/db/migrate.js`).
+  const db = createDb(env.DATABASE_URL);
 
   const app = buildApp({
     logger,
@@ -66,6 +73,7 @@ async function main(): Promise<void> {
       adapterReceipt: env.ADAPTER_RECEIPT,
       adapterSirPos: env.ADAPTER_SIR_POS,
       adapterWifiEntitlement: env.ADAPTER_WIFI_ENTITLEMENT,
+      orderStore: createPostgresWifiOrderStore(db.db),
     },
     notifications: {
       // Task 11.1: real env-sourced config, so the go-live guard
@@ -99,6 +107,10 @@ async function main(): Promise<void> {
       nodeEnv: env.NODE_ENV,
       ...(env.ANALYTICS_TRIP_HASH_SECRET ? { secret: env.ANALYTICS_TRIP_HASH_SECRET } : {}),
     },
+  });
+
+  app.addHook("onClose", async () => {
+    await db.close();
   });
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });

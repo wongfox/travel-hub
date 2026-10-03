@@ -184,4 +184,23 @@ describe("createWifiOrder", () => {
       }),
     ).rejects.toBeInstanceOf(WifiPackageNotFoundError);
   });
+
+  it("a CAS miss on CREATED -> PAYMENT_PENDING (the webhook won the race) returns the current order", async () => {
+    const inner = createInMemoryWifiOrderStore();
+    const orderStore = {
+      ...inner,
+      async transition(id: string, expected: Parameters<typeof inner.transition>[1], to: Parameters<typeof inner.transition>[2], patch: Parameters<typeof inner.transition>[3]) {
+        await inner.transition(id, "CREATED", "PAID", { gatewayPaymentRef: "pay-early" });
+        return inner.transition(id, expected, to, patch);
+      },
+    };
+
+    const result = await createWifiOrder(baseInput(), {
+      orderStore,
+      packageStore: packageStoreOf([PACKAGE]),
+      paymentGateway: fakePaymentGateway(),
+    });
+
+    expect(result.order.status).toBe("PAID");
+  });
 });

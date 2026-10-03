@@ -48,10 +48,16 @@ export async function activateWifiOrder(orderId: string, deps: ActivateWifiOrder
   const now = deps.now ? deps.now() : new Date();
   const entitlementExpiresAt = new Date(now.getTime() + pkg.durationMinutes * 60_000).toISOString();
 
-  const activated = await deps.orderStore.transition(order.id, "ENTITLEMENT_ACTIVE", {
+  const activated = await deps.orderStore.transition(order.id, "PAID", "ENTITLEMENT_ACTIVE", {
     entitlementRef,
     entitlementExpiresAt,
   });
+  if (!activated) {
+    // CAS miss: the order left PAID while the (idempotent) grant ran — a
+    // concurrent activation, or a refund. Never overwrite; report the current
+    // state and record no funnel event (nothing was activated by this call).
+    return (await deps.orderStore.findById(order.id)) ?? order;
+  }
 
   // Funnel event 5/5 (task 12.2): only on a REAL transition, never on the
   // early-return no-op path above (a retried worker invocation against an
