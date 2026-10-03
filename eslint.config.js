@@ -17,6 +17,8 @@ export default tseslint.config(
       "**/coverage/**",
       "**/node_modules/**",
       "**/.output/**",
+      "**/.docker-ctx/**",
+      "**/test-results/**",
     ],
   },
   js.configs.recommended,
