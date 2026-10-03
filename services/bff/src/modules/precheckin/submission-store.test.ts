@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInMemorySubmissionStore } from "./submission-store.js";
+import { describePrecheckinSubmissionStoreContract } from "./submission-store.conformance.js";
 import type { StoredPrecheckinImage } from "./ports.js";
 
 function fakeImage(seed: string): StoredPrecheckinImage {
@@ -12,6 +13,10 @@ function fakeImage(seed: string): StoredPrecheckinImage {
 }
 
 const PURGE_AFTER = "2026-06-01T00:00:00.000Z";
+
+describePrecheckinSubmissionStoreContract("in-memory", {
+  make: async (now) => createInMemorySubmissionStore(now),
+});
 
 describe("createInMemorySubmissionStore", () => {
   it("returns null when no submission exists for a passenger", async () => {

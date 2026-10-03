@@ -112,16 +112,26 @@ export async function submitPrecheckin(
     throw error;
   }
 
-  return deps.submissionStore.create({
-    reservationRef: input.reservationRef,
-    passengerRef: input.passengerRef,
-    docType: input.docType,
-    consentRecordId: input.consentRecordId,
-    photo,
-    idFront,
-    idBack,
-    // Task 8.5: `trip end + PRECHECKIN_RETENTION_DAYS` baseline (`handed_off_at`
-    // is unknown yet, so the `HandoffJob` tightens this once a handoff completes).
-    purgeAfter: computeInitialPurgeAfter(deps.tripEndLocal, deps.retention),
-  });
+  try {
+    return await deps.submissionStore.create({
+      reservationRef: input.reservationRef,
+      passengerRef: input.passengerRef,
+      docType: input.docType,
+      consentRecordId: input.consentRecordId,
+      photo,
+      idFront,
+      idBack,
+      // Task 8.5: `trip end + PRECHECKIN_RETENTION_DAYS` baseline (`handed_off_at`
+      // is unknown yet, so the `HandoffJob` tightens this once a handoff completes).
+      purgeAfter: computeInitialPurgeAfter(deps.tripEndLocal, deps.retention),
+    });
+  } catch (error) {
+    // Lost a concurrent race for this passenger (the store enforces one submission per
+    // passenger): the ciphertext just stored is referenced by no record, so remove it
+    // instead of leaving untrackable encrypted objects behind.
+    if (error instanceof AlreadySubmittedError) {
+      await Promise.allSettled(stored.map((image) => deps.documentStore.delete(image.objectKey)));
+    }
+    throw error;
+  }
 }

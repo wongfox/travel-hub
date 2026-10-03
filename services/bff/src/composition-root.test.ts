@@ -1002,6 +1002,7 @@ describe("startWorker — pre check-in handoff/purge wiring (task 8.5)", () => {
         consentTextVersion: "v1",
         kmsKeyConfigured: true,
         piiAccessAudit: createInMemoryPiiAccessAudit(),
+        submissionStore: createInMemorySubmissionStore(),
       },
     });
 
@@ -1696,6 +1697,73 @@ describe("shared pulse response / staff alert stores in production-like environm
     await expect(
       startWorker({ queueClient: createInMemoryQueueClient(), pulse: { flags: captureOn, nodeEnv: "development" } }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("shared pre check-in submission store in production-like environments", () => {
+  const collectionOn = { ...FLAG_DEFAULTS, "precheckin.production_collection": true } as never;
+  const piiAccessAudit = createInMemoryPiiAccessAudit();
+  const workerPrereqs = {
+    adapterPrecheckinHandoff: "s3",
+    handoffPort: createPrecheckinHandoffStub(),
+    retention: { retentionDays: 30, handoffGraceMs: 7 * 24 * 60 * 60 * 1000 },
+    retentionPolicyId: "policy-1",
+    consentTextVersion: "v1",
+    kmsKeyConfigured: true,
+    piiAccessAudit,
+  };
+
+  it("buildApp refuses production/staging with precheckin.production_collection and no shared submissionStore (the worker handoff/purge jobs could never see the api's submissions)", () => {
+    expect(() =>
+      buildApp({ precheckin: { nodeEnv: "production" }, trip: { flags: collectionOn } }),
+    ).toThrow(/submissionStore/);
+    expect(() =>
+      buildApp({ precheckin: { nodeEnv: "staging" }, trip: { flags: collectionOn } }),
+    ).toThrow(/submissionStore/);
+  });
+
+  it("buildApp boots in production once the shared submission store is wired in", () => {
+    expect(() =>
+      buildApp({
+        trip: { flags: collectionOn },
+        precheckin: { nodeEnv: "production", submissionStore: createInMemorySubmissionStore() },
+      }),
+    ).not.toThrow();
+  });
+
+  it("buildApp does not require it while the flag is off, nor outside production-like environments", () => {
+    expect(() => buildApp({ precheckin: { nodeEnv: "production" } })).not.toThrow();
+    expect(() => buildApp({ precheckin: { nodeEnv: "development" }, trip: { flags: collectionOn } })).not.toThrow();
+  });
+
+  it("startWorker refuses production with precheckin.production_collection and no shared submissionStore, and boots with it", async () => {
+    const worker = (extra: Record<string, unknown>) => ({
+      queueClient: createInMemoryQueueClient(),
+      precheckin: { flags: collectionOn, nodeEnv: "production" as const, ...workerPrereqs, ...extra },
+    });
+
+    await expect(startWorker(worker({}))).rejects.toThrow(/submissionStore/);
+    await expect(startWorker(worker({ submissionStore: createInMemorySubmissionStore() }))).resolves.toMatchObject({
+      jobsRegistered: expect.arrayContaining([PRECHECKIN_HANDOFF_QUEUE, PRECHECKIN_PURGE_QUEUE]),
+    });
+  });
+
+  it("startWorker keeps the in-memory default while the flag is off or outside production-like environments", async () => {
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), precheckin: { nodeEnv: "production" } }),
+    ).resolves.toBeDefined();
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), precheckin: { flags: collectionOn, nodeEnv: "development" } }),
+    ).resolves.toBeDefined();
+  });
+
+  it("keeps GoLiveGuardError (not the store guard) as the first refusal when go-live prerequisites are missing", async () => {
+    await expect(
+      startWorker({
+        queueClient: createInMemoryQueueClient(),
+        precheckin: { flags: collectionOn, nodeEnv: "production" },
+      }),
+    ).rejects.toThrow(GoLiveGuardError);
   });
 });
 

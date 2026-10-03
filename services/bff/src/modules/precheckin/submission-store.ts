@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type {
-  CreatePrecheckinSubmissionInput,
-  PrecheckinSubmissionRecord,
-  PrecheckinSubmissionStore,
-  StoredPrecheckinImage,
+import { tightenPurgeAfter } from "./retention.js";
+import {
+  AlreadySubmittedError,
+  type CreatePrecheckinSubmissionInput,
+  type PrecheckinSubmissionRecord,
+  type PrecheckinSubmissionStore,
+  type StoredPrecheckinImage,
 } from "./ports.js";
 
 function shred(image: StoredPrecheckinImage): StoredPrecheckinImage {
@@ -20,7 +22,7 @@ function shred(image: StoredPrecheckinImage): StoredPrecheckinImage {
  * Same in-memory-port convention as `ConsentStore`/`AccessLinkStore` (see
  * `ports.ts`'s doc comment on `PrecheckinSubmissionStore`).
  */
-export function createInMemorySubmissionStore(): PrecheckinSubmissionStore {
+export function createInMemorySubmissionStore(now: () => Date = () => new Date()): PrecheckinSubmissionStore {
   const records: PrecheckinSubmissionRecord[] = [];
 
   function requireById(id: string): PrecheckinSubmissionRecord {
@@ -41,6 +43,11 @@ export function createInMemorySubmissionStore(): PrecheckinSubmissionStore {
     },
 
     async create(input: CreatePrecheckinSubmissionInput): Promise<PrecheckinSubmissionRecord> {
+      // One submission per passenger (the `already_submitted` guarantee), enforced here
+      // synchronously so it also holds for concurrent callers, like the Postgres UNIQUE.
+      if (records.some((r) => r.reservationRef === input.reservationRef && r.passengerRef === input.passengerRef)) {
+        throw new AlreadySubmittedError(input.reservationRef, input.passengerRef);
+      }
       const record: PrecheckinSubmissionRecord = {
         id: randomUUID(),
         reservationRef: input.reservationRef,
@@ -51,7 +58,7 @@ export function createInMemorySubmissionStore(): PrecheckinSubmissionStore {
         photo: input.photo,
         idFront: input.idFront,
         idBack: input.idBack,
-        submittedAt: new Date().toISOString(),
+        submittedAt: now().toISOString(),
         handedOffAt: null,
         purgeAfter: input.purgeAfter,
         purgedAt: null,
@@ -66,9 +73,12 @@ export function createInMemorySubmissionStore(): PrecheckinSubmissionStore {
 
     async markHandedOff(id: string, handedOffAt: string, purgeAfter: string): Promise<PrecheckinSubmissionRecord> {
       const record = requireById(id);
+      if (record.status === "purged") {
+        throw new Error(`precheckin_submission "${id}" is already purged and can no longer be handed off`);
+      }
       record.status = "handed_off";
       record.handedOffAt = handedOffAt;
-      record.purgeAfter = purgeAfter;
+      record.purgeAfter = tightenPurgeAfter(record.purgeAfter, purgeAfter);
       return record;
     },
 

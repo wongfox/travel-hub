@@ -205,6 +205,8 @@ export interface BuildAppOptions {
     keyId?: string;
     /** `purge_after` computation config (task 8.5); defaults to the dev/non-production fallback when omitted. */
     retention?: RetentionConfig;
+    /** The running environment, for the shared-store guard. Defaults to `trip-access`'s `nodeEnv`, then `"development"`. */
+    nodeEnv?: NodeEnvName;
     /** Published pre check-in consent text version (env.ts's `PRECHECKIN_CONSENT_TEXT_VERSION`); exposed to the web on `GET /api/trip`, omitted when unset. */
     consentTextVersion?: string;
   };
@@ -503,6 +505,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     analyticsEventStore: sharedAnalyticsEventStore,
     secret: analyticsSecret,
   });
+
+  // The api writes submissions that the worker's handoff and purge jobs read: with pre check-in
+  // collection live, a production-like deployment needs the shared Postgres store.
+  assertSharedPrecheckinStores(
+    "buildApp",
+    precheckinOptions.nodeEnv ?? tripAccessOptions.nodeEnv,
+    (tripOptions.flags ?? FLAG_DEFAULTS)["precheckin.production_collection"],
+    precheckinOptions.submissionStore,
+  );
 
   registerPrecheckinRoutes(app, {
     accessLinkStore,
@@ -818,6 +829,30 @@ function assertSharedPulseStores(
   }
 }
 
+/**
+ * Pre check-in spans two processes (the api stores submissions and serves their status, the
+ * worker's handoff job reads the pending ones and its purge job crypto-shreds the expired ones),
+ * so with `precheckin.production_collection` on, a production-like deployment needs the shared
+ * Postgres submission store in BOTH; fail loudly instead of running on a process-local in-memory
+ * store the other process can never see (submissions would never be handed off or purged: a
+ * retention failure for biometric/ID data). The document store and handoff port stay
+ * stubs/adapters guarded by the go-live guard.
+ */
+function assertSharedPrecheckinStores(
+  who: "buildApp" | "startWorker",
+  nodeEnv: NodeEnvName | undefined,
+  featureOn: boolean,
+  submissionStore: unknown,
+): void {
+  if (!featureOn || !isProductionLike(nodeEnv ?? "development")) return;
+  if (!submissionStore) {
+    throw new Error(
+      `${who}: precheckin.production_collection is on in a production-like environment but no shared submissionStore is wired in; ` +
+        "refusing to start with a process-local in-memory PrecheckinSubmissionStore (api and worker would never see each other's submissions, so handoff and the retention purge would never run on real data).",
+    );
+  }
+}
+
 export interface WorkerBootResult {
   /** Job names registered on the worker's queue. */
   jobsRegistered: string[];
@@ -1029,6 +1064,7 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     });
 
     assertSharedPiiAccessAudit("startWorker", nodeEnv, flags["precheckin.production_collection"], p.piiAccessAudit);
+    assertSharedPrecheckinStores("startWorker", nodeEnv, flags["precheckin.production_collection"], p.submissionStore);
 
     const jobDeps = {
       submissionStore: p.submissionStore ?? createInMemorySubmissionStore(),

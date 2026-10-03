@@ -15,6 +15,7 @@ import { createPostgresConsentStore } from "./adapters/consent-store/postgres.js
 import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-store/postgres.js";
 import { createPostgresPushSubscriptionStore } from "./adapters/push-subscription-store/postgres.js";
 import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
+import { createPostgresPrecheckinSubmissionStore } from "./adapters/precheckin-submission-store/postgres.js";
 import { createPostgresPulseResponseStore } from "./adapters/pulse-response-store/postgres.js";
 import { createPostgresStaffAlertStore } from "./adapters/staff-alert-store/postgres.js";
 import { resolvePulseRetentionConfig } from "./modules/pulse/retention.js";
@@ -120,6 +121,19 @@ async function main(): Promise<void> {
       staffAlertStore: createPostgresStaffAlertStore(db.db, undefined, pulseRetention),
     },
     precheckin: {
+      nodeEnv: env.NODE_ENV,
+      // Shared with the worker's handoff and purge jobs through the same DATABASE_URL
+      // (metadata + encrypted-document references only; ciphertext stays in the document store).
+      submissionStore: createPostgresPrecheckinSubmissionStore(db.db),
+      // Same retention config the worker resolves, so `purge_after` is computed identically by both processes.
+      ...(env.PRECHECKIN_RETENTION_DAYS
+        ? {
+            retention: {
+              retentionDays: env.PRECHECKIN_RETENTION_DAYS,
+              handoffGraceMs: (env.PRECHECKIN_HANDOFF_GRACE_DAYS ?? 7) * 24 * 60 * 60 * 1000,
+            },
+          }
+        : {}),
       ...(env.PRECHECKIN_CONSENT_TEXT_VERSION ? { consentTextVersion: env.PRECHECKIN_CONSENT_TEXT_VERSION } : {}),
     },
     // Shared with the worker through the same DATABASE_URL: consent recorded here

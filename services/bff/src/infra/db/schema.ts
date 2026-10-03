@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -25,6 +26,13 @@ import {
  * + `passenger_ref` (SIR remains the source of truth — see design's Data
  * Model section); nothing here duplicates SIR data long-term.
  */
+
+/** Postgres `bytea` as a Node `Buffer` (envelope-encryption material only; never document content). */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const consentPurpose = pgEnum("consent_purpose", [
   "analytics",
@@ -340,6 +348,68 @@ export const staffAlert = pgTable(
         STAFF_ALERT_PAYLOAD_KEYS.map((key) => sql.raw(`'${key}'`)),
         sql.raw(", "),
       )}]::text[]) = '{}'::jsonb`,
+    ),
+  ],
+);
+
+/** Mirror `PrecheckinSubmissionStatus` / `DocumentType` (modules/precheckin/ports.ts, contracts): closed sets, so enums. */
+export const precheckinSubmissionStatus = pgEnum("precheckin_submission_status", ["received", "handed_off", "purged"]);
+export const precheckinDocType = pgEnum("precheckin_doc_type", ["DNI", "PASSPORT", "OTHER"]);
+
+/**
+ * `precheckin_submission` (design Data Model, task 8.3-8.5): written by `bff-api`
+ * (`POST /api/precheckin/:ordinal`), read by the status projection, handed off
+ * and purged by `bff-worker`. SENSITIVE MODULE, so the row holds METADATA and
+ * encrypted-document REFERENCES only: refs, doc type, consent record id, status,
+ * timestamps and, per image, the object key plus the envelope-encryption material
+ * (`wrapped_data_key` = DEK wrapped by the KMS, `iv`, `auth_tag`). The ciphertext
+ * lives in the document store and plaintext never exists server-side outside the
+ * handoff job; no column can hold image bytes or document content.
+ * `UNIQUE(reservation_ref, passenger_ref)` is the `already_submitted` guarantee
+ * (the adapter relies on `ON CONFLICT DO NOTHING`, race-safe across processes);
+ * `purged_shredded` makes crypto-shredding a database invariant. No foreign keys:
+ * `consent_record_id` is a soft audit reference and the handoff/purge scans are
+ * independent of every other table. Partial indexes serve the purge scan
+ * (`purge_after`, non-purged) and the handoff scan (`received`).
+ */
+export const precheckinSubmission = pgTable(
+  "precheckin_submission",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    reservationRef: text("reservation_ref").notNull(),
+    passengerRef: text("passenger_ref").notNull(),
+    docType: precheckinDocType("doc_type").notNull(),
+    consentRecordId: text("consent_record_id").notNull(),
+    status: precheckinSubmissionStatus("status").notNull().default("received"),
+    photoObjectKey: text("photo_object_key").notNull(),
+    photoWrappedDataKey: bytea("photo_wrapped_data_key").notNull(),
+    photoIv: bytea("photo_iv").notNull(),
+    photoAuthTag: bytea("photo_auth_tag").notNull(),
+    idFrontObjectKey: text("id_front_object_key").notNull(),
+    idFrontWrappedDataKey: bytea("id_front_wrapped_data_key").notNull(),
+    idFrontIv: bytea("id_front_iv").notNull(),
+    idFrontAuthTag: bytea("id_front_auth_tag").notNull(),
+    idBackObjectKey: text("id_back_object_key"),
+    idBackWrappedDataKey: bytea("id_back_wrapped_data_key"),
+    idBackIv: bytea("id_back_iv"),
+    idBackAuthTag: bytea("id_back_auth_tag"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    handedOffAt: timestamp("handed_off_at", { withTimezone: true }),
+    purgeAfter: timestamp("purge_after", { withTimezone: true }).notNull(),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("precheckin_submission_passenger_unique").on(table.reservationRef, table.passengerRef),
+    index("precheckin_submission_purge_after_idx").on(table.purgeAfter).where(sql`${table.status} <> 'purged'`),
+    index("precheckin_submission_pending_handoff_idx").on(table.seq).where(sql`${table.status} = 'received'`),
+    check(
+      "precheckin_submission_id_back_all_or_none",
+      sql`(${table.idBackObjectKey} IS NULL) = (${table.idBackWrappedDataKey} IS NULL) AND (${table.idBackObjectKey} IS NULL) = (${table.idBackIv} IS NULL) AND (${table.idBackObjectKey} IS NULL) = (${table.idBackAuthTag} IS NULL)`,
+    ),
+    check(
+      "precheckin_submission_purged_shredded",
+      sql`${table.status} <> 'purged' OR (octet_length(${table.photoWrappedDataKey}) = 0 AND octet_length(${table.photoIv}) = 0 AND octet_length(${table.photoAuthTag}) = 0 AND octet_length(${table.idFrontWrappedDataKey}) = 0 AND octet_length(${table.idFrontIv}) = 0 AND octet_length(${table.idFrontAuthTag}) = 0 AND coalesce(octet_length(${table.idBackWrappedDataKey}), 0) = 0 AND coalesce(octet_length(${table.idBackIv}), 0) = 0 AND coalesce(octet_length(${table.idBackAuthTag}), 0) = 0)`,
     ),
   ],
 );
