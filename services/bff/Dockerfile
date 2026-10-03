@@ -14,6 +14,12 @@
 FROM node:22-alpine AS base
 RUN corepack enable
 WORKDIR /workspace
+# Optional TLS-interception CA (corporate proxy / antivirus). Any *.crt placed
+# in docker/certs/ (git-ignored) is trusted by Node via NODE_EXTRA_CA_CERTS.
+# Empty by default, so a clean checkout builds exactly as before.
+COPY docker/certs/ /tmp/extra-certs/
+RUN cat /tmp/extra-certs/*.crt > /etc/extra-ca.pem 2>/dev/null || : > /etc/extra-ca.pem
+ENV NODE_EXTRA_CA_CERTS=/etc/extra-ca.pem
 
 # ---- deps: install the full workspace once, cached by Docker's layer cache
 # keyed only on manifests/lockfile — a source-only change below does not
