@@ -41,31 +41,65 @@ export const consentPurpose = pgEnum("consent_purpose", [
   "precheckin_biometric",
 ]);
 
-export const accessLink = pgTable("access_link", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tokenHash: text("token_hash").notNull().unique(),
-  reservationRef: text("reservation_ref").notNull(),
-  /** Empty array means "all passengers on the reservation" per the design. */
-  passengerScope: text("passenger_scope").array().notNull().default([]),
-  localeHint: text("locale_hint"),
-  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  supersededBy: uuid("superseded_by").references((): AnyPgColumn => accessLink.id),
-  issueChannel: text("issue_channel").notNull(),
-});
+/**
+ * `access_link`: one passenger link, shared by `bff-api` (issue, reissue, session
+ * exchange, every capability's `findById`) and `bff-worker` (journey-poll's
+ * `listActive`). SECURITY: only the SHA-256 hex digest of the token is stored
+ * (`token_hash`, UNIQUE = the lookup index); no column can hold a raw token.
+ * `seq` is the insertion order ("newest wins" when a reissue supersedes the
+ * previous links); `superseded_by` implies `revoked_at` and never points at the
+ * row itself (CHECK). Expiry is judged by use cases, not by the store.
+ * `consent_record.link_id` and `push_subscription.link_id` stay SOFT references
+ * (no FK): rows written while links were in-memory would violate one.
+ */
+export const accessLink = pgTable(
+  "access_link",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: text("token_hash").notNull().unique(),
+    reservationRef: text("reservation_ref").notNull(),
+    /** Empty array means "all passengers on the reservation" per the design. */
+    passengerScope: text("passenger_scope").array().notNull().default([]),
+    localeHint: text("locale_hint"),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    supersededBy: uuid("superseded_by").references((): AnyPgColumn => accessLink.id),
+    issueChannel: text("issue_channel").notNull(),
+  },
+  (table) => [
+    index("access_link_active_reservation_idx")
+      .on(table.reservationRef, table.seq)
+      .where(sql`${table.revokedAt} IS NULL`),
+    check(
+      "access_link_superseded_implies_revoked",
+      sql`${table.supersededBy} IS NULL OR (${table.revokedAt} IS NOT NULL AND ${table.supersededBy} <> ${table.id})`,
+    ),
+  ],
+);
 
-export const session = pgTable("session", {
-  idHash: text("id_hash").primaryKey(),
-  linkId: uuid("link_id")
-    .notNull()
-    .references(() => accessLink.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  locale: text("locale").notNull(),
-  userAgentClass: text("user_agent_class"),
-});
+/**
+ * `session`: SECURITY: `id_hash` (primary key) is the SHA-256 hex digest of the
+ * `__Host-th_sess` cookie value; the raw session id is never stored. `expires_at`
+ * is fixed at exchange (`min(now + sliding, link.expires_at)`); the FK keeps every
+ * session bound to a real link (a revoked link kills its sessions at resolve time).
+ */
+export const session = pgTable(
+  "session",
+  {
+    idHash: text("id_hash").primaryKey(),
+    linkId: uuid("link_id")
+      .notNull()
+      .references(() => accessLink.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    locale: text("locale").notNull(),
+    userAgentClass: text("user_agent_class"),
+  },
+  (table) => [index("session_link_id_idx").on(table.linkId)],
+);
 
 /**
  * Append-only consent log shared by `bff-api` and `bff-worker`. `link_id` is

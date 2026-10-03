@@ -16,6 +16,7 @@ describe("access_link table", () => {
     expect(getTableName(accessLink)).toBe("access_link");
     expect(Object.keys(getTableColumns(accessLink)).sort()).toEqual(
       [
+        "seq",
         "id",
         "tokenHash",
         "reservationRef",
