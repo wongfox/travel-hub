@@ -18,7 +18,7 @@ Strict TDD (bff: `pnpm --filter bff exec vitest run --no-file-parallelism`); fol
 - [x] T2 Schema + migration for `wifi_order` (+ idempotency-key uniqueness).
 - [x] T3 Postgres adapter implementing the full store contract incl. atomic compare-and-swap `transition`; contract/conformance tests run against both in-memory and Postgres.
 - [x] T4 Wire it in `main-api.ts` and `main-worker.ts` (same `DATABASE_URL`); keep the production guard; compose/infra env consistent.
-- [ ] T5 Real end-to-end check: api + worker against Postgres in docker compose (order created via API, activated by the worker); update KNOWN-GAPS/docs.
+- [x] T5 Real end-to-end check: api + worker against Postgres in docker compose (order created via API, activated by the worker); update KNOWN-GAPS/docs.
 
 ## Acceptance
 RED-first tests per task, turbo typecheck/lint/test green, real Postgres run evidenced, E2E container run still 20 passed, one commit per task.
@@ -51,3 +51,13 @@ RED-first tests per task, turbo typecheck/lint/test green, real Postgres run evi
 - Migrations: compose gets a one-shot `bff-migrate` service (`node dist/infra/db/migrate.js`, same image) that bff-api/bff-worker wait for (`service_completed_successfully`). No Postgres migration step existed before. Production: run the same command as a one-off task before deploy (infra/compute.tf already injects the same DATABASE_URL secret into api and worker via `shared_container_secrets`; no terraform change needed).
 - `migrate-path.test.ts` (2 tests) covers src/dist migrations-folder resolution. Entry points have no unit tests; proven in T5.
 - tsc/eslint clean; full vitest with TEST_DATABASE_URL green.
+
+### T5 evidence (real compose stack)
+- `docker compose build` + `up -d bff-migrate bff-api bff-worker`: bff-migrate exited 0 ("migrations applied"), bff-api healthy (main-api with the Postgres store), bff-worker "booted with 10 job(s) registered".
+- `wifi.checkout` is off by default and production has no flag override (gap B), so a THROWAWAY flagged api process (same wiring as main-api: `buildApp` + `createPostgresWifiOrderStore` over the same DATABASE_URL, stub gateway + link delivery, run via `docker exec` in the bff-api container, not committed) served real HTTP: POST /internal/links 201 -> POST /api/session 200 -> POST /api/wifi/orders 201 (PAYMENT_PENDING) -> signed stub webhook 200 -> PAID.
+- The REAL bff-worker container (separate process, its own pool) then advanced order 35f2fa61-... via its 60s scan: SQL polling showed PAID -> ENTITLEMENT_ACTIVE (entitlement_ref set, ~60s) -> sir_registered_at and receipt_issued_at set (~2 min). `wifi_order_event` rows seq 1-5: CREATED->PAYMENT_PENDING, ->PAID, ->ENTITLEMENT_ACTIVE, two same-status progress events.
+- Docs: e2e/KNOWN-GAPS.md gap C updated.
+
+### Final checks
+- `turbo run typecheck lint test --filter=bff --filter=web --filter=contracts --filter=e2e`: 13/13 tasks ok; under turbo TEST_DATABASE_URL is not forwarded so the 2 DB-backed files are SKIPPED (explicit warning, 14 tests skipped); with TEST_DATABASE_URL set, direct vitest: 121 files / 775 passed.
+- E2E container run: 20 passed.
