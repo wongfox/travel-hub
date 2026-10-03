@@ -15,8 +15,12 @@ Strict TDD (`pnpm --filter bff exec vitest run --no-file-parallelism`, DB tests 
 
 ## Tasks
 - [x] T1 Scheduler: generalize/reuse helper + tests for the analytics queue.
-- [ ] T2 Wire in `main-worker.ts` (+ env interval, shutdown stop) and prove it on the compose stack: pending rows written to Postgres get `forwarded_at` set by the real worker without a manual enqueue.
-- [ ] T3 Docs/KNOWN-GAPS update; final turbo + E2E runs.
+- [x] T2 Wire in `main-worker.ts` (+ env interval, shutdown stop) and prove it on the compose stack: pending rows written to Postgres get `forwarded_at` set by the real worker without a manual enqueue.
+- [x] T3 Docs/KNOWN-GAPS update; final turbo + E2E runs.
 
 ## Progress / evidence
 - T1: RED (missing schedule-queue-scans module, `scheduleAnalyticsForward is not a function`) then GREEN: infra/queue/schedule-queue-scans.ts generic helper; scheduleWifiOrderScans and new scheduleAnalyticsForward delegate to it. 11 files / 67 tests pass incl. unchanged wifi scheduler tests; tsc + eslint clean. Commit: 2a56b59
+
+- T2 (24ffb6e): env tests RED (2 failing) then GREEN; main-worker starts `scheduleAnalyticsForward` only if `analytics-forward` is in `jobsRegistered`, interval = ANALYTICS_FORWARD_INTERVAL_SECONDS (default 60, positive int); stop functions for both wifi and analytics schedulers now called in SIGTERM/SIGINT shutdown (wifi stop was previously not called). Compose proof (interval 3s, temp compose edit reverted): consent granted + 3 pending rows for HMAC trip_hash of RES-SCHED-1 -> poll `14:50:44|3|0` then `14:50:46|0|3` (forwarded_at - created_at = 2.1s), no manual enqueue. Rows deleted (counts 0). Worker log shows "received SIGTERM, stopping". Compose restored to default (env unset -> 60s).
+- T3 (9cab1c1): e2e/KNOWN-GAPS.md updated; handoff/purge/push/pulse scans listed as follow-ups.
+- Final: turbo typecheck/lint/test (bff 824 passed, 32 DB tests skipped without TEST_DATABASE_URL) 13/13 OK; E2E container 20 passed.
