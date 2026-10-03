@@ -42,7 +42,7 @@ Branch 33's inventory (`odd/tasks/schedule-remaining-scans.md`, commit 941e122 o
 
 ### S2 sub-tasks (route: delegated direct, single writer; Strict TDD, same runner/TEST_DATABASE_URL as S1; TDD mode source: project config "Strict TDD Mode: enabled")
 - [x] S2-T1 contracts/conventions recorded (this section)
-- [ ] S2-T2 `pulse_response` store (migration 0007 + adapter + conformance)
+- [x] S2-T2 `pulse_response` store (migration `0007_pulse_response` + adapter + conformance): RED = migration tests + adapter import failed first; GREEN = 110 passed (pulse, infra/db, adapter) with TEST_DATABASE_URL, conformance 12 cases on in-memory and Postgres incl. boundary `purgeAfter == asOf` and 8 concurrent creates (exactly one wins). Mutations: `lte`->`lt` failed the boundary case; removing `onConflictDoNothing` failed 3 cases (duplicate, error shape, concurrency); both restored. tsc + eslint clean.
 - [ ] S2-T3 `staff_alert` store (migration 0008 + adapter + conformance)
 - [ ] S2-T4 wiring api + worker + production guards
 - [ ] S2-T5 real compose check + KNOWN-GAPS

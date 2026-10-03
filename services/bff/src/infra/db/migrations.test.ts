@@ -164,3 +164,22 @@ describe("notification migration", () => {
     expect(all).toMatch(/CREATE TYPE "public"\."notification_status" AS ENUM\('pending', 'sent', 'failed', 'skipped_policy'\)/);
   });
 });
+
+describe("pulse_response migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("enforces one response per passenger/leg as a UNIQUE constraint (the spec's idempotency lives in Postgres)", () => {
+    expect(all).toMatch(/CREATE TABLE "pulse_response"/);
+    expect(all).toMatch(
+      /CONSTRAINT "pulse_response_passenger_leg_unique" UNIQUE\("reservation_ref","passenger_ref","leg_ref"\)/,
+    );
+  });
+
+  it("indexes purge_after for the retention purge scan", () => {
+    expect(all).toMatch(/CREATE INDEX "pulse_response_purge_after_idx" ON "pulse_response" USING btree \("purge_after"\)/);
+  });
+});

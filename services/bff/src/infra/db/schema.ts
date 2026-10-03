@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -253,3 +254,31 @@ export const notification = pgTable("notification", {
   sentAt: timestamp("sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * `pulse_response` (design Data Model, task 11.4): written by `bff-api`
+ * (`POST /api/pulse`), listed and purged by `bff-worker` (`pulse-purge`).
+ * One response per passenger/leg is the UNIQUE constraint itself (the adapter
+ * relies on `ON CONFLICT DO NOTHING`, race-safe across processes). Keyed by
+ * SIR references only (no access-link reference), so no FK is involved.
+ * `purge_after` (= answered_at + retention) is indexed for the purge scan;
+ * `seq` is the insertion order `list()` returns.
+ */
+export const pulseResponse = pgTable(
+  "pulse_response",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    reservationRef: text("reservation_ref").notNull(),
+    passengerRef: text("passenger_ref").notNull(),
+    legRef: text("leg_ref").notNull(),
+    score: integer("score").notNull(),
+    locale: text("locale").notNull(),
+    answeredAt: timestamp("answered_at", { withTimezone: true }).notNull(),
+    purgeAfter: timestamp("purge_after", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    unique("pulse_response_passenger_leg_unique").on(table.reservationRef, table.passengerRef, table.legRef),
+    index("pulse_response_purge_after_idx").on(table.purgeAfter),
+  ],
+);
