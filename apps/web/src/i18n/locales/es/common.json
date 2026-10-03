@@ -20,5 +20,16 @@
     "prime": "Prime",
     "firstClass": "Primera Clase",
     "unknown": "Estándar"
+  },
+  "tripAccess": {
+    "loading": "Abriendo tu viaje…",
+    "invalidLink": "Este enlace ya no es válido.",
+    "relinkForm": {
+      "reservationRef": "Código de reserva",
+      "surname": "Apellido",
+      "submit": "Enviarme un nuevo enlace",
+      "confirmation": "Si esos datos coinciden con una reserva, te enviamos un nuevo enlace.",
+      "error": "Ocurrió un error. Inténtalo de nuevo."
+    }
   }
 }

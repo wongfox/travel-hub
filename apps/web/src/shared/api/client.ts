@@ -61,9 +61,13 @@ export interface ApiClient {
  */
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const baseUrl = options.baseUrl ?? "";
-  const fetchImpl = options.fetchImpl ?? fetch;
 
   async function request<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
+    // Resolved per call (not captured once at creation time) so a
+    // module-level singleton client (e.g. `route-tree.tsx`'s
+    // `defaultApiClient`) still observes a `fetch` replaced or stubbed
+    // after the client was constructed.
+    const fetchImpl = options.fetchImpl ?? fetch;
     const { body, headers, credentials, ...rest } = init;
 
     const response = await fetchImpl(`${baseUrl}${path}`, {
