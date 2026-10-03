@@ -108,3 +108,59 @@ describe("analytics_event migration", () => {
     expect(all).toMatch(/CREATE INDEX "analytics_event_trip_hash_idx" ON "analytics_event" USING btree \("trip_hash"\)/);
   });
 });
+
+describe("pii_access_audit shared-store migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("adds a monotonic seq and an index for per-subject lookups", () => {
+    expect(all).toMatch(/ALTER TABLE "pii_access_audit" ADD COLUMN "seq" bigint NOT NULL GENERATED ALWAYS AS IDENTITY/);
+    expect(all).toMatch(/CREATE INDEX "pii_access_audit_subject_idx" ON "pii_access_audit" USING btree \("subject_type","subject_id","seq"\)/);
+  });
+
+  it("makes the table append-only with a trigger that rejects UPDATE and DELETE", () => {
+    expect(all).toMatch(/CREATE TRIGGER pii_access_audit_append_only\s+BEFORE UPDATE OR DELETE ON "pii_access_audit"/);
+  });
+});
+
+describe("push_subscription migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+  const table = all.match(/CREATE TABLE "push_subscription" \(([\s\S]*?)\n\);/)?.[1] ?? "";
+
+  it("keeps link_id and consent_record_id as plain uuid references (access links are still in-memory: no FK)", () => {
+    expect(table).toMatch(/"link_id" uuid NOT NULL/);
+    expect(table).toMatch(/"consent_record_id" uuid NOT NULL/);
+    expect(all).not.toMatch(/ALTER TABLE "push_subscription" ADD CONSTRAINT/);
+  });
+
+  it("indexes the reservation/link lookups and the expires_at purge scan", () => {
+    expect(all).toMatch(/CREATE INDEX "push_subscription_reservation_idx" ON "push_subscription" USING btree \("reservation_ref"\)/);
+    expect(all).toMatch(/CREATE INDEX "push_subscription_link_idx" ON "push_subscription" USING btree \("link_id"\)/);
+    expect(all).toMatch(/CREATE INDEX "push_subscription_expires_at_idx" ON "push_subscription" USING btree \("expires_at"\)/);
+  });
+});
+
+describe("notification migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("enforces dedupe_key as UNIQUE (the journey-poll dedupe guarantee lives in Postgres)", () => {
+    expect(all).toMatch(/CREATE TABLE "notification"/);
+    expect(all).toMatch(/CONSTRAINT "notification_dedupe_key_unique" UNIQUE\("dedupe_key"\)/);
+  });
+
+  it("restricts channel and status to closed enums", () => {
+    expect(all).toMatch(/CREATE TYPE "public"\."notification_channel" AS ENUM\('banner', 'push'\)/);
+    expect(all).toMatch(/CREATE TYPE "public"\."notification_status" AS ENUM\('pending', 'sent', 'failed', 'skipped_policy'\)/);
+  });
+});

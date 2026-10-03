@@ -13,6 +13,8 @@ import { createDb } from "./infra/db/client.js";
 import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
 import { createPostgresConsentStore } from "./adapters/consent-store/postgres.js";
 import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-store/postgres.js";
+import { createPostgresPushSubscriptionStore } from "./adapters/push-subscription-store/postgres.js";
+import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -89,6 +91,9 @@ async function main(): Promise<void> {
       // (config/go-live-guards.ts) actually enforces its prerequisites
       // against this api process's real boot-time configuration, not a stub.
       nodeEnv: env.NODE_ENV,
+      // Shared with the worker's journey-poll/purge jobs through the same DATABASE_URL
+      // (also reached by the reissue and consent-withdrawal cascades).
+      subscriptionStore: createPostgresPushSubscriptionStore(db.db),
       adapterWebPush: env.ADAPTER_WEB_PUSH,
       vapidConfigured: Boolean(env.PUSH_VAPID_PUBLIC_KEY && env.PUSH_VAPID_PRIVATE_KEY),
       alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
@@ -110,7 +115,11 @@ async function main(): Promise<void> {
     },
     // Shared with the worker through the same DATABASE_URL: consent recorded here
     // is what the worker's analytics forward job re-checks.
-    privacy: { consentStore: createPostgresConsentStore(db.db) },
+    privacy: {
+      consentStore: createPostgresConsentStore(db.db),
+      // Append-only audit of the consent-withdrawal cascade, in the same table the worker's purge jobs write.
+      piiAccessAudit: createPostgresPiiAccessAudit(db.db),
+    },
     analytics: {
       analyticsEventStore: createPostgresAnalyticsEventStore(db.db),
       // Task 12.1: real env-sourced secret, so `trip_hash` pseudonymization

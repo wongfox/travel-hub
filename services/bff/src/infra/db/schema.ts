@@ -88,14 +88,26 @@ export const featureFlag = pgTable("feature_flag", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const piiAccessAudit = pgTable("pii_access_audit", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  actor: text("actor").notNull(),
-  action: text("action").notNull(),
-  subjectType: text("subject_type").notNull(),
-  subjectId: text("subject_id").notNull(),
-  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * Append-only audit log of every unwrap/handoff/purge of personal data, shared
+ * by `bff-api` (consent-withdrawal cascade) and `bff-worker` (pre check-in,
+ * push-subscription and pulse purge jobs). `seq` is the total order (`at` ties
+ * inside one clock tick); a trigger (migration 0004) makes Postgres itself
+ * reject UPDATE/DELETE, so append-only does not depend on the adapter alone.
+ */
+export const piiAccessAudit = pgTable(
+  "pii_access_audit",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    actor: text("actor").notNull(),
+    action: text("action").notNull(),
+    subjectType: text("subject_type").notNull(),
+    subjectId: text("subject_id").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("pii_access_audit_subject_idx").on(table.subjectType, table.subjectId, table.seq)],
+);
 
 /** Mirrors `WifiOrderStatusSchema` (contracts/src/wifi.ts); a closed set, so an enum like `consent_purpose`. */
 export const wifiOrderStatus = pgEnum("wifi_order_status", [
@@ -183,3 +195,61 @@ export const analyticsEvent = pgTable(
     index("analytics_event_trip_hash_idx").on(table.tripHash),
   ],
 );
+
+/**
+ * `push_subscription` (design Data Model, task 11.1): written by `bff-api`
+ * (subscribe, consent-withdrawal and link-reissue deletes), read/purged by
+ * `bff-worker` (journey fan-out, retention purge). `link_id` and
+ * `consent_record_id` are uuid audit references WITHOUT foreign keys: access
+ * links are still process-local in-memory stores, so an FK to `access_link`
+ * would reject every insert (same reason as `consent_record.link_id`).
+ * `endpoint`/`p256dh`/`auth` are push secrets: stored as given, never logged.
+ * `seq` is the insertion order; `expires_at` (= link expiry) drives the purge.
+ */
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: uuid("id").primaryKey().defaultRandom(),
+    linkId: uuid("link_id").notNull(),
+    reservationRef: text("reservation_ref").notNull(),
+    /** Empty array means "all passengers on the reservation". */
+    passengerScope: text("passenger_scope").array().notNull().default([]),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    locale: text("locale").notNull(),
+    consentRecordId: uuid("consent_record_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("push_subscription_reservation_idx").on(table.reservationRef),
+    index("push_subscription_link_idx").on(table.linkId),
+    index("push_subscription_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+/** Mirror `NotificationChannel` / `NotificationStatus` (modules/notifications/ports.ts): closed sets, so enums like `consent_purpose`. */
+export const notificationChannel = pgEnum("notification_channel", ["banner", "push"]);
+export const notificationStatus = pgEnum("notification_status", ["pending", "sent", "failed", "skipped_policy"]);
+
+/**
+ * `notification` (design Data Model, task 11.2): written and updated by the
+ * worker's journey-poll job. `dedupe_key` is UNIQUE: a repeated journey event
+ * can never produce a second row, enforced by Postgres (the adapter relies on
+ * `ON CONFLICT DO NOTHING`, race-safe across processes). Holds no PII beyond
+ * the reservation reference.
+ */
+export const notification = pgTable("notification", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reservationRef: text("reservation_ref").notNull(),
+  alertType: text("alert_type").notNull(),
+  sourceEventId: text("source_event_id").notNull(),
+  channel: notificationChannel("channel").notNull(),
+  dedupeKey: text("dedupe_key").notNull().unique(),
+  status: notificationStatus("status").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

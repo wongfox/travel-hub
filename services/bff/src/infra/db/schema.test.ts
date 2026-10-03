@@ -97,7 +97,7 @@ describe("pii_access_audit table", () => {
     expect(getTableName(piiAccessAudit)).toBe("pii_access_audit");
     const columns = getTableColumns(piiAccessAudit);
     expect(Object.keys(columns).sort()).toEqual(
-      ["id", "actor", "action", "subjectType", "subjectId", "at"].sort(),
+      ["seq", "id", "actor", "action", "subjectType", "subjectId", "at"].sort(),
     );
     expect(columns.actor.notNull).toBe(true);
     expect(columns.action.notNull).toBe(true);

@@ -2,10 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { CreatePushSubscriptionInput, PushSubscriptionRecord, PushSubscriptionStore } from "./ports.js";
 
 /**
- * Deterministic, in-memory `PushSubscriptionStore` (task 11.1), same
- * in-memory-port-first convention as `AccessLinkStore`/`ConsentStore`: unit
- * testable without a live Postgres instance until a Drizzle-backed adapter
- * over the design's `push_subscription` table lands.
+ * Deterministic, in-memory `PushSubscriptionStore` (task 11.1): the dev/test
+ * default; `adapters/push-subscription-store/postgres.ts` is the shared
+ * Postgres implementation (same conformance suite) for api + worker.
  */
 export function createInMemoryPushSubscriptionStore(now: () => Date = () => new Date()): PushSubscriptionStore {
   const byId = new Map<string, PushSubscriptionRecord>();
@@ -22,7 +21,7 @@ export function createInMemoryPushSubscriptionStore(now: () => Date = () => new 
         auth: input.auth,
         locale: input.locale,
         consentRecordId: input.consentRecordId,
-        createdAt: new Date().toISOString(),
+        createdAt: now().toISOString(),
         expiresAt: input.expiresAt,
       };
       byId.set(record.id, record);

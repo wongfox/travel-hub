@@ -12,11 +12,11 @@ import {
  * 11): keyed by `dedupeKey` itself, so a second `create()` for an
  * already-seen `dedupeKey` is REJECTED by the store, not merely discouraged
  * by a caller-side check — this is the actual substitute for the design's
- * real Postgres `unique` index on `notification.dedupe_key` (documented
- * in-memory-port-first deviation, same convention as every other store in
- * this module set until a Drizzle-backed adapter lands).
+ * real Postgres `unique` index on `notification.dedupe_key`. This is the
+ * dev/test default; `adapters/notification-store/postgres.ts` is the shared
+ * Postgres implementation (same conformance suite) for api + worker.
  */
-export function createInMemoryNotificationStore(): NotificationStore {
+export function createInMemoryNotificationStore(now: () => Date = () => new Date()): NotificationStore {
   const byDedupeKey = new Map<string, NotificationRecord>();
   const byId = new Map<string, NotificationRecord>();
 
@@ -36,7 +36,7 @@ export function createInMemoryNotificationStore(): NotificationStore {
         status: input.status,
         attempts: 0,
         sentAt: null,
-        createdAt: new Date().toISOString(),
+        createdAt: now().toISOString(),
       };
       byDedupeKey.set(record.dedupeKey, record);
       byId.set(record.id, record);

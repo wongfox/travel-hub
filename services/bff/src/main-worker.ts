@@ -12,6 +12,9 @@ import { createDb } from "./infra/db/client.js";
 import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgres.js";
 import { createPostgresConsentStore } from "./adapters/consent-store/postgres.js";
 import { createPostgresAnalyticsEventStore } from "./adapters/analytics-event-store/postgres.js";
+import { createPostgresPushSubscriptionStore } from "./adapters/push-subscription-store/postgres.js";
+import { createPostgresNotificationStore } from "./adapters/notification-store/postgres.js";
+import { createPostgresPiiAccessAudit } from "./adapters/pii-access-audit/postgres.js";
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -22,6 +25,8 @@ async function main(): Promise<void> {
   // Same DATABASE_URL and store implementation as the api process, so the
   // jobs below see every order the api wrote.
   const db = createDb(env.DATABASE_URL);
+  // One append-only audit sink for every job that audits a handoff/purge.
+  const piiAccessAudit = createPostgresPiiAccessAudit(db.db);
   const result = await startWorker({
     queueClient,
     precheckin: {
@@ -30,6 +35,7 @@ async function main(): Promise<void> {
       // against this worker's real boot-time configuration, not a stub.
       flags,
       nodeEnv: env.NODE_ENV,
+      piiAccessAudit,
       adapterPrecheckinHandoff: env.ADAPTER_PRECHECKIN_HANDOFF,
       ...(env.PRECHECKIN_RETENTION_POLICY_ID
         ? { retentionPolicyId: env.PRECHECKIN_RETENTION_POLICY_ID }
@@ -66,6 +72,10 @@ async function main(): Promise<void> {
       // against this worker's real boot-time configuration, not a stub.
       flags,
       nodeEnv: env.NODE_ENV,
+      // The very tables the api writes: subscriptions to fan out to / purge, notification dedupe, audit.
+      subscriptionStore: createPostgresPushSubscriptionStore(db.db),
+      notificationStore: createPostgresNotificationStore(db.db),
+      piiAccessAudit,
       adapterWebPush: env.ADAPTER_WEB_PUSH,
       vapidConfigured: Boolean(env.PUSH_VAPID_PUBLIC_KEY && env.PUSH_VAPID_PRIVATE_KEY),
       alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
@@ -79,6 +89,7 @@ async function main(): Promise<void> {
       // against this worker's real boot-time configuration, not a stub.
       flags,
       nodeEnv: env.NODE_ENV,
+      piiAccessAudit,
       adapterStaffAlert: env.ADAPTER_STAFF_ALERT,
       ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),
       ...(env.STAFF_ALERT_PROTOCOL_REF

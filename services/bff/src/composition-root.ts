@@ -634,6 +634,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     pulseStaffAlerts: {},
   });
 
+  // The api writes subscriptions (and audits the consent-withdrawal cascade) that the
+  // worker's journey-poll and purge jobs read: both must be the shared Postgres stores.
+  assertSharedPushStores("buildApp", notificationsNodeEnv, notificationsFlags["push.enabled"], {
+    subscriptionStore: notificationsOptions.subscriptionStore,
+    piiAccessAudit: privacyOptions.piiAccessAudit,
+  });
+
   registerNotificationRoutes(app, {
     accessLinkStore,
     sessionStore,
@@ -666,6 +673,12 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   };
   assertGoLiveGuard("pulse.capture", pulseFlags["pulse.capture"], pulseGoLiveContext);
   assertGoLiveGuard("pulse.staff_alerts", pulseFlags["pulse.staff_alerts"], pulseGoLiveContext);
+  assertSharedPiiAccessAudit(
+    "buildApp",
+    pulseNodeEnv,
+    pulseFlags["pulse.capture"] || pulseFlags["pulse.staff_alerts"],
+    privacyOptions.piiAccessAudit,
+  );
 
   // R3-002: so a configured STAFF_ALERT_RETENTION_DAYS reaches purgeAfter.
   const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays });
@@ -711,6 +724,56 @@ function assertSharedAnalyticsStores(
         "process-local in-memory ConsentStore (the worker would never see the api's consent).",
     );
   }
+}
+
+/**
+ * `pii_access_audit` is append-only evidence written by both processes (the api's
+ * consent-withdrawal cascade, the worker's handoff/purge jobs); in a production-like
+ * environment an audit trail kept in a process-local array is lost on restart and split
+ * between processes, so the shared Postgres audit is required whenever a feature that
+ * writes it is on.
+ */
+function assertSharedPiiAccessAudit(
+  who: "buildApp" | "startWorker",
+  nodeEnv: NodeEnvName | undefined,
+  featureOn: boolean,
+  piiAccessAudit: unknown,
+): void {
+  if (!featureOn || !isProductionLike(nodeEnv ?? "development")) return;
+  if (!piiAccessAudit) {
+    throw new Error(
+      `${who}: a feature that writes pii_access_audit is on in a production-like environment but no shared ` +
+        "piiAccessAudit is wired in; refusing to start with a process-local in-memory audit (entries would be lost and split between api and worker).",
+    );
+  }
+}
+
+/**
+ * Push spans two processes (the api stores subscriptions, the worker's journey-poll fans out
+ * to them and its purge job deletes expired ones), so with `push.enabled` a production-like
+ * deployment needs the shared subscription store, the shared notification dedupe store (worker
+ * only) and the shared audit; fail loudly instead of running on process-local in-memory maps.
+ */
+function assertSharedPushStores(
+  who: "buildApp" | "startWorker",
+  nodeEnv: NodeEnvName | undefined,
+  pushEnabled: boolean,
+  stores: { subscriptionStore: unknown; notificationStore?: unknown; piiAccessAudit: unknown; requireNotificationStore?: boolean },
+): void {
+  if (!pushEnabled || !isProductionLike(nodeEnv ?? "development")) return;
+  if (!stores.subscriptionStore) {
+    throw new Error(
+      `${who}: push.enabled is on in a production-like environment but no shared subscriptionStore is wired in; ` +
+        "refusing to start with a process-local in-memory PushSubscriptionStore (api and worker would never see each other's subscriptions).",
+    );
+  }
+  if (stores.requireNotificationStore && !stores.notificationStore) {
+    throw new Error(
+      `${who}: push.enabled is on in a production-like environment but no shared notificationStore is wired in; ` +
+        "refusing to start with a process-local in-memory NotificationStore (dedupe would not survive a restart or a second worker).",
+    );
+  }
+  assertSharedPiiAccessAudit(who, nodeEnv, true, stores.piiAccessAudit);
 }
 
 export interface WorkerBootResult {
@@ -923,6 +986,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     pulseStaffAlerts: {},
     });
 
+    assertSharedPiiAccessAudit("startWorker", nodeEnv, flags["precheckin.production_collection"], p.piiAccessAudit);
+
     const jobDeps = {
       submissionStore: p.submissionStore ?? createInMemorySubmissionStore(),
       documentStore: p.documentStore ?? createPrecheckinDocumentStoreStub(),
@@ -1058,6 +1123,15 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
     pulseStaffAlerts: {},
     });
 
+    // The worker reads the subscriptions the api wrote, dedupes notifications across restarts
+    // and audits its purges: never worker-local in-memory stores once push is live.
+    assertSharedPushStores("startWorker", nodeEnv, flags["push.enabled"], {
+      subscriptionStore: n.subscriptionStore,
+      notificationStore: n.notificationStore,
+      piiAccessAudit: n.piiAccessAudit,
+      requireNotificationStore: true,
+    });
+
     const journeyEventSource =
       n.journeyEventSource ??
       createSirPollingJourneyEventAdapter({
@@ -1128,6 +1202,8 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
         ...(p.staffAlertRetentionDays ? { retentionDays: p.staffAlertRetentionDays } : {}),
       },
     });
+
+    assertSharedPiiAccessAudit("startWorker", nodeEnv, flags["pulse.capture"] || flags["pulse.staff_alerts"], p.piiAccessAudit);
 
     const sharedStaffAlertStore = p.staffAlertStore ?? createInMemoryStaffAlertStore(pulseNow, pulseRetention);
     const sharedPulseResponseStore = p.pulseResponseStore ?? createInMemoryPulseResponseStore(pulseNow, pulseRetention);
