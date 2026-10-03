@@ -3,12 +3,13 @@ import type { KeyManagementPort } from "../../infra/crypto/key-management-port.j
 import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import { tightenPurgeAfter, type RetentionConfig } from "./retention.js";
-import type {
-  PrecheckinDocumentStorePort,
-  PrecheckinHandoffPort,
-  PrecheckinSubmissionRecord,
-  PrecheckinSubmissionStore,
-  StoredPrecheckinImage,
+import {
+  AlreadyHandedOffError,
+  type PrecheckinDocumentStorePort,
+  type PrecheckinHandoffPort,
+  type PrecheckinSubmissionRecord,
+  type PrecheckinSubmissionStore,
+  type StoredPrecheckinImage,
 } from "./ports.js";
 
 const HANDOFF_ACTOR = "worker:precheckin-handoff-job";
@@ -130,8 +131,11 @@ export async function runHandoffJob(deps: HandoffJobDeps): Promise<HandoffJobRes
     try {
       await handOffOne(submission, now, deps);
       handedOff += 1;
-    } catch {
-      failed += 1;
+    } catch (error) {
+      // An overlapping run won the compare-and-swap on `status = 'received'`: the downstream
+      // delivery is idempotent on `submission.id`, so this run simply skips (neither a
+      // handoff nor a failure) and the winner's handedOffAt/purgeAfter stay intact.
+      if (!(error instanceof AlreadyHandedOffError)) failed += 1;
     }
   }
 

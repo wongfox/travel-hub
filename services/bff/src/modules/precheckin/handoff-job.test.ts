@@ -197,6 +197,27 @@ describe("runHandoffJob", () => {
     expect(updated?.status).toBe("handed_off");
   });
 
+  it("skips cleanly, without counting a handoff, when an overlapping run already handed the submission off", async () => {
+    const deps = buildDeps();
+    await seedSubmission(deps.submissionStore, deps.documentStore, deps.kms);
+
+    const realMarkHandedOff = deps.submissionStore.markHandedOff;
+    const racedSubmissionStore: typeof deps.submissionStore = {
+      ...deps.submissionStore,
+      async markHandedOff(id, handedOffAt, purgeAfter) {
+        // The overlapping run commits its handoff first; this run's compare-and-swap then loses.
+        await realMarkHandedOff(id, "2026-01-01T12:00:00.000Z", purgeAfter);
+        return realMarkHandedOff(id, handedOffAt, purgeAfter);
+      },
+    };
+
+    const result = await runHandoffJob({ ...deps, submissionStore: racedSubmissionStore });
+
+    expect(result).toEqual({ processed: 1, handedOff: 0, failed: 0 });
+    const stored = await deps.submissionStore.findByPassenger("RES-1001", "PAX-1");
+    expect(stored?.handedOffAt).toBe("2026-01-01T12:00:00.000Z");
+  });
+
   it("does nothing when there are no pending submissions", async () => {
     const deps = buildDeps();
 

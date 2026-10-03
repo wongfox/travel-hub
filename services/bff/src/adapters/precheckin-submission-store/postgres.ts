@@ -3,6 +3,7 @@ import type { DocumentType } from "contracts";
 import type { Db } from "../../infra/db/client.js";
 import { precheckinSubmission } from "../../infra/db/schema.js";
 import {
+  AlreadyHandedOffError,
   AlreadySubmittedError,
   type CreatePrecheckinSubmissionInput,
   type PrecheckinSubmissionRecord,
@@ -71,8 +72,10 @@ function toRecord(row: SubmissionRow): PrecheckinSubmissionRecord {
  * - `create` is one `INSERT ... ON CONFLICT DO NOTHING RETURNING` over
  *   `UNIQUE(reservation_ref, passenger_ref)`: concurrent submissions cannot both
  *   win and the loser gets `AlreadySubmittedError` without touching the winner.
- * - `markHandedOff` only ever tightens `purge_after` (`LEAST`) and refuses a
- *   purged submission (its key material is gone).
+ * - `markHandedOff` is a compare-and-swap (`WHERE status = 'received'`): of several
+ *   overlapping runs exactly one wins, the others get `AlreadyHandedOffError` and the
+ *   winner's `handed_off_at`/`purge_after` stay untouched. It only ever tightens
+ *   `purge_after` (`LEAST`) and refuses a purged submission (its key material is gone).
  * - `markPurged` crypto-shreds in the same UPDATE that flips the status (key
  *   material zeroed, object keys kept); a CHECK enforces that invariant too. It is
  *   guarded by `status <> 'purged'`, so a retried purge is a no-op that returns the
@@ -148,10 +151,17 @@ export function createPostgresPrecheckinSubmissionStore(
           handedOffAt: new Date(handedOffAt),
           purgeAfter: sql`LEAST(${precheckinSubmission.purgeAfter}, ${candidate.toISOString()}::timestamptz)`,
         })
-        .where(and(eq(precheckinSubmission.id, id), ne(precheckinSubmission.status, "purged")))
+        .where(and(eq(precheckinSubmission.id, id), eq(precheckinSubmission.status, "received")))
         .returning();
-      if (!row) throw new Error(`precheckin_submission "${id}" is unknown or already purged and cannot be handed off`);
-      return toRecord(row);
+      if (row) return toRecord(row);
+      // Zero rows: lost the compare-and-swap (already handed off), purged, or unknown.
+      const [existing] = await db
+        .select({ status: precheckinSubmission.status })
+        .from(precheckinSubmission)
+        .where(eq(precheckinSubmission.id, id))
+        .limit(1);
+      if (existing?.status === "handed_off") throw new AlreadyHandedOffError(id);
+      throw new Error(`precheckin_submission "${id}" is unknown or already purged and cannot be handed off`);
     },
 
     async listPastPurgeAfter(asOf: Date): Promise<PrecheckinSubmissionRecord[]> {

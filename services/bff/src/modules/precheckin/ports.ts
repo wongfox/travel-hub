@@ -124,7 +124,7 @@ export interface PrecheckinSubmissionStore {
   create(input: CreatePrecheckinSubmissionInput): Promise<PrecheckinSubmissionRecord>;
   /** Every submission still awaiting handoff (`status === "received"`); the `HandoffJob`'s (task 8.5) input set. */
   listPendingHandoff(): Promise<PrecheckinSubmissionRecord[]>;
-  /** Flips `status` to `"handed_off"`, records `handedOffAt`, and tightens `purgeAfter` (never loosens it). Throws if `id` is unknown. */
+  /** Compare-and-swap `"received"` -> `"handed_off"`: records `handedOffAt` and tightens `purgeAfter` (never loosens it). Exactly one of several overlapping callers wins; the rest throw `AlreadyHandedOffError` and change nothing. Throws a plain error if `id` is unknown or already purged. */
   markHandedOff(id: string, handedOffAt: string, purgeAfter: string): Promise<PrecheckinSubmissionRecord>;
   /** Every submission whose `purgeAfter` has elapsed as of `asOf` and is not already purged; the `PurgeJob`'s (task 8.5) input set. */
   listPastPurgeAfter(asOf: Date): Promise<PrecheckinSubmissionRecord[]>;
@@ -137,6 +137,18 @@ export class AlreadySubmittedError extends Error {
   constructor(reservationRef: string, passengerRef: string) {
     super(`Pre check-in already submitted for reservation "${reservationRef}", passenger "${passengerRef}"`);
     this.name = "AlreadySubmittedError";
+  }
+}
+
+/**
+ * Thrown by `markHandedOff` when the submission is already `"handed_off"`: another
+ * (overlapping) handoff run won the compare-and-swap on `status = 'received'`. The
+ * loser skips cleanly; the winner's `handedOffAt`/`purgeAfter` are left untouched.
+ */
+export class AlreadyHandedOffError extends Error {
+  constructor(id: string) {
+    super(`precheckin_submission "${id}" is already handed off`);
+    this.name = "AlreadyHandedOffError";
   }
 }
 

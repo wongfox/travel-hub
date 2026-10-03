@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { tightenPurgeAfter } from "./retention.js";
 import {
+  AlreadyHandedOffError,
   AlreadySubmittedError,
   type CreatePrecheckinSubmissionInput,
   type PrecheckinSubmissionRecord,
@@ -76,6 +77,8 @@ export function createInMemorySubmissionStore(now: () => Date = () => new Date()
       if (record.status === "purged") {
         throw new Error(`precheckin_submission "${id}" is already purged and can no longer be handed off`);
       }
+      // Compare-and-swap on status: only a "received" submission can be handed off, once.
+      if (record.status === "handed_off") throw new AlreadyHandedOffError(id);
       record.status = "handed_off";
       record.handedOffAt = handedOffAt;
       record.purgeAfter = tightenPurgeAfter(record.purgeAfter, purgeAfter);

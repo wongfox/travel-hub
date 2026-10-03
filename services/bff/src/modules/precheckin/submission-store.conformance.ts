@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  AlreadyHandedOffError,
   AlreadySubmittedError,
   type CreatePrecheckinSubmissionInput,
   type PrecheckinSubmissionStore,
@@ -154,6 +155,33 @@ export function describePrecheckinSubmissionStoreContract(
 
       expect(updated.purgeAfter).toBe("2026-04-01T00:00:00.000Z");
       expect(updated.status).toBe("handed_off");
+    });
+
+    it("markHandedOff is a compare-and-swap: a second call throws AlreadyHandedOffError and keeps the first handedOffAt and purgeAfter", async () => {
+      const created = await store.create(input({ purgeAfter: "2026-12-01T00:00:00.000Z" }));
+      const first = await store.markHandedOff(created.id, "2026-03-11T00:00:00.000Z", "2026-03-18T00:00:00.000Z");
+
+      await expect(store.markHandedOff(created.id, "2026-03-12T00:00:00.000Z", "2026-03-10T00:00:00.000Z")).rejects.toThrow(
+        AlreadyHandedOffError,
+      );
+
+      expect(await store.findByPassenger("RES-1001", "PAX-1")).toEqual(first);
+    });
+
+    it("lets exactly one of several overlapping markHandedOff calls win, the rest being AlreadyHandedOffError", async () => {
+      const created = await store.create(input());
+      const stamps = [1, 2, 3, 4, 5].map((d) => `2026-03-1${d}T00:00:00.000Z`);
+
+      const results = await Promise.allSettled(stamps.map((at) => store.markHandedOff(created.id, at, FAR_PURGE_AFTER)));
+
+      const won = results.filter((r) => r.status === "fulfilled");
+      expect(won).toHaveLength(1);
+      for (const result of results) {
+        if (result.status === "rejected") expect(result.reason).toBeInstanceOf(AlreadyHandedOffError);
+      }
+      const stored = await store.findByPassenger("RES-1001", "PAX-1");
+      expect(stored?.status).toBe("handed_off");
+      expect(stored).toEqual((won[0] as PromiseFulfilledResult<unknown>).value);
     });
 
     it("markHandedOff throws for an unknown (or non-uuid) id and for an already purged submission", async () => {
