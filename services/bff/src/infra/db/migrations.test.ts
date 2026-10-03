@@ -250,3 +250,35 @@ describe("precheckin_submission migration", () => {
     expect(all).toMatch(/CONSTRAINT "precheckin_submission_id_back_all_or_none" CHECK/);
   });
 });
+
+describe("access_link / session shared-store migration", () => {
+  const all = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => readFileSync(join(migrationsDir, f), "utf-8"))
+    .join("\n");
+
+  it("keeps token_hash UNIQUE and stores no raw-token column on access_link or session", () => {
+    expect(all).toMatch(/CONSTRAINT "access_link_token_hash_unique" UNIQUE\("token_hash"\)/);
+    const accessLinkTable = all.slice(all.indexOf('CREATE TABLE "access_link"'));
+    const body = accessLinkTable.slice(0, accessLinkTable.indexOf(");"));
+    expect(body).not.toMatch(/"(token|raw_token|secret)"/i);
+    const sessionTable = all.slice(all.indexOf('CREATE TABLE "session"'));
+    expect(sessionTable.slice(0, sessionTable.indexOf(");"))).not.toMatch(/"(session_id|raw_id|cookie|token)"/i);
+  });
+
+  it("adds an identity seq to access_link (newest-wins order for reissue) and a partial index on active links", () => {
+    expect(all).toMatch(/ALTER TABLE "access_link" ADD COLUMN "seq" bigint NOT NULL GENERATED ALWAYS AS IDENTITY/);
+    expect(all).toMatch(
+      /CREATE INDEX "access_link_active_reservation_idx" ON "access_link" USING btree \("reservation_ref","seq"\) WHERE "access_link"\."revoked_at" IS NULL/,
+    );
+  });
+
+  it("makes supersession a database invariant: superseded_by implies revoked_at and never points at itself", () => {
+    expect(all).toMatch(/CONSTRAINT "access_link_superseded_implies_revoked" CHECK/);
+  });
+
+  it("indexes session.link_id", () => {
+    expect(all).toMatch(/CREATE INDEX "session_link_id_idx" ON "session" USING btree \("link_id"\)/);
+  });
+});

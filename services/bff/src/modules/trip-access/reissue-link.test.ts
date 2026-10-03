@@ -143,4 +143,42 @@ describe("reissueAccessLink", () => {
       reissueAccessLink({ reservationRef: "RES-1001", surname: "gomez", locale: "es" }, deps),
     ).resolves.toBeUndefined();
   });
+
+  it("keeps the previous link working when delivery of the new one fails (nothing is revoked before delivery succeeds)", async () => {
+    const deps = buildDeps(buildSirBookingStub(true));
+    const previous = await issueAccessLink({ reservationRef: "RES-1001", contact: CONTACT, locale: "es" }, deps);
+    const failingDelivery = { deliver: async () => Promise.reject(new Error("delivery down")) };
+
+    await expect(
+      reissueAccessLink({ reservationRef: "RES-1001", surname: "gomez", locale: "es" }, { ...deps, linkDelivery: failingDelivery }),
+    ).rejects.toThrow("delivery down");
+
+    const active = await deps.store.findActiveByReservation("RES-1001");
+    expect(active.map((link) => link.id)).toContain(previous.accessLinkId);
+    expect((await deps.store.findById(previous.accessLinkId))?.revokedAt).toBeNull();
+  });
+
+  it("two concurrent reissues of one reservation leave exactly one active link and delete each revoked link's subscriptions once", async () => {
+    const deps = buildDeps(buildSirBookingStub(true));
+    const pushSubscriptionStore = createInMemoryPushSubscriptionStore();
+    const deleted: string[] = [];
+    const trackedPush = {
+      deleteByLinkId: async (linkId: string) => {
+        deleted.push(linkId);
+        await pushSubscriptionStore.deleteByLinkId(linkId);
+      },
+    };
+    const previous = await issueAccessLink({ reservationRef: "RES-1001", contact: CONTACT, locale: "es" }, deps);
+
+    await Promise.all([
+      reissueAccessLink({ reservationRef: "RES-1001", surname: "gomez", locale: "es" }, { ...deps, pushSubscriptionStore: trackedPush }),
+      reissueAccessLink({ reservationRef: "RES-1001", surname: "gomez", locale: "es" }, { ...deps, pushSubscriptionStore: trackedPush }),
+    ]);
+
+    const active = await deps.store.findActiveByReservation("RES-1001");
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).not.toBe(previous.accessLinkId);
+    expect(new Set(deleted).size).toBe(deleted.length);
+    expect(deleted).toContain(previous.accessLinkId);
+  });
 });

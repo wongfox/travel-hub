@@ -36,9 +36,9 @@ export interface ReissueLinkInput {
  * response either way, so this function's return type (`void`, never a
  * discriminated match/no-match result) is itself part of the
  * no-enumeration guarantee. On a match, issues (and delivers) a fresh link
- * exactly like `POST /internal/links`, then revokes every other
- * still-active link for the same reservation (`superseded_by`), so the
- * previous link stops working immediately (spec "Re-issued link
+ * exactly like `POST /internal/links`, then supersedes every older
+ * still-active link of the same reservation (`superseded_by` = the newest),
+ * so the previous link stops working immediately (spec "Re-issued link
  * invalidates the previous one").
  */
 export async function reissueAccessLink(input: ReissueLinkInput, deps: ReissueLinkDeps): Promise<void> {
@@ -50,9 +50,7 @@ export async function reissueAccessLink(input: ReissueLinkInput, deps: ReissueLi
     return;
   }
 
-  const previouslyActive = await deps.store.findActiveByReservation(input.reservationRef);
-
-  const { accessLinkId } = await issueAccessLink(
+  await issueAccessLink(
     { reservationRef: input.reservationRef, contact, locale: input.locale },
     {
       store: deps.store,
@@ -63,10 +61,9 @@ export async function reissueAccessLink(input: ReissueLinkInput, deps: ReissueLi
     },
   );
 
-  await Promise.all(
-    previouslyActive.map(async (link) => {
-      await deps.store.revoke(link.id, accessLinkId);
-      await deps.pushSubscriptionStore?.deleteByLinkId(link.id);
-    }),
-  );
+  // Only after the new link was delivered (a failing delivery must not kill the link that still works).
+  // One atomic step that keeps the newest active link and revokes every other one, so racing reissues
+  // (several api instances) converge to exactly one active link; each revoked link is returned to one caller.
+  const revoked = await deps.store.supersedeOlderActive(input.reservationRef);
+  await Promise.all(revoked.map((link) => deps.pushSubscriptionStore?.deleteByLinkId(link.id)));
 }

@@ -1,0 +1,4 @@
+ALTER TABLE "access_link" ADD COLUMN "seq" bigint NOT NULL GENERATED ALWAYS AS IDENTITY (sequence name "access_link_seq_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1);--> statement-breakpoint
+CREATE INDEX "access_link_active_reservation_idx" ON "access_link" USING btree ("reservation_ref","seq") WHERE "access_link"."revoked_at" IS NULL;--> statement-breakpoint
+CREATE INDEX "session_link_id_idx" ON "session" USING btree ("link_id");--> statement-breakpoint
+ALTER TABLE "access_link" ADD CONSTRAINT "access_link_superseded_implies_revoked" CHECK ("access_link"."superseded_by" IS NULL OR ("access_link"."revoked_at" IS NOT NULL AND "access_link"."superseded_by" <> "access_link"."id"));

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryAccessLinkStore } from "./access-link-store.js";
+import { describeAccessLinkStoreContract } from "./access-link-store.conformance.js";
+
+describeAccessLinkStoreContract("in-memory", {
+  make: async (now) => createInMemoryAccessLinkStore(now),
+});
 
 describe("createInMemoryAccessLinkStore", () => {
   it("creates a record and assigns it a generated id, issuedAt, and revokedAt/supersededBy of null", async () => {
