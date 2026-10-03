@@ -43,6 +43,9 @@ export function TripHomePage({ apiClient }: TripHomePageProps) {
       <nav>
         <a href="/trip/itinerary">{t("nav.itinerary")}</a>
         <a href="/trip/documents">{t("nav.documents")}</a>
+        {trip.features.precheckinCaptureUi && trip.consentTextVersions?.precheckin ? (
+          <a href="/trip/precheckin">{t("nav.precheckin")}</a>
+        ) : null}
       </nav>
     </ThemeProvider>
   );
