@@ -1,4 +1,5 @@
 import type { LegStatus, TripLeg } from "contracts";
+import { parseLocalWallClock } from "../../shared/format/format-local-datetime.js";
 
 export type MilestoneStatus = "pending" | "next" | "in_progress" | "completed";
 
@@ -25,6 +26,6 @@ export function resolveMilestoneStatus(
   if (leg.id === nextMilestoneLegId) {
     return "next";
   }
-  const departure = new Date(leg.departureLocal.endsWith("Z") ? leg.departureLocal : `${leg.departureLocal}Z`);
+  const departure = parseLocalWallClock(leg.departureLocal);
   return now.getTime() >= departure.getTime() ? "in_progress" : "pending";
 }
