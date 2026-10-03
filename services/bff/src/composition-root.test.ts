@@ -580,6 +580,81 @@ describe("buildApp — content routes (task 9.1-9.4)", () => {
   });
 });
 
+describe("buildApp — wifi-checkout routes (tasks 10.1-10.2)", () => {
+  it("registers GET /api/wifi/packages and POST /api/wifi/orders end to end against the default (stub) wiring", async () => {
+    const accessLinkStore = createInMemoryAccessLinkStore();
+    const { createInMemorySessionStore } = await import("./modules/trip-access/session-store.js");
+    const sessionStore = createInMemorySessionStore();
+    const { hashAccessToken, generateAccessToken } = await import("./modules/trip-access/token.js");
+    const token = generateAccessToken();
+    await accessLinkStore.create({
+      tokenHash: hashAccessToken(token),
+      reservationRef: "RES-1001",
+      passengerScope: [],
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      issueChannel: "email",
+    });
+    const app = buildApp({
+      tripAccess: { accessLinkStore, sessionStore },
+      wifiCheckout: { flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } },
+    });
+
+    const exchange = await app.inject({ method: "POST", url: "/api/session", payload: { token } });
+    const setCookie = exchange.headers["set-cookie"];
+    const header = Array.isArray(setCookie) ? setCookie[0]! : (setCookie as string);
+    const cookieValue = header.split(";")[0]!.split("=")[1]!;
+
+    const packagesResponse = await app.inject({
+      method: "GET",
+      url: "/api/wifi/packages",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+    });
+    expect(packagesResponse.statusCode).toBe(200);
+    const packages = packagesResponse.json() as { id: string }[];
+    expect(packages.length).toBeGreaterThan(0);
+
+    const orderResponse = await app.inject({
+      method: "POST",
+      url: "/api/wifi/orders",
+      cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
+      headers: { "idempotency-key": "composition-root-idem-1" },
+      payload: { packageId: packages[0]!.id },
+    });
+    expect(orderResponse.statusCode).toBe(201);
+    const orderBody = orderResponse.json() as { order: { status: string }; redirectUrl: string };
+    expect(orderBody.order.status).toBe("PAYMENT_PENDING");
+    expect(orderBody.redirectUrl).toMatch(/^https:\/\//);
+  });
+
+  it("throws GoLiveGuardError at build time when wifi.checkout is true in production without a non-stub PaymentGatewayPort adapter", () => {
+    expect(() =>
+      buildApp({
+        wifiCheckout: { flags: { ...FLAG_DEFAULTS, "wifi.checkout": true }, nodeEnv: "production" },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("still refuses wifi.checkout in production once a non-stub payment adapter is declared, because receipt/SIR-POS/entitlement adapters stay stub (WU19's scope)", () => {
+    expect(() =>
+      buildApp({
+        wifiCheckout: {
+          flags: { ...FLAG_DEFAULTS, "wifi.checkout": true },
+          nodeEnv: "production",
+          adapterPayment: "a-real-gateway",
+        },
+      }),
+    ).toThrow(GoLiveGuardError);
+  });
+
+  it("always allows wifi.checkout against the stub outside production/staging", () => {
+    expect(() =>
+      buildApp({
+        wifiCheckout: { flags: { ...FLAG_DEFAULTS, "wifi.checkout": true } },
+      }),
+    ).not.toThrow();
+  });
+});
+
 describe("startWorker", () => {
   it("starts the given queue client and registers the sample job on it (task 3.4)", async () => {
     const queueClient = createInMemoryQueueClient();

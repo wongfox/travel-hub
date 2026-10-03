@@ -42,6 +42,15 @@ const EnvSchema = z.object({
    * `destination.enabled` in production/staging while this stays `"stub"`.
    */
   ADAPTER_CONTENT: z.string().min(1).default("stub"),
+  /**
+   * `PaymentGatewayPort` adapter selection (design Decision 6,
+   * `ADAPTER_<PORT>=stub|<vendor>`). Task 10.1's go-live guard
+   * (`config/go-live-guards.ts`'s `checkWifiCheckout`) refuses to enable
+   * `wifi.checkout` in production/staging while this stays `"stub"` (it also
+   * requires non-stub receipt/SIR-POS/entitlement adapters that this work
+   * unit does not wire — WU19's scope).
+   */
+  ADAPTER_PAYMENT: z.string().min(1).default("stub"),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
