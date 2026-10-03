@@ -18,6 +18,7 @@ describe("recordConsent", () => {
       granted: true,
       textVersion: "v1",
       recordedAt: expect.any(String),
+      recordId: expect.any(String),
     });
   });
 

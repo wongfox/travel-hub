@@ -66,6 +66,12 @@ describe("TripDTOSchema", () => {
     expect(TripDTOSchema.parse(fixture)).toEqual(fixture);
   });
 
+  it("accepts an optional precheckin consent text version", () => {
+    const fixture = buildTripFixture({ consentTextVersions: { precheckin: "precheckin-v1" } });
+
+    expect(TripDTOSchema.parse(fixture)).toEqual(fixture);
+  });
+
   it("rejects an empty consent text version", () => {
     const fixture = buildTripFixture({ consentTextVersions: { push: "" } });
 

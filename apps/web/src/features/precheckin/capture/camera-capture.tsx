@@ -72,7 +72,6 @@ export function CameraCapture({
         if (videoRef.current) {
           (videoRef.current as unknown as { srcObject: unknown }).srcObject = stream;
         }
-        setReady(true);
       })
       .catch(() => {
         if (!cancelled) {
@@ -97,7 +96,15 @@ export function CameraCapture({
 
   return (
     <div data-testid={`camera-capture-${role}`}>
-      <video ref={videoRef} autoPlay muted playsInline data-testid={`camera-video-${role}`} />
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        data-testid={`camera-video-${role}`}
+        // Ready only once the first frame is decoded: before that `videoWidth` is 0 and a capture would draw an empty canvas.
+        onLoadedData={() => setReady(true)}
+      />
       {ready && (
         <button type="button" onClick={() => void handleCapture()}>
           {t("precheckin.capture.captureButton")}

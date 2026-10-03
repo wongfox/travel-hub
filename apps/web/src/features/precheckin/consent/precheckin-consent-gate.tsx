@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import type { ApiClient } from "../../../shared/api/client.js";
-import { PurposeConsentGate } from "../../../shared/consent/purpose-consent-gate.js";
+import { PurposeConsentGate, type ConsentGateContext } from "../../../shared/consent/purpose-consent-gate.js";
 
 export interface PrecheckinConsentGateProps {
   apiClient: ApiClient;
   /** The currently published consent text's version (design's `PRECHECKIN_CONSENT_TEXT_VERSION`, go-live-guard input). */
   consentTextVersion: string;
-  children: ReactNode;
+  /** Function children receive the consent gate context (e.g. `consentRecordId`, `onConsentRequired`). */
+  children: ReactNode | ((context: ConsentGateContext) => ReactNode);
 }
 
 /**

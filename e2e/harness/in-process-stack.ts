@@ -19,6 +19,7 @@ import { createInMemoryWifiOrderStore } from "../../services/bff/dist/modules/wi
 import { createInMemoryPulseResponseStore } from "../../services/bff/dist/modules/pulse/pulse-response-store.js";
 import { createInMemoryStaffAlertStore } from "../../services/bff/dist/modules/pulse/staff-alert-store.js";
 import { createInMemoryPushSubscriptionStore } from "../../services/bff/dist/modules/notifications/push-subscription-store.js";
+import { createInMemorySubmissionStore } from "../../services/bff/dist/modules/precheckin/submission-store.js";
 import { createInMemoryAnalyticsEventStore } from "../../services/bff/dist/modules/analytics/analytics-event-store.js";
 import { WIFI_ENTITLEMENT_ACTIVATION_QUEUE, WIFI_SIR_RECEIPT_QUEUE } from "../../services/bff/dist/modules/wifi-checkout/wifi-order-jobs.js";
 import { STAFF_ALERT_DISPATCH_QUEUE } from "../../services/bff/dist/modules/pulse/dispatch-staff-alerts-job.js";
@@ -28,9 +29,18 @@ export const E2E_INTERNAL_LINKS_API_KEY = "e2e-in-process-internal-links-key";
 /** Consent text versions the BFF publishes on `GET /api/trip`; the web records them through its own consent gates. */
 const E2E_PUSH_CONSENT_TEXT_VERSION = "e2e-push-1";
 const E2E_PULSE_CONSENT_TEXT_VERSION = "e2e-pulse-1";
+const E2E_PRECHECKIN_CONSENT_TEXT_VERSION = "e2e-precheckin-1";
 
-/** Flags the scenarios need; `precheckin.capture_ui` stays off (gap D: no web route exists for it). */
+/**
+ * Flags the scenarios need. Pre check-in needs BOTH: `precheckin.capture_ui`
+ * shows the web page, `precheckin.production_collection` lets the BFF accept
+ * submissions. In E2E only: production keeps both default-off, and the
+ * production go-live guard is not engaged here because the harness runs with
+ * `nodeEnv: "test"` and the stub handoff/document-store/KMS adapters.
+ */
 const E2E_FLAG_OVERRIDES: Partial<Record<FlagKey, boolean>> = {
+  "precheckin.capture_ui": true,
+  "precheckin.production_collection": true,
   "wifi.checkout": true,
   "push.enabled": true,
   "pulse.capture": true,
@@ -64,6 +74,8 @@ export interface InProcessStack {
   readonly staffAlert: ReturnType<typeof createStaffAlertStub>;
   readonly paymentGateway: ReturnType<typeof createPaymentGatewayStub>;
   readonly wifiOrderStore: ReturnType<typeof createInMemoryWifiOrderStore>;
+  /** In-memory pre check-in submissions (encrypted payloads only; read for metadata/status assertions). */
+  readonly precheckinSubmissionStore: ReturnType<typeof createInMemorySubmissionStore>;
   /** Issues a request straight into the in-process Fastify app (no socket). */
   inject(opts: { method: "GET" | "POST"; url: string; headers?: Record<string, string>; payload?: unknown }): Promise<{
     statusCode: number;
@@ -173,6 +185,7 @@ export async function startInProcessStack(options: StartInProcessStackOptions = 
   const pulseResponseStore = createInMemoryPulseResponseStore();
   const subscriptionStore = createInMemoryPushSubscriptionStore();
   const analyticsEventStore = createInMemoryAnalyticsEventStore();
+  const precheckinSubmissionStore = createInMemorySubmissionStore();
 
   // Specs run many session exchanges from one client address; the production
   // limits would throttle the suite itself, not exercise anything.
@@ -194,6 +207,7 @@ export async function startInProcessStack(options: StartInProcessStackOptions = 
     notifications: { nodeEnv, flags, subscriptionStore, pushConsentTextVersion: E2E_PUSH_CONSENT_TEXT_VERSION },
     pulse: { nodeEnv, flags, staffAlertStore, pulseResponseStore, pulseConsentTextVersion: E2E_PULSE_CONSENT_TEXT_VERSION },
     analytics: { analyticsEventStore },
+    precheckin: { submissionStore: precheckinSubmissionStore, consentTextVersion: E2E_PRECHECKIN_CONSENT_TEXT_VERSION },
   });
 
   await startWorker({
@@ -237,6 +251,7 @@ export async function startInProcessStack(options: StartInProcessStackOptions = 
     staffAlert,
     paymentGateway,
     wifiOrderStore,
+    precheckinSubmissionStore,
     async inject(opts) {
       const response = await app.inject({
         method: opts.method,

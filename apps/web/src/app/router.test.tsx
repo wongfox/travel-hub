@@ -316,6 +316,51 @@ describe("help, menu, and destination routes (tasks 9.2-9.4)", () => {
     expect(screen.queryByRole("button", { name: /notification/i })).not.toBeInTheDocument();
   });
 
+  it("renders the pre check-in consent gate at /trip/precheckin when precheckin.capture_ui is on and a consent version is published", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture({
+          features: { precheckinCaptureUi: true } as TripDTO["features"],
+          consentTextVersions: { precheckin: "pc-v1" },
+          passengers: [{ ordinal: 1, displayName: "Ana Quispe", precheckinStatus: "none" }],
+        }),
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/precheckin"] }) });
+
+    render(
+      <AppProviders
+        router={router}
+        i18n={createI18n({ initialLocale: "en" })}
+        queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "I agree" })).toBeInTheDocument();
+  });
+
+  it("renders a pre check-in unavailable message at /trip/precheckin when precheckin.capture_ui is off", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetchByUrl({
+        "/api/trip": buildTripFixture({ features: { precheckinCaptureUi: false } as TripDTO["features"] }),
+      }),
+    );
+    const router = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/trip/precheckin"] }) });
+
+    render(
+      <AppProviders
+        router={router}
+        i18n={createI18n({ initialLocale: "en" })}
+        queryClient={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      />,
+    );
+
+    expect(await screen.findByText(/pre check-in is not available/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I agree" })).not.toBeInTheDocument();
+  });
+
   it("renders a pulse-unavailable message at /trip/pulse when pulse.capture is off, and never routes through the journey-events/push pipeline (task 11.6)", async () => {
     vi.stubGlobal(
       "fetch",

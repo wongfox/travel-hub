@@ -285,7 +285,7 @@ describe("buildApp — consent text versions on GET /api/trip", () => {
       url: "/api/trip",
       cookies: { [DEFAULT_SESSION_COOKIE_NAME]: cookieValue },
     });
-    return response.json() as { consentTextVersions?: { push?: string; pulse?: string } };
+    return response.json() as { consentTextVersions?: { push?: string; pulse?: string; precheckin?: string } };
   }
 
   it("exposes the configured push and pulse consent text versions to the web", async () => {
@@ -295,6 +295,12 @@ describe("buildApp — consent text versions on GET /api/trip", () => {
     });
 
     expect(body.consentTextVersions).toEqual({ push: "push-v1", pulse: "pulse-v1" });
+  });
+
+  it("exposes the configured precheckin consent text version to the web", async () => {
+    const body = await fetchTrip({ precheckin: { consentTextVersion: "precheckin-v1" } });
+
+    expect(body.consentTextVersions).toEqual({ precheckin: "precheckin-v1" });
   });
 
   it("omits consentTextVersions when no version is configured", async () => {

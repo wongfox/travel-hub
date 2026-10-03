@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nextProvider } from "react-i18next";
 import { createI18n } from "../../../i18n/index.js";
@@ -77,6 +77,8 @@ describe("PrecheckinCaptureStep", () => {
       computeImageQuality,
     });
 
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    fireEvent.loadedData(await screen.findByTestId("camera-video-photo"));
     await user.click(await screen.findByRole("button", { name: "Capture" }));
 
     await waitFor(() =>
@@ -95,6 +97,8 @@ describe("PrecheckinCaptureStep", () => {
       computeImageQuality,
     });
 
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    fireEvent.loadedData(await screen.findByTestId("camera-video-photo"));
     await user.click(await screen.findByRole("button", { name: "Capture" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("too blurry");

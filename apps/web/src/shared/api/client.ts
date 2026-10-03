@@ -44,7 +44,10 @@ export interface ApiClientOptions {
 }
 
 export interface ApiRequestInit extends Omit<RequestInit, "body"> {
-  /** JSON-serializable request body; serialized here so callers never call `JSON.stringify` themselves. */
+  /**
+   * JSON-serializable request body; serialized here so callers never call `JSON.stringify` themselves.
+   * A `FormData` body is sent as-is (multipart) with no `Content-Type`, so the browser sets the boundary.
+   */
   body?: unknown;
 }
 
@@ -70,14 +73,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     const fetchImpl = options.fetchImpl ?? fetch;
     const { body, headers, credentials, ...rest } = init;
 
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
     const response = await fetchImpl(`${baseUrl}${path}`, {
       ...rest,
       credentials: credentials ?? "same-origin",
       headers: {
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(body !== undefined && !isForm ? { "Content-Type": "application/json" } : {}),
         ...headers,
       },
-      body: body !== undefined ? JSON.stringify(body) : null,
+      body: body === undefined ? null : isForm ? (body as FormData) : JSON.stringify(body),
     });
 
     if (!response.ok) {

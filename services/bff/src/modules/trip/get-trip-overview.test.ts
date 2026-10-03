@@ -92,6 +92,16 @@ describe("getTripOverview", () => {
     expect(TripDTOSchema.safeParse(both).success).toBe(true);
   });
 
+  it("exposes the configured precheckin consent text version", async () => {
+    const trip = await getTripOverview(accessLink(), {
+      sirBooking: fakeSirBooking(reservation),
+      consentTextVersions: { precheckin: "precheckin-v1" },
+    });
+
+    expect(trip.consentTextVersions).toEqual({ precheckin: "precheckin-v1" });
+    expect(TripDTOSchema.safeParse(trip).success).toBe(true);
+  });
+
   it("scopes passengers to the access link's passengerScope, excluding out-of-scope passengers", async () => {
     const trip = await getTripOverview(accessLink({ passengerScope: ["P1"] }), {
       sirBooking: fakeSirBooking(reservation),

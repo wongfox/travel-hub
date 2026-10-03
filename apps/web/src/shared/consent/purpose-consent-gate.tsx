@@ -7,6 +7,8 @@ import { PurposeConsentScreen } from "./purpose-consent-screen.js";
 import { submitConsent } from "./submit-consent.js";
 
 export interface ConsentGateContext {
+  /** Identifier of the consent record just written (`POST /api/consents`'s `recordId`); undefined for a cached grant. */
+  consentRecordId?: string;
   /** Call when the BFF answers 403 `consent_required`: forgets any cached grant and shows the consent screen again. */
   onConsentRequired: () => void;
 }
@@ -42,6 +44,7 @@ export function PurposeConsentGate({
   children,
 }: PurposeConsentGateProps) {
   const { t } = useTranslation();
+  const [recordId, setRecordId] = useState<string | undefined>(undefined);
   const [state, setState] = useState<GateState>(() =>
     cacheScope !== undefined && hasCachedGrantedConsent(cacheScope, purpose, textVersion) ? "granted" : "pending",
   );
@@ -53,6 +56,7 @@ export function PurposeConsentGate({
       if (result.granted && cacheScope !== undefined) {
         cacheGrantedConsent(cacheScope, purpose, textVersion);
       }
+      setRecordId(result.granted ? result.recordId : undefined);
       setState(result.granted ? "granted" : "declined");
     } catch {
       setState("error");
@@ -63,11 +67,12 @@ export function PurposeConsentGate({
     if (cacheScope !== undefined) {
       clearCachedConsent(cacheScope, purpose);
     }
+    setRecordId(undefined);
     setState("pending");
   }
 
   if (state === "granted") {
-    return <>{typeof children === "function" ? children({ onConsentRequired }) : children}</>;
+    return <>{typeof children === "function" ? children({ onConsentRequired, ...(recordId ? { consentRecordId: recordId } : {}) }) : children}</>;
   }
   if (state === "declined") {
     return <p role="status">{t(`${i18nPrefix}.declined`)}</p>;

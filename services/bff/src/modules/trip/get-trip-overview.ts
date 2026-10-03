@@ -23,7 +23,7 @@ export interface GetTripOverviewDeps {
    */
   precheckinSubmissionStore?: Pick<PrecheckinSubmissionStore, "findByPassenger">;
   /** Published push/pulse consent text versions (env `PUSH_/PULSE_CONSENT_TEXT_VERSION`); exposed to the web additively. */
-  consentTextVersions?: { push?: string; pulse?: string };
+  consentTextVersions?: { push?: string; pulse?: string; precheckin?: string };
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: () => Date;
 }
@@ -72,6 +72,7 @@ export async function getTripOverview(
   const consentTextVersions = {
     ...(deps.consentTextVersions?.push ? { push: deps.consentTextVersions.push } : {}),
     ...(deps.consentTextVersions?.pulse ? { pulse: deps.consentTextVersions.pulse } : {}),
+    ...(deps.consentTextVersions?.precheckin ? { precheckin: deps.consentTextVersions.precheckin } : {}),
   };
   const hasConsentTextVersions = Object.keys(consentTextVersions).length > 0;
 
