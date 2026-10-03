@@ -20,7 +20,9 @@ async function main(): Promise<void> {
       flags: FLAG_DEFAULTS,
       nodeEnv: env.NODE_ENV,
       adapterPrecheckinHandoff: env.ADAPTER_PRECHECKIN_HANDOFF,
-      ...(env.PRECHECKIN_RETENTION_POLICY_ID ? { retentionPolicyId: env.PRECHECKIN_RETENTION_POLICY_ID } : {}),
+      ...(env.PRECHECKIN_RETENTION_POLICY_ID
+        ? { retentionPolicyId: env.PRECHECKIN_RETENTION_POLICY_ID }
+        : {}),
       ...(env.PRECHECKIN_RETENTION_DAYS
         ? {
             retention: {
@@ -29,7 +31,9 @@ async function main(): Promise<void> {
             },
           }
         : {}),
-      ...(env.PRECHECKIN_CONSENT_TEXT_VERSION ? { consentTextVersion: env.PRECHECKIN_CONSENT_TEXT_VERSION } : {}),
+      ...(env.PRECHECKIN_CONSENT_TEXT_VERSION
+        ? { consentTextVersion: env.PRECHECKIN_CONSENT_TEXT_VERSION }
+        : {}),
       kmsKeyConfigured: Boolean(env.PRECHECKIN_KMS_KEY_ID),
       ...(env.PRECHECKIN_KMS_KEY_ID ? { keyId: env.PRECHECKIN_KMS_KEY_ID } : {}),
     },
@@ -53,7 +57,9 @@ async function main(): Promise<void> {
       adapterWebPush: env.ADAPTER_WEB_PUSH,
       vapidConfigured: Boolean(env.PUSH_VAPID_PUBLIC_KEY && env.PUSH_VAPID_PRIVATE_KEY),
       alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
-      ...(env.PUSH_CONSENT_TEXT_VERSION ? { pushConsentTextVersion: env.PUSH_CONSENT_TEXT_VERSION } : {}),
+      ...(env.PUSH_CONSENT_TEXT_VERSION
+        ? { pushConsentTextVersion: env.PUSH_CONSENT_TEXT_VERSION }
+        : {}),
     },
     pulse: {
       // Task 11.5: real env-sourced config, so the go-live guard
@@ -63,8 +69,12 @@ async function main(): Promise<void> {
       nodeEnv: env.NODE_ENV,
       adapterStaffAlert: env.ADAPTER_STAFF_ALERT,
       ...(env.STAFF_ALERT_RECEIVER_ID ? { staffAlertReceiverId: env.STAFF_ALERT_RECEIVER_ID } : {}),
-      ...(env.STAFF_ALERT_PROTOCOL_REF ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF } : {}),
-      ...(env.STAFF_ALERT_RETENTION_DAYS ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS } : {}),
+      ...(env.STAFF_ALERT_PROTOCOL_REF
+        ? { staffAlertProtocolRef: env.STAFF_ALERT_PROTOCOL_REF }
+        : {}),
+      ...(env.STAFF_ALERT_RETENTION_DAYS
+        ? { staffAlertRetentionDays: env.STAFF_ALERT_RETENTION_DAYS }
+        : {}),
     },
     // Task 12.1: registers the analytics forward job. `analyticsEventStore`
     // defaults to a fresh in-memory instance — same documented gap as
@@ -83,11 +93,25 @@ async function main(): Promise<void> {
     scheduleWifiOrderScans(queueClient);
   }
   console.log(`worker booted with ${result.jobsRegistered.length} job(s) registered`);
+
+  // The worker is a long-lived process: pg-boss polling keeps the event loop
+  // alive, so main() must NOT exit on success. Stop the queue cleanly on a
+  // termination signal (docker stop / ECS task stop send SIGTERM).
+  const shutdown = (signal: string): void => {
+    console.log(`worker received ${signal}, stopping`);
+    queueClient
+      .stop()
+      .then(() => process.exit(0))
+      .catch((error: unknown) => {
+        console.error(error);
+        process.exit(1);
+      });
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error: unknown) => {
-    console.error(error);
-    process.exit(1);
-  });
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exit(1);
+});
