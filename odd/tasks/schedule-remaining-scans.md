@@ -15,8 +15,8 @@ Strict TDD; natural-key dedupe via `sendIdempotent`; destructive jobs (purges) m
 
 ## Tasks
 - [x] T1 Inventory: list every queue the worker registers vs which are scheduled; for each unscheduled one record which stores it reads and whether they are shared (Postgres) or per-process in-memory.
-- [ ] T2 Schedule each confirmed job with the helper + env intervals + tests; wire shutdown stop.
-- [ ] T3 Real check on compose (worker boots, schedulers tick without errors, no crash on empty stores) + docs/KNOWN-GAPS with the per-job caveat.
+- [x] T2 Schedule each confirmed job with the helper + env intervals + tests; wire shutdown stop.
+- [x] T3 Real check on compose (worker boots, schedulers tick without errors, no crash on empty stores) + docs/KNOWN-GAPS with the per-job caveat.
 
 ## Progress / evidence
 ### T1 inventory (verified in composition-root.ts `startWorker` + each job module)
@@ -38,3 +38,8 @@ Re-verified at S5 against `startWorker` and each job module: all six `queueClien
 
 Content has no worker job. Registration is guarded by go-live guards inside `startWorker` (they throw at boot, before any scheduling).
 
+
+### S5 evidence
+- T1 commit f357321. T2 commits 0b2cbff (env vars), 4e786dd (6 schedule functions), a51cfb7 (`worker-schedulers.ts` + main-worker wiring). RED observed first: 8 failing tests (6 schedule fns + 2 env) with the draft implementations reverted, then GREEN (226 tests in the touched dirs); `worker-schedulers.test.ts` RED (module missing) then 3 GREEN. Full bff suite with TEST_DATABASE_URL: 136 files / 1103 tests passed; tsc and eslint clean; turbo typecheck/lint/test for bff, web, contracts, e2e: 13/13 tasks; E2E container: 20 passed.
+- T3 compose (worker with 3s intervals via a temporary, deleted docker-compose.override.yml; no flags needed because the worker registers all 10 jobs regardless of flags; no manual enqueue): within the first 4s poll, the expired push subscription, pulse response and staff alert were purged, the past-due precheckin submission was `purged` with key material zeroed, the pending alert became `sent`; 4 `pii_access_audit` rows (push/pulse/staff_alert/precheckin purge); future rows kept; the precheckin-handoff job completed repeatedly while the future-due submission stayed `received` (stub document store, no handoff). Worker log had no errors. Rows cleaned (audit via `session_replication_role = replica`), default stack restored (no override, 0 INTERVAL vars).
+- Not scheduled: sample-job (fixture). Not fixed (stubs): precheckin document/ciphertext store and handoff port, SIR polling adapter, web-push and staff-alert ports, per-process rate limiters, no purge job for expired sessions/access links.
