@@ -162,7 +162,14 @@ describe("buildApp — trip-access (task 5.2)", () => {
 
   it("does not throw in production when a real internalApiKey is provided", () => {
     expect(() =>
-      buildApp({ tripAccess: { nodeEnv: "production", internalApiKey: "real-key" } }),
+      buildApp({
+        tripAccess: {
+          nodeEnv: "production",
+          internalApiKey: "real-key",
+          accessLinkStore: createInMemoryAccessLinkStore(),
+          sessionStore: createInMemorySessionStore(),
+        },
+      }),
     ).not.toThrow();
   });
 });
@@ -1577,7 +1584,10 @@ describe("shared push-subscription / notification / pii-audit stores in producti
     await expect(startWorker(workerPush({}))).rejects.toThrow(/subscriptionStore/);
     await expect(startWorker(workerPush({ subscriptionStore }))).rejects.toThrow(/notificationStore/);
     await expect(startWorker(workerPush({ subscriptionStore, notificationStore }))).rejects.toThrow(/piiAccessAudit/);
-    await expect(startWorker(workerPush({ subscriptionStore, notificationStore, piiAccessAudit }))).resolves.toMatchObject({
+    await expect(startWorker(workerPush({ subscriptionStore, notificationStore, piiAccessAudit }))).rejects.toThrow(/accessLinkStore/);
+    await expect(
+      startWorker(workerPush({ subscriptionStore, notificationStore, piiAccessAudit, accessLinkStore: createInMemoryAccessLinkStore() })),
+    ).resolves.toMatchObject({
       jobsRegistered: expect.arrayContaining([JOURNEY_POLL_QUEUE, PUSH_SUBSCRIPTION_PURGE_QUEUE]),
     });
   });
@@ -1696,6 +1706,84 @@ describe("shared pulse response / staff alert stores in production-like environm
     ).resolves.toBeDefined();
     await expect(
       startWorker({ queueClient: createInMemoryQueueClient(), pulse: { flags: captureOn, nodeEnv: "development" } }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("shared access link / session stores in production-like environments", () => {
+  const pushOn = { ...FLAG_DEFAULTS, "push.enabled": true } as never;
+  const apiBase = { internalApiKey: "real-key" };
+  const pushPrereqs = {
+    vapidConfigured: true,
+    alertSourcePolicy: DEFAULT_ALERT_SOURCE_POLICY,
+    pushConsentTextVersion: "v1",
+    subscriptionStore: createInMemoryPushSubscriptionStore(),
+    notificationStore: createInMemoryNotificationStore(),
+    piiAccessAudit: createInMemoryPiiAccessAudit(),
+  };
+
+  it("buildApp refuses production/staging without a shared accessLinkStore (links issued by one api instance or read by the worker would be invisible to the others)", () => {
+    expect(() =>
+      buildApp({ tripAccess: { ...apiBase, nodeEnv: "production", sessionStore: createInMemorySessionStore() } }),
+    ).toThrow(/accessLinkStore/);
+    expect(() =>
+      buildApp({ tripAccess: { ...apiBase, nodeEnv: "staging", sessionStore: createInMemorySessionStore() } }),
+    ).toThrow(/accessLinkStore/);
+  });
+
+  it("buildApp refuses production/staging without a shared sessionStore (a session created on one api instance must validate on the others)", () => {
+    expect(() =>
+      buildApp({ tripAccess: { ...apiBase, nodeEnv: "production", accessLinkStore: createInMemoryAccessLinkStore() } }),
+    ).toThrow(/sessionStore/);
+    expect(() =>
+      buildApp({ tripAccess: { ...apiBase, nodeEnv: "staging", accessLinkStore: createInMemoryAccessLinkStore() } }),
+    ).toThrow(/sessionStore/);
+  });
+
+  it("buildApp boots in production/staging once both shared stores are wired in", () => {
+    const stores = { accessLinkStore: createInMemoryAccessLinkStore(), sessionStore: createInMemorySessionStore() };
+    expect(() => buildApp({ tripAccess: { ...apiBase, nodeEnv: "production", ...stores } })).not.toThrow();
+    expect(() => buildApp({ tripAccess: { ...apiBase, nodeEnv: "staging", ...stores } })).not.toThrow();
+  });
+
+  it("buildApp keeps the in-memory defaults outside production-like environments", () => {
+    expect(() => buildApp({ tripAccess: { nodeEnv: "development" } })).not.toThrow();
+    expect(() => buildApp({ tripAccess: { nodeEnv: "test" } })).not.toThrow();
+  });
+
+  it("keeps the INTERNAL_LINKS_API_KEY refusal as the first one in production", () => {
+    expect(() => buildApp({ tripAccess: { nodeEnv: "production" } })).toThrow(/INTERNAL_LINKS_API_KEY/);
+  });
+
+  it("startWorker refuses production with push.enabled and no shared accessLinkStore (journey-poll would scan an empty process-local store), and boots with it", async () => {
+    const worker = (extra: Record<string, unknown>) => ({
+      queueClient: createInMemoryQueueClient(),
+      notifications: { flags: pushOn, nodeEnv: "production" as const, ...pushPrereqs, ...extra },
+    });
+
+    await expect(startWorker(worker({}))).rejects.toThrow(/accessLinkStore/);
+    await expect(startWorker(worker({ accessLinkStore: createInMemoryAccessLinkStore() }))).resolves.toMatchObject({
+      jobsRegistered: expect.arrayContaining([JOURNEY_POLL_QUEUE]),
+    });
+  });
+
+  it("startWorker does not require it with an explicit journeyEventSource, while push.enabled is off, or outside production-like environments", async () => {
+    await expect(
+      startWorker({
+        queueClient: createInMemoryQueueClient(),
+        notifications: {
+          flags: pushOn,
+          nodeEnv: "production",
+          ...pushPrereqs,
+          journeyEventSource: { pollActive: async () => [] },
+        },
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), notifications: { nodeEnv: "production" } }),
+    ).resolves.toBeDefined();
+    await expect(
+      startWorker({ queueClient: createInMemoryQueueClient(), notifications: { flags: pushOn, nodeEnv: "development" } }),
     ).resolves.toBeDefined();
   });
 });
@@ -2005,7 +2093,12 @@ describe("personal-data-protection — consent-withdrawal cascade (task 12.3)", 
 });
 
 describe("buildApp — analytics trip_hash secret production guard", () => {
-  const tripAccess = { nodeEnv: "production" as const, internalApiKey: "real-key" };
+  const tripAccess = {
+    nodeEnv: "production" as const,
+    internalApiKey: "real-key",
+    accessLinkStore: createInMemoryAccessLinkStore(),
+    sessionStore: createInMemorySessionStore(),
+  };
 
   it("throws at build time in production when no analytics secret is provided, instead of using the public dev-only HMAC secret", () => {
     expect(() => buildApp({ tripAccess, analytics: { nodeEnv: "production" } })).toThrow(

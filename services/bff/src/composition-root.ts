@@ -698,6 +698,13 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     staffAlertStore: pulseOptions.staffAlertStore,
   });
 
+  // Last of the shared-store guards (after every go-live guard, so GoLiveGuardError keeps winning):
+  // access links and sessions back every route, so they are required whatever the feature flags say.
+  assertSharedTripAccessStores("buildApp", tripAccessOptions.nodeEnv, {
+    accessLinkStore: tripAccessOptions.accessLinkStore,
+    sessionStore: tripAccessOptions.sessionStore,
+  });
+
   // R3-002: so a configured STAFF_ALERT_RETENTION_DAYS reaches purgeAfter.
   const pulseRetention = resolvePulseRetentionConfig({ STAFF_ALERT_RETENTION_DAYS: pulseOptions.staffAlertRetentionDays });
 
@@ -853,6 +860,35 @@ function assertSharedPrecheckinStores(
   }
 }
 
+/**
+ * Access links and sessions are shared state: every api instance must resolve links issued or
+ * reissued by another instance and validate sessions created by another (a per-process map would
+ * log passengers out at random behind a load balancer and make a reissue invisible to the other
+ * instances), and the worker's journey-poll scans the live links the api issued. In a
+ * production-like environment, fail loudly instead of running on process-local in-memory stores.
+ * `accessLinkStore` is the only store the worker needs (it never touches sessions). Only the SHA-256
+ * hashes of tokens/session ids reach these stores.
+ */
+function assertSharedTripAccessStores(
+  who: "buildApp" | "startWorker",
+  nodeEnv: NodeEnvName | undefined,
+  stores: { accessLinkStore: unknown; sessionStore?: unknown; requireSessionStore?: boolean },
+): void {
+  if (!isProductionLike(nodeEnv ?? "development")) return;
+  if (!stores.accessLinkStore) {
+    throw new Error(
+      `${who}: no shared accessLinkStore is wired in a production-like environment; refusing to start with a ` +
+        "process-local in-memory AccessLinkStore (other api instances and the worker would never see the links this process issues or revokes).",
+    );
+  }
+  if (stores.requireSessionStore !== false && !stores.sessionStore) {
+    throw new Error(
+      `${who}: no shared sessionStore is wired in a production-like environment; refusing to start with a ` +
+        "process-local in-memory SessionStore (a session created on one api instance would not validate on the others).",
+    );
+  }
+}
+
 export interface WorkerBootResult {
   /** Job names registered on the worker's queue. */
   jobsRegistered: string[];
@@ -927,7 +963,7 @@ export interface StartWorkerOptions {
   notifications?: {
     /** Overrides `accessLinkStore`/`sirBooking`-driven polling entirely; mainly for tests. */
     journeyEventSource?: JourneyEventSourcePort;
-    /** Used to build the default `sir-polling` adapter when `journeyEventSource` is not given. Defaults to a fresh in-memory store (documented gap: a real deployment needs this to be the same store the `api` process writes to, pending a Drizzle-backed `access_link` adapter — see `sdd/travel-hub-mvp/apply-progress`). */
+    /** Used to build the default `sir-polling` adapter when `journeyEventSource` is not given. Defaults to a fresh in-memory store outside production-like environments; with `push.enabled` there, the shared Postgres store (the very `access_link` table the api writes) is required. */
     accessLinkStore?: Pick<AccessLinkStore, "listActive">;
     sirBooking?: Pick<SirBookingPort, "getReservation" | "getRelocations">;
     notificationStore?: NotificationStore;
@@ -1209,6 +1245,10 @@ export async function startWorker(options: StartWorkerOptions): Promise<WorkerBo
       piiAccessAudit: n.piiAccessAudit,
       requireNotificationStore: true,
     });
+    // journey-poll scans the live access links the api issued (SIR polling adapter): never a worker-local map.
+    if (!n.journeyEventSource && flags["push.enabled"]) {
+      assertSharedTripAccessStores("startWorker", nodeEnv, { accessLinkStore: n.accessLinkStore, requireSessionStore: false });
+    }
 
     const journeyEventSource =
       n.journeyEventSource ??
