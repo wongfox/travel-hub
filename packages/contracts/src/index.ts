@@ -10,3 +10,4 @@ export * from "./consent.js";
 export * from "./content.js";
 export * from "./sensitive-routes.js";
 export * from "./resolve-content-locale.js";
+export * from "./resolve-content-tier.js";

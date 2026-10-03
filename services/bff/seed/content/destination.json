@@ -1,0 +1,26 @@
+{
+  "poi_map": {
+    "es": { "title": "Mapa de Machu Picchu Pueblo", "body": "MEDIA-POI-MAP" },
+    "en": { "title": "Machu Picchu Pueblo map", "body": "MEDIA-POI-MAP" }
+  },
+  "how_to_get_there": {
+    "es": {
+      "title": "Cómo llegar a la ciudadela",
+      "body": "Al bajar del tren en la estación de Machu Picchu Pueblo, camina hacia la parada del bus Consettur (a 5 minutos). El bus te lleva directamente a la entrada de la ciudadela en aproximadamente 25 minutos."
+    },
+    "en": {
+      "title": "How to get to the citadel",
+      "body": "After leaving the train at Machu Picchu Pueblo station, walk to the Consettur bus stop (5 minutes away). The bus takes you directly to the citadel entrance in about 25 minutes."
+    }
+  },
+  "circuits": {
+    "es": {
+      "title": "Circuitos de Machu Picchu",
+      "body": "Tu entrada especifica un circuito (1, 2, 3 o 4). Cada circuito sigue una ruta distinta dentro de la ciudadela; revisa tu boleto de entrada INC para identificar el tuyo antes de llegar."
+    },
+    "en": {
+      "title": "Machu Picchu circuits",
+      "body": "Your entry ticket specifies a circuit (1, 2, 3, or 4). Each circuit follows a different route inside the citadel; check your INC entry ticket to identify yours before arriving."
+    }
+  }
+}

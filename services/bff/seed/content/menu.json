@@ -1,0 +1,46 @@
+{
+  "VOYAGER": {
+    "es": [
+      {
+        "id": "sec-snacks",
+        "title": "Bocaditos",
+        "items": [
+          { "id": "item-cookie", "name": "Galleta artesanal", "description": "Galleta de avena y quinua." },
+          { "id": "item-juice", "name": "Jugo de fruta", "description": "Jugo natural de maracuyá." }
+        ]
+      }
+    ],
+    "en": [
+      {
+        "id": "sec-snacks",
+        "title": "Snacks",
+        "items": [
+          { "id": "item-cookie", "name": "Artisan cookie", "description": "Oat and quinoa cookie." },
+          { "id": "item-juice", "name": "Fruit juice", "description": "Natural passion fruit juice." }
+        ]
+      }
+    ]
+  },
+  "PRIME": {
+    "es": [
+      {
+        "id": "sec-snacks",
+        "title": "Selección gourmet",
+        "items": [
+          { "id": "item-canape", "name": "Canapé andino", "description": "Canapé con quinua y queso andino." },
+          { "id": "item-pisco", "name": "Pisco sour", "description": "Coctel bandera del Perú, sin alcohol disponible." }
+        ]
+      }
+    ],
+    "en": [
+      {
+        "id": "sec-snacks",
+        "title": "Gourmet selection",
+        "items": [
+          { "id": "item-canape", "name": "Andean canapé", "description": "Canapé with quinoa and Andean cheese." },
+          { "id": "item-pisco", "name": "Pisco sour", "description": "Peru's signature cocktail, non-alcoholic available." }
+        ]
+      }
+    ]
+  }
+}
