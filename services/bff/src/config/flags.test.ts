@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FLAG_DEFAULTS, resolveFlags, resolvePassengerFeatures } from "./flags.js";
+import { FLAG_DEFAULTS, parseFlagOverrides, resolveFlags, resolvePassengerFeatures } from "./flags.js";
 
 describe("FLAG_DEFAULTS", () => {
   it("defaults links.issuance to on, matching design Decision 13's production defaults", () => {
@@ -56,5 +56,46 @@ describe("resolvePassengerFeatures", () => {
     expect(features).not.toHaveProperty("links.issuance");
     expect(features).not.toHaveProperty("precheckin.production_collection");
     expect(features).not.toHaveProperty("pulse.staff_alerts");
+  });
+});
+
+describe("parseFlagOverrides", () => {
+  it("returns no overrides for an unset or blank value", () => {
+    expect(parseFlagOverrides(undefined)).toEqual({});
+    expect(parseFlagOverrides("")).toEqual({});
+    expect(parseFlagOverrides("   ")).toEqual({});
+  });
+
+  it("parses a JSON object of known flag keys to booleans", () => {
+    expect(parseFlagOverrides('{"wifi.checkout":true,"links.issuance":false}')).toEqual({
+      "wifi.checkout": true,
+      "links.issuance": false,
+    });
+  });
+
+  it("rejects malformed JSON with a clear error", () => {
+    expect(() => parseFlagOverrides("{wifi.checkout:true")).toThrow(/FEATURE_FLAG_OVERRIDES.*JSON/);
+  });
+
+  it("rejects a value that is not a JSON object", () => {
+    expect(() => parseFlagOverrides("[true]")).toThrow(/FEATURE_FLAG_OVERRIDES.*object/);
+    expect(() => parseFlagOverrides("true")).toThrow(/FEATURE_FLAG_OVERRIDES.*object/);
+    expect(() => parseFlagOverrides("null")).toThrow(/FEATURE_FLAG_OVERRIDES.*object/);
+  });
+
+  it("rejects unknown flag keys, naming them", () => {
+    expect(() => parseFlagOverrides('{"wifi.checkot":true}')).toThrow(/unknown flag.*wifi\.checkot/i);
+  });
+
+  it("rejects non-boolean values, naming the flag", () => {
+    expect(() => parseFlagOverrides('{"wifi.checkout":"true"}')).toThrow(/wifi\.checkout.*boolean/i);
+    expect(() => parseFlagOverrides('{"push.enabled":1}')).toThrow(/push\.enabled.*boolean/i);
+  });
+
+  it("layers on top of the defaults through resolveFlags (defaults < overrides)", () => {
+    const flags = resolveFlags(parseFlagOverrides('{"wifi.checkout":true}'));
+
+    expect(flags["wifi.checkout"]).toBe(true);
+    expect(flags["push.enabled"]).toBe(FLAG_DEFAULTS["push.enabled"]);
   });
 });

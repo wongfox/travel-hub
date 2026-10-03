@@ -3,6 +3,7 @@
  */
 import { buildApp } from "./composition-root.js";
 import { loadEnv } from "./config/env.js";
+import { resolveFlags } from "./config/flags.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "./config/alert-source-policy.js";
 import { createLogDestination, resolveLogSinkConfig } from "./infra/logging/log-sink.js";
 import { createRedactingLogger } from "./infra/logging/redacting-logger.js";
@@ -13,6 +14,11 @@ import { createPostgresWifiOrderStore } from "./adapters/wifi-order-store/postgr
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  // FLAG_DEFAULTS < FEATURE_FLAG_OVERRIDES; validated by loadEnv (same source
+  // as main-worker.ts). `trip.flags` is the root every module falls back to
+  // (content, wifiCheckout, notifications, pulse, precheckin routes), and each
+  // module still runs its go-live guard against these resolved values.
+  const flags = resolveFlags(env.FEATURE_FLAG_OVERRIDES);
 
   // Task 13.3 (observability): structured JSON logs to a configurable sink.
   // "stdout" (the default) needs no destination override — pino's own
@@ -53,6 +59,7 @@ async function main(): Promise<void> {
         log: (alert) => logger.warn({ ...alert }, "dead-letter jobs detected"),
       }),
     },
+    trip: { flags },
     tripAccess: {
       nodeEnv: env.NODE_ENV,
       ...(env.INTERNAL_LINKS_API_KEY ? { internalApiKey: env.INTERNAL_LINKS_API_KEY } : {}),
