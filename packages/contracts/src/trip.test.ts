@@ -60,6 +60,18 @@ function buildTripFixture(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 describe("TripDTOSchema", () => {
+  it("accepts optional consentTextVersions for push and pulse and round-trips them", () => {
+    const fixture = buildTripFixture({ consentTextVersions: { push: "push-v1", pulse: "pulse-v1" } });
+
+    expect(TripDTOSchema.parse(fixture)).toEqual(fixture);
+  });
+
+  it("rejects an empty consent text version", () => {
+    const fixture = buildTripFixture({ consentTextVersions: { push: "" } });
+
+    expect(TripDTOSchema.safeParse(fixture).success).toBe(false);
+  });
+
   it("round-trips a full fixture matching the design-interfaces TripDTO shape", () => {
     const fixture = buildTripFixture();
 

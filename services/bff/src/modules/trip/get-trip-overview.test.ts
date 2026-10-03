@@ -71,6 +71,27 @@ describe("getTripOverview", () => {
     expect(trip.linkId).toBe("link-1");
   });
 
+  it("omits consentTextVersions entirely when none are configured", async () => {
+    const trip = await getTripOverview(accessLink(), { sirBooking: fakeSirBooking(reservation) });
+
+    expect(trip.consentTextVersions).toBeUndefined();
+  });
+
+  it("exposes only the configured push and pulse consent text versions", async () => {
+    const both = await getTripOverview(accessLink(), {
+      sirBooking: fakeSirBooking(reservation),
+      consentTextVersions: { push: "push-v1", pulse: "pulse-v1" },
+    });
+    const onlyPush = await getTripOverview(accessLink(), {
+      sirBooking: fakeSirBooking(reservation),
+      consentTextVersions: { push: "push-v1" },
+    });
+
+    expect(both.consentTextVersions).toEqual({ push: "push-v1", pulse: "pulse-v1" });
+    expect(onlyPush.consentTextVersions).toEqual({ push: "push-v1" });
+    expect(TripDTOSchema.safeParse(both).success).toBe(true);
+  });
+
   it("scopes passengers to the access link's passengerScope, excluding out-of-scope passengers", async () => {
     const trip = await getTripOverview(accessLink({ passengerScope: ["P1"] }), {
       sirBooking: fakeSirBooking(reservation),
