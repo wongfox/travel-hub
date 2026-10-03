@@ -29,6 +29,12 @@ import { createTicketDocumentStub } from "./adapters/ticket-document/stub.js";
 import type { FlagKey } from "./config/flags.js";
 import { registerPrivacyRoutes } from "./modules/privacy/http.js";
 import { createInMemoryConsentStore, type ConsentStore } from "./modules/privacy/consent-store.js";
+import { registerPrecheckinRoutes } from "./modules/precheckin/http.js";
+import { createInMemorySubmissionStore } from "./modules/precheckin/submission-store.js";
+import type { PrecheckinDocumentStorePort, PrecheckinSubmissionStore } from "./modules/precheckin/ports.js";
+import { createPrecheckinDocumentStoreStub } from "./adapters/precheckin-document-store/stub.js";
+import { createKmsStub } from "./infra/crypto/kms-stub.js";
+import type { KeyManagementPort } from "./infra/crypto/key-management-port.js";
 
 /**
  * Dev-only default: overridden in production by `INTERNAL_LINKS_API_KEY`
@@ -41,6 +47,8 @@ const DEFAULT_LINK_EXPIRY_MS = 72 * 60 * 60 * 1000; // 72h grace, per design Dec
 const DEFAULT_SESSION_SLIDING_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, per design Decision 4 (configurable)
 const DEFAULT_SESSION_RATE_LIMIT = { max: 10, windowMs: 60_000 };
 const DEFAULT_REISSUE_RATE_LIMIT = { max: 5, windowMs: 60_000 };
+/** Dev-only default; a real deployment names its production KMS key via config (design Decision 13's KMS key prerequisite). */
+const DEFAULT_PRECHECKIN_KEY_ID = "dev-only-precheckin-key";
 
 export interface BuildAppOptions {
   /**
@@ -91,6 +99,18 @@ export interface BuildAppOptions {
    */
   privacy?: {
     consentStore?: ConsentStore;
+  };
+  /**
+   * `pre-check-in` submission/status wiring (tasks 8.3-8.4). Shares
+   * `tripAccess`'s stores and `trip`'s `sirBooking`/`flags` by default — the
+   * same session and flag table already resolved for `GET /api/trip` govern
+   * the pre check-in routes too.
+   */
+  precheckin?: {
+    submissionStore?: PrecheckinSubmissionStore;
+    documentStore?: PrecheckinDocumentStorePort;
+    kms?: KeyManagementPort;
+    keyId?: string;
   };
 }
 
@@ -155,21 +175,44 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 
+  const precheckinOptions = options.precheckin ?? {};
+  const sharedSubmissionStore = precheckinOptions.submissionStore ?? createInMemorySubmissionStore();
+
   const tripOptions = options.trip ?? {};
   registerTripRoutes(app, {
     accessLinkStore,
     sessionStore,
     sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
     ticketDocument: tripOptions.ticketDocument ?? createTicketDocumentStub(),
+    // `TripDTO.passengers[].precheckinStatus` (task 8.4) always reflects this
+    // same submission store, so a passenger who just completed pre check-in
+    // sees it on their very next `GET /api/trip`.
+    precheckinSubmissionStore: sharedSubmissionStore,
     ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
     ...(tripAccessOptions.now ? { now: tripAccessOptions.now } : {}),
   });
 
   const privacyOptions = options.privacy ?? {};
+  // Shared with `registerPrecheckinRoutes` below: a consent granted via
+  // `POST /api/consents` must be visible to pre check-in's own
+  // `assertConsentGranted` check — they MUST be the same store instance.
+  const sharedConsentStore = privacyOptions.consentStore ?? createInMemoryConsentStore();
   registerPrivacyRoutes(app, {
     accessLinkStore,
     sessionStore,
-    consentStore: privacyOptions.consentStore ?? createInMemoryConsentStore(),
+    consentStore: sharedConsentStore,
+  });
+
+  registerPrecheckinRoutes(app, {
+    accessLinkStore,
+    sessionStore,
+    sirBooking: tripOptions.sirBooking ?? sharedSirBookingStub,
+    consentStore: sharedConsentStore,
+    submissionStore: sharedSubmissionStore,
+    documentStore: precheckinOptions.documentStore ?? createPrecheckinDocumentStoreStub(),
+    kms: precheckinOptions.kms ?? createKmsStub(),
+    keyId: precheckinOptions.keyId ?? DEFAULT_PRECHECKIN_KEY_ID,
+    ...(tripOptions.flags ? { flags: tripOptions.flags } : {}),
   });
 
   return app;
