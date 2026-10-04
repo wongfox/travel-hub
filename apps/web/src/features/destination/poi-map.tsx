@@ -13,5 +13,5 @@ export interface PoiMapProps {
  * ETA map.
  */
 export function PoiMap({ mediaId, title }: PoiMapProps) {
-  return <img src={`/api/content/media/${mediaId}`} alt={title} />;
+  return <img className="poi-map" src={`/api/content/media/${mediaId}`} alt={title} />;
 }

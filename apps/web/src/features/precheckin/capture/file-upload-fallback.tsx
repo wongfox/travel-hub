@@ -1,5 +1,6 @@
 import type { ChangeEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { Icon } from "../../../shared/ui/atoms/icon.js";
 import type { PrecheckinCaptureRole } from "./capture-role.js";
 
 export interface FileUploadFallbackProps {
@@ -27,9 +28,13 @@ export function FileUploadFallback({ role, onFileSelected }: FileUploadFallbackP
   }
 
   return (
-    <label>
-      {t(`precheckin.capture.fallbackLabel.${role}`)}
+    <label className="upload">
+      <span className="upload__icon">
+        <Icon name="upload" size={28} />
+      </span>
+      <span className="upload__label">{t(`precheckin.capture.fallbackLabel.${role}`)}</span>
       <input
+        className="upload__input"
         type="file"
         accept="image/*"
         capture={captureHint}

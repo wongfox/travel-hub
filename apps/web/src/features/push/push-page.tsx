@@ -5,6 +5,11 @@ import { useTripQuery } from "../../shared/trip/use-trip-query.js";
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
 import type { PushEligibilityEnv } from "../../shared/push/push-eligibility.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { EmptyState } from "../../shared/ui/atoms/empty-state.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { PageError } from "../../shared/ui/atoms/page-error.js";
+import { ServicePage } from "../../shared/ui/templates/service-page.js";
 import { PushOptIn } from "./push-opt-in.js";
 
 export interface PushPageProps {
@@ -25,11 +30,11 @@ export function PushPage({ apiClient, env }: PushPageProps) {
   const tripQuery = useTripQuery(apiClient);
 
   if (tripQuery.isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={1} />;
   }
 
   if (tripQuery.isError) {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return <PageError>{t("trip.loadError")}</PageError>;
   }
 
   const trip = tripQuery.data;
@@ -40,22 +45,20 @@ export function PushPage({ apiClient, env }: PushPageProps) {
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("push.heading")}</h2>
-      {trip.features.pushEnabled && pushConsentTextVersion ? (
-        <PushOptIn
-          apiClient={apiClient}
-          consentTextVersion={pushConsentTextVersion}
-          cacheScope={trip.linkId}
-          a2hsPromptEnabled={trip.features.pushA2hsPrompt}
-          locale={i18n.language as Locale}
-          {...(env ? { env } : {})}
-        />
-      ) : (
-        <p>{t("push.unavailable")}</p>
-      )}
-      <nav>
-        <a href="/trip">{t("nav.home")}</a>
-      </nav>
+      <ServicePage title={t("push.heading")} icon="bell" showPrecheckin={isPrecheckinOffered(trip)}>
+        {trip.features.pushEnabled && pushConsentTextVersion ? (
+          <PushOptIn
+            apiClient={apiClient}
+            consentTextVersion={pushConsentTextVersion}
+            cacheScope={trip.linkId}
+            a2hsPromptEnabled={trip.features.pushA2hsPrompt}
+            locale={i18n.language as Locale}
+            {...(env ? { env } : {})}
+          />
+        ) : (
+          <EmptyState icon="bell">{t("push.unavailable")}</EmptyState>
+        )}
+      </ServicePage>
     </ThemeProvider>
   );
 }

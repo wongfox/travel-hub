@@ -4,6 +4,10 @@ import { useDestinationQuery } from "../../shared/content/use-content-queries.js
 import { useTripQuery } from "../../shared/trip/use-trip-query.js";
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { PageError } from "../../shared/ui/atoms/page-error.js";
+import { ServicePage } from "../../shared/ui/templates/service-page.js";
 import { PoiMap } from "./poi-map.js";
 
 export interface DestinationPageProps {
@@ -25,34 +29,36 @@ export function DestinationPage({ apiClient }: DestinationPageProps) {
 
   const isPending = poiMapQuery.isPending || howToGetThereQuery.isPending || circuitsQuery.isPending;
   if (isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={2} />;
   }
 
   const isError = poiMapQuery.isError || howToGetThereQuery.isError || circuitsQuery.isError;
   if (isError || !poiMapQuery.data || !howToGetThereQuery.data || !circuitsQuery.data) {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return <PageError>{t("trip.loadError")}</PageError>;
   }
 
   const tier = tripQuery.data ? resolveTripTier(tripQuery.data.legs, tripQuery.data.nextMilestone) : undefined;
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("destination.heading")}</h2>
-      <section>
-        <h3>{t("destination.poiMapHeading")}</h3>
-        <PoiMap mediaId={poiMapQuery.data.data.body} title={poiMapQuery.data.data.title} />
-      </section>
-      <section>
-        <h3>{t("destination.howToGetThereHeading")}</h3>
-        <p>{howToGetThereQuery.data.data.body}</p>
-      </section>
-      <section>
-        <h3>{t("destination.circuitsHeading")}</h3>
-        <p>{circuitsQuery.data.data.body}</p>
-      </section>
-      <nav>
-        <a href="/trip">{t("nav.home")}</a>
-      </nav>
+      <ServicePage
+        title={t("destination.heading")}
+        icon="destination"
+        showPrecheckin={tripQuery.data ? isPrecheckinOffered(tripQuery.data) : false}
+      >
+        <section className="content-section">
+          <h3 className="content-section__title">{t("destination.poiMapHeading")}</h3>
+          <PoiMap mediaId={poiMapQuery.data.data.body} title={poiMapQuery.data.data.title} />
+        </section>
+        <section className="content-section">
+          <h3 className="content-section__title">{t("destination.howToGetThereHeading")}</h3>
+          <p className="content-section__body">{howToGetThereQuery.data.data.body}</p>
+        </section>
+        <section className="content-section">
+          <h3 className="content-section__title">{t("destination.circuitsHeading")}</h3>
+          <p className="content-section__body">{circuitsQuery.data.data.body}</p>
+        </section>
+      </ServicePage>
     </ThemeProvider>
   );
 }

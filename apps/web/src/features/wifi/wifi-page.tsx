@@ -12,6 +12,13 @@ import {
 import { rememberWifiOrderId, resolveWifiOrderId } from "../../shared/wifi/wifi-order-session.js";
 import { WifiCatalog } from "./wifi-catalog.js";
 import { WifiEntitlementStatus } from "./wifi-entitlement-status.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { ButtonLink } from "../../shared/ui/atoms/button.js";
+import { EmptyState } from "../../shared/ui/atoms/empty-state.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { PageError } from "../../shared/ui/atoms/page-error.js";
+import { ServicePage } from "../../shared/ui/templates/service-page.js";
 import { TfeLink } from "../tfe/tfe-link.js";
 
 export interface WifiPageProps {
@@ -54,38 +61,57 @@ export function WifiPage({
   const tripQuery = useTripQuery(apiClient);
   const tier = tripQuery.data ? resolveTripTier(tripQuery.data.legs, tripQuery.data.nextMilestone) : undefined;
 
+  const showPrecheckin = tripQuery.data ? isPrecheckinOffered(tripQuery.data) : false;
+
   const orderStatusQuery = useWifiOrderStatusQuery(apiClient, returnOrderId);
   const packagesQuery = useWifiPackagesQuery(apiClient);
   const createOrderMutation = useCreateWifiOrderMutation(apiClient);
 
   if (returnIdempotencyKey) {
     if (!returnOrderId) {
-      return <p role="alert">{t("wifi.orderStatus.notFound")}</p>;
+      return (
+        <ThemeProvider tier={tier}>
+          <ServicePage title={t("wifi.heading")} icon="wifi" showPrecheckin={showPrecheckin}>
+            <Alert tone="error">{t("wifi.orderStatus.notFound")}</Alert>
+            <ButtonLink href="/trip/wifi" variant="secondary" block>
+              {t("nav.wifi")}
+            </ButtonLink>
+          </ServicePage>
+        </ThemeProvider>
+      );
     }
     if (orderStatusQuery.isPending) {
-      return <p role="status">{t("wifi.orderStatus.checking")}</p>;
+      return <LoadingState label={t("wifi.orderStatus.checking")} skeletons={1} />;
     }
     // Loaded data wins over a failed background refetch: a transient poll
     // error must not hide an order the passenger already sees.
     if (!orderStatusQuery.data) {
-      return <p role="alert">{t("trip.loadError")}</p>;
+      return <PageError>{t("trip.loadError")}</PageError>;
     }
     return (
       <ThemeProvider tier={tier}>
-        <WifiEntitlementStatus order={orderStatusQuery.data} />
+        <ServicePage title={t("wifi.heading")} icon="wifi" showPrecheckin={showPrecheckin}>
+          <WifiEntitlementStatus order={orderStatusQuery.data} />
+        </ServicePage>
       </ThemeProvider>
     );
   }
 
   if (packagesQuery.isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={2} />;
   }
 
   if (packagesQuery.isError) {
     if (packagesQuery.error instanceof ApiError && packagesQuery.error.code === "feature_disabled") {
-      return <p>{t("wifi.unavailable")}</p>;
+      return (
+        <ThemeProvider tier={tier}>
+          <ServicePage title={t("wifi.heading")} icon="wifi" showPrecheckin={showPrecheckin}>
+            <EmptyState icon="wifi">{t("wifi.unavailable")}</EmptyState>
+          </ServicePage>
+        </ThemeProvider>
+      );
     }
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return <PageError>{t("trip.loadError")}</PageError>;
   }
 
   function handleBuy(packageId: string): void {
@@ -103,9 +129,9 @@ export function WifiPage({
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("wifi.heading")}</h2>
-      <WifiCatalog packages={packagesQuery.data} onBuy={handleBuy} isBuying={createOrderMutation.isPending} />
-      {createOrderMutation.isError && <p role="alert">{t("wifi.checkoutError")}</p>}
+      <ServicePage title={t("wifi.heading")} icon="wifi" showPrecheckin={showPrecheckin}>
+        <WifiCatalog packages={packagesQuery.data} onBuy={handleBuy} isBuying={createOrderMutation.isPending} />
+        {createOrderMutation.isError && <Alert tone="error">{t("wifi.checkoutError")}</Alert>}
       {/*
         `complementary-services-redirect` (task 10.5): the design does not
         name a specific placement location, only that a `tfe` web feature
@@ -114,10 +140,8 @@ export function WifiPage({
         a paid onboard service is a reasonable complementary-services
         moment), not a business decision about where this upsell belongs.
       */}
-      <TfeLink placement="home_banner">{t("tfe.cta")}</TfeLink>
-      <nav>
-        <a href="/trip">{t("nav.home")}</a>
-      </nav>
+        <TfeLink placement="home_banner">{t("tfe.cta")}</TfeLink>
+      </ServicePage>
     </ThemeProvider>
   );
 }

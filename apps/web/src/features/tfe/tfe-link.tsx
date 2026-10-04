@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { ButtonLink } from "../../shared/ui/atoms/button.js";
+import { Icon } from "../../shared/ui/atoms/icon.js";
 
 export interface TfeLinkProps {
   /** Must match one of the BFF's allowlisted placements (`outbound/resolve-tfe-redirect.ts`); an unknown value 400s instead of redirecting. */
@@ -16,5 +18,10 @@ export interface TfeLinkProps {
  * "wired fully in 12.2" note.
  */
 export function TfeLink({ placement, children }: TfeLinkProps) {
-  return <a href={`/api/out/tfe?placement=${encodeURIComponent(placement)}`}>{children}</a>;
+  return (
+    <ButtonLink variant="secondary" block href={`/api/out/tfe?placement=${encodeURIComponent(placement)}`}>
+      {children}
+      <Icon name="external" size={18} />
+    </ButtonLink>
+  );
 }

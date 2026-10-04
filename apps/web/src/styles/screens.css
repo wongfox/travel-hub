@@ -1,0 +1,263 @@
+/*
+ * Secondary screens (phase B): service grid, shared page head, empty/status
+ * panels, help, menu, destination. Colors only via `--th-color-*` / brand tokens
+ * so the FIRST_CLASS dark theme and every tier accent apply automatically.
+ */
+
+/* Page head: service icon chip + the screen's level-2 title. */
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.page-head__icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border-radius: var(--radius-md);
+  background: var(--th-color-primary);
+  color: var(--th-color-on-primary);
+}
+
+.page-head .page__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Home: services grid (two columns of vertical cards). */
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.service-card {
+  height: 100%;
+  min-height: 7.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  color: var(--th-color-text);
+  text-decoration: none;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.service-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.service-card:active {
+  transform: scale(0.98);
+}
+
+.service-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border-radius: var(--radius-md);
+  background: var(--th-color-accent);
+  color: var(--th-color-on-accent);
+}
+
+.service-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.service-card__title {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+}
+
+.service-card__desc {
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--th-color-text-muted);
+}
+
+/* Empty / unavailable state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-5);
+  text-align: center;
+  border: 2px dashed var(--th-color-border);
+  border-radius: var(--radius-lg);
+  background: var(--th-color-surface);
+  color: var(--th-color-text-muted);
+}
+
+.empty-state__icon {
+  display: inline-flex;
+  color: var(--th-color-text-muted);
+}
+
+.empty-state__text {
+  max-width: 26ch;
+  font-weight: var(--weight-medium);
+  text-wrap: balance;
+}
+
+/* Result panel (WiFi return view) */
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-5);
+  text-align: center;
+  border-radius: var(--radius-xl);
+  border: 1px solid;
+  box-shadow: var(--shadow-md);
+}
+
+.status-panel__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 70%);
+}
+
+.status-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.status-panel__body > p + p {
+  font-size: var(--text-md);
+  font-weight: var(--weight-regular);
+}
+
+.status-panel--success {
+  background: #def2e5;
+  border-color: #3f9d68;
+  color: #0b5a36;
+}
+
+.status-panel--pending {
+  background: #e4efe8;
+  border-color: #6fa583;
+  color: #053220;
+}
+
+.status-panel--error {
+  background: #fde6e1;
+  border-color: var(--brand-accent);
+  color: #86190a;
+}
+
+/* Help: FAQ list */
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.faq__item {
+  padding: var(--space-4) var(--space-5);
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.faq__question {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-md);
+}
+
+.faq__answer {
+  margin: var(--space-2) 0 0;
+  color: var(--th-color-text-muted);
+}
+
+/* Menu: sections of dishes */
+.menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.menu-section__title {
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--th-color-primary);
+  color: var(--th-color-text);
+}
+
+.menu-section__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.menu-item {
+  padding: var(--space-3) var(--space-4);
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-md);
+}
+
+.menu-item__name {
+  font-weight: var(--weight-semibold);
+}
+
+.menu-item__desc {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--th-color-text-muted);
+}
+
+/* Destination: content sections */
+.content-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.content-section__title {
+  font-size: var(--text-lg);
+}
+
+.content-section__body {
+  color: var(--th-color-text);
+  white-space: pre-line;
+}
+
+.poi-map {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--th-color-border);
+  background: var(--th-color-background);
+}

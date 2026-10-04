@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { Locale } from "contracts";
 import type { ApiClient } from "../../shared/api/client.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { Button } from "../../shared/ui/atoms/button.js";
 import { requestRelink } from "./request-relink.js";
 
 export interface ReissueFormProps {
@@ -40,27 +42,36 @@ export function ReissueForm({ apiClient }: ReissueFormProps) {
   }
 
   if (state === "submitted") {
-    return <p role="status">{t("tripAccess.relinkForm.confirmation")}</p>;
+    return <Alert tone="success">{t("tripAccess.relinkForm.confirmation")}</Alert>;
   }
 
   return (
-    <form onSubmit={(event) => void handleSubmit(event)}>
-      <label>
-        {t("tripAccess.relinkForm.reservationRef")}
+    <form className="stack" onSubmit={(event) => void handleSubmit(event)}>
+      <label className="field">
+        <span className="field__label">{t("tripAccess.relinkForm.reservationRef")}</span>
         <input
+          className="input"
+          autoCapitalize="characters"
+          autoComplete="off"
           value={reservationRef}
           onChange={(event) => setReservationRef(event.target.value)}
           required
         />
       </label>
-      <label>
-        {t("tripAccess.relinkForm.surname")}
-        <input value={surname} onChange={(event) => setSurname(event.target.value)} required />
+      <label className="field">
+        <span className="field__label">{t("tripAccess.relinkForm.surname")}</span>
+        <input
+          className="input"
+          autoComplete="family-name"
+          value={surname}
+          onChange={(event) => setSurname(event.target.value)}
+          required
+        />
       </label>
-      <button type="submit" disabled={state === "submitting"}>
+      <Button type="submit" block disabled={state === "submitting"}>
         {t("tripAccess.relinkForm.submit")}
-      </button>
-      {state === "error" && <p role="alert">{t("tripAccess.relinkForm.error")}</p>}
+      </Button>
+      {state === "error" && <Alert tone="error">{t("tripAccess.relinkForm.error")}</Alert>}
     </form>
   );
 }

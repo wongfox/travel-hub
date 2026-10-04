@@ -1,0 +1,57 @@
+/* Link landing (opening / invalid link + re-request) and the not-found boundary. */
+.landing {
+  gap: var(--space-5);
+}
+
+.landing--opening {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-4);
+}
+
+.spinner--lg {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-width: 4px;
+}
+
+.landing__text {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--th-color-text);
+}
+
+.landing__card {
+  padding: var(--space-6) var(--space-5);
+}
+
+.not-found {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-5);
+}
+
+.not-found__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 50%;
+  background: var(--th-color-accent);
+  color: var(--th-color-on-accent);
+}
+
+.not-found__message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--th-color-text);
+}
+
+.not-found__title {
+  font-size: var(--text-2xl);
+}
