@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runStaffAlertDispatchJob } from "./dispatch-staff-alerts-job.js";
 import { createInMemoryStaffAlertStore } from "./staff-alert-store.js";
 import type { StaffAlertPort } from "./ports.js";
+import { scheduleStaffAlertDispatch, STAFF_ALERT_DISPATCH_QUEUE } from "./dispatch-staff-alerts-job.js";
 
 const PAYLOAD = {
   alertId: "alert-1",
@@ -78,5 +79,33 @@ describe("runStaffAlertDispatchJob", () => {
     const second = await runStaffAlertDispatchJob({ staffAlertStore: store, staffAlertPort });
 
     expect(second).toEqual({ processed: 0, dispatched: 0, failed: 0 });
+  });
+});
+
+describe("scheduleStaffAlertDispatch", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues an idempotent scan for its queue on every tick, defaults to 60000 ms, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const sendIdempotent = vi.fn().mockResolvedValue(undefined);
+
+    const stop = scheduleStaffAlertDispatch({ sendIdempotent }, { intervalMs: 1000 });
+    expect(sendIdempotent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    expect(sendIdempotent).toHaveBeenCalledWith(STAFF_ALERT_DISPATCH_QUEUE, "scan", {});
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+
+    const stopDefault = scheduleStaffAlertDispatch({ sendIdempotent });
+    await vi.advanceTimersByTimeAsync(60000 - 1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(2);
+    stopDefault();
   });
 });

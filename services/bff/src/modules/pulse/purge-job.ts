@@ -1,6 +1,7 @@
 import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import type { PulseResponseStore, StaffAlertStore } from "./ports.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 
 const PURGE_ACTOR = "worker:pulse-purge-job";
 
@@ -82,4 +83,19 @@ export async function registerPulsePurgeJob(queueClient: QueueClient, deps: Puls
   await queueClient.work(PULSE_PURGE_QUEUE, async () => {
     await runPulsePurgeJob(deps);
   });
+}
+
+/** Default cadence of the pulse/staff-alert retention purge (3600s); overridden by the env-driven interval in `main-worker.ts`. */
+export const PULSE_PURGE_INTERVAL_MS = 3_600_000;
+
+/**
+ * Periodically enqueues the pulse/staff-alert retention purge on the worker process (nothing else does).
+ * Delegates to `scheduleQueueScans`: idempotent natural key, logged send
+ * failures retried next tick, returns a stop function.
+ */
+export function schedulePulsePurge(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [PULSE_PURGE_QUEUE], { intervalMs: options.intervalMs ?? PULSE_PURGE_INTERVAL_MS });
 }

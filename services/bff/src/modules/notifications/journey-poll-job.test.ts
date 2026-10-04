@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryQueueClient } from "../../infra/queue/queue-client.js";
 import { registerJourneyPollJob, JOURNEY_POLL_QUEUE } from "./journey-poll-job.js";
 import { createInMemoryNotificationStore } from "./notification-store.js";
@@ -6,6 +6,7 @@ import { createInMemoryPushSubscriptionStore } from "./push-subscription-store.j
 import { createWebPushStub } from "../../adapters/web-push/stub.js";
 import { DEFAULT_ALERT_SOURCE_POLICY } from "../../config/alert-source-policy.js";
 import type { JourneyEventSourcePort } from "./ports.js";
+import { scheduleJourneyPoll, JOURNEY_POLL_QUEUE } from "./journey-poll-job.js";
 
 function buildEventSourceStub(): JourneyEventSourcePort {
   return {
@@ -55,5 +56,33 @@ describe("registerJourneyPollJob", () => {
     expect(webPush.sentPayloads).toHaveLength(1);
     const stored = await notificationStore.findByDedupeKey("RELOCATION:RES-1001:L1:2026-10-30T12:00:00.000Z");
     expect(stored?.status).toBe("sent");
+  });
+});
+
+describe("scheduleJourneyPoll", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues an idempotent scan for its queue on every tick, defaults to 60000 ms, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const sendIdempotent = vi.fn().mockResolvedValue(undefined);
+
+    const stop = scheduleJourneyPoll({ sendIdempotent }, { intervalMs: 1000 });
+    expect(sendIdempotent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    expect(sendIdempotent).toHaveBeenCalledWith(JOURNEY_POLL_QUEUE, "scan", {});
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+
+    const stopDefault = scheduleJourneyPoll({ sendIdempotent });
+    await vi.advanceTimersByTimeAsync(60000 - 1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(2);
+    stopDefault();
   });
 });

@@ -1,6 +1,7 @@
 import type { PiiAccessAuditPort } from "../../infra/audit/pii-access-audit.js";
 import type { QueueClient, QueueRetryPolicy } from "../../infra/queue/queue-client.js";
 import type { PushSubscriptionStore } from "./ports.js";
+import { scheduleQueueScans } from "../../infra/queue/schedule-queue-scans.js";
 
 const PURGE_ACTOR = "worker:push-subscription-purge-job";
 
@@ -70,4 +71,19 @@ export async function registerPushSubscriptionPurgeJob(
   await queueClient.work(PUSH_SUBSCRIPTION_PURGE_QUEUE, async () => {
     await runPushSubscriptionPurgeJob(deps);
   });
+}
+
+/** Default cadence of the push-subscription retention purge (3600s); overridden by the env-driven interval in `main-worker.ts`. */
+export const PUSH_SUBSCRIPTION_PURGE_INTERVAL_MS = 3_600_000;
+
+/**
+ * Periodically enqueues the push-subscription retention purge on the worker process (nothing else does).
+ * Delegates to `scheduleQueueScans`: idempotent natural key, logged send
+ * failures retried next tick, returns a stop function.
+ */
+export function schedulePushSubscriptionPurge(
+  queueClient: Pick<QueueClient, "sendIdempotent">,
+  options: { intervalMs?: number } = {},
+): () => void {
+  return scheduleQueueScans(queueClient, [PUSH_SUBSCRIPTION_PURGE_QUEUE], { intervalMs: options.intervalMs ?? PUSH_SUBSCRIPTION_PURGE_INTERVAL_MS });
 }

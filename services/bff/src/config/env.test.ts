@@ -91,6 +91,32 @@ describe("loadEnv", () => {
     expect(() => loadEnv({ ...base, ANALYTICS_FORWARD_INTERVAL_SECONDS: "1.5" })).toThrow();
   });
 
+  it("defaults each remaining scan interval and coerces explicit values", () => {
+    const base = { DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" };
+    const defaults = {
+      PRECHECKIN_HANDOFF_INTERVAL_SECONDS: 60,
+      PRECHECKIN_PURGE_INTERVAL_SECONDS: 3600,
+      JOURNEY_POLL_INTERVAL_SECONDS: 60,
+      PUSH_SUBSCRIPTION_PURGE_INTERVAL_SECONDS: 3600,
+      STAFF_ALERT_DISPATCH_INTERVAL_SECONDS: 60,
+      PULSE_PURGE_INTERVAL_SECONDS: 3600,
+    } as const;
+    const env = loadEnv(base);
+    for (const [key, value] of Object.entries(defaults)) {
+      expect(env[key as keyof typeof env]).toBe(value);
+      expect(loadEnv({ ...base, [key]: "5" })[key as keyof typeof env]).toBe(5);
+    }
+  });
+
+  it("rejects a non-positive or non-integer value for each remaining scan interval", () => {
+    const base = { DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" };
+    for (const key of ["PRECHECKIN_HANDOFF_INTERVAL_SECONDS", "PRECHECKIN_PURGE_INTERVAL_SECONDS", "JOURNEY_POLL_INTERVAL_SECONDS", "PUSH_SUBSCRIPTION_PURGE_INTERVAL_SECONDS", "STAFF_ALERT_DISPATCH_INTERVAL_SECONDS", "PULSE_PURGE_INTERVAL_SECONDS"]) {
+      for (const bad of ["0", "-3", "1.5"]) {
+        expect(() => loadEnv({ ...base, [key]: bad })).toThrow();
+      }
+    }
+  });
+
   it("defaults ADAPTER_CONTENT to 'stub' (task 9.1 go-live prerequisite)", () => {
     const env = loadEnv({ DATABASE_URL: "postgres://user:pass@localhost:5432/travel_hub" });
 

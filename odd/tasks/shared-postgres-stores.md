@@ -11,7 +11,7 @@ Branch 33's inventory (`odd/tasks/schedule-remaining-scans.md`, commit 941e122 o
 - [x] S2 `feat/travel-hub-mvp-34-postgres-pulse-staff-alert-stores`: pulse response store, staff alert store.
 - [x] S3 `feat/travel-hub-mvp-35-postgres-precheckin-submission-store`: precheckin submission store (document/ciphertext store stays a stub: it is a vendor/object-storage integration, out of scope).
 - [x] S4 `feat/travel-hub-mvp-36-postgres-access-link-session-stores`: access link store + session store (trip-access); security-sensitive: only token HASH stored, TTL/rotation/`superseded_by` semantics preserved, existing threat-matrix tests stay green.
-- [ ] S5 `feat/travel-hub-mvp-37-schedule-remaining-scans` (already has the inventory commit; WIP in a git stash): rebase on S4's tip, re-apply the stash, finish scheduling with the shared helper, remove the "in-memory per process" caveats from KNOWN-GAPS.
+- [x] S5 `feat/travel-hub-mvp-37-schedule-remaining-scans` (already has the inventory commit; WIP in a git stash): rebase on S4's tip, re-apply the stash, finish scheduling with the shared helper, remove the "in-memory per process" caveats from KNOWN-GAPS.
 
 ## Constraints
 - No token-exposing route; no TLS weakening; no sudo; agents must not push or touch PRs; migrations must apply cleanly on top of the previous slices' (0001..0003).

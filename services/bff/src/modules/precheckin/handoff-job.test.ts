@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runHandoffJob } from "./handoff-job.js";
 import { createInMemorySubmissionStore } from "./submission-store.js";
 import { createPrecheckinDocumentStoreStub } from "../../adapters/precheckin-document-store/stub.js";
@@ -8,6 +8,7 @@ import { createInMemoryPiiAccessAudit } from "../../infra/audit/pii-access-audit
 import { encryptEnvelope } from "../../infra/crypto/envelope-encryption.js";
 import type { KeyManagementPort } from "../../infra/crypto/key-management-port.js";
 import type { PrecheckinDocumentStorePort } from "./ports.js";
+import { scheduleHandoffScans, PRECHECKIN_HANDOFF_QUEUE } from "./handoff-job.js";
 
 const KEY_ID = "handoff-test-key";
 
@@ -225,5 +226,33 @@ describe("runHandoffJob", () => {
 
     expect(result).toEqual({ processed: 0, handedOff: 0, failed: 0 });
     expect(deps.handoffPort.deliveries).toHaveLength(0);
+  });
+});
+
+describe("scheduleHandoffScans", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("enqueues an idempotent scan for its queue on every tick, defaults to 60000 ms, and stops when asked", async () => {
+    vi.useFakeTimers();
+    const sendIdempotent = vi.fn().mockResolvedValue(undefined);
+
+    const stop = scheduleHandoffScans({ sendIdempotent }, { intervalMs: 1000 });
+    expect(sendIdempotent).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    expect(sendIdempotent).toHaveBeenCalledWith(PRECHECKIN_HANDOFF_QUEUE, "scan", {});
+
+    stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+
+    const stopDefault = scheduleHandoffScans({ sendIdempotent });
+    await vi.advanceTimersByTimeAsync(60000 - 1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendIdempotent).toHaveBeenCalledTimes(2);
+    stopDefault();
   });
 });
