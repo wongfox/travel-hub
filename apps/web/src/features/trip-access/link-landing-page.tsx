@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Locale } from "contracts";
 import type { ApiClient } from "../../shared/api/client.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { Card } from "../../shared/ui/atoms/card.js";
 import { exchangeSession } from "./exchange-session.js";
 import { readTokenFromHash } from "./read-token-from-hash.js";
 import { ReissueForm } from "./reissue-form.js";
@@ -71,12 +73,21 @@ export function LinkLandingPage({
 
   if (state === "error") {
     return (
-      <div role="alert">
-        <p>{t("tripAccess.invalidLink")}</p>
-        <ReissueForm apiClient={apiClient} />
+      <div className="page landing">
+        <Alert tone="warning" role="alert">
+          {t("tripAccess.invalidLink")}
+        </Alert>
+        <Card className="landing__card">
+          <ReissueForm apiClient={apiClient} />
+        </Card>
       </div>
     );
   }
 
-  return <p>{t("tripAccess.loading")}</p>;
+  return (
+    <div className="page landing landing--opening">
+      <span className="spinner spinner--lg" aria-hidden="true" />
+      <p className="landing__text">{t("tripAccess.loading")}</p>
+    </div>
+  );
 }
