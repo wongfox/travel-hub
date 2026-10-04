@@ -1,5 +1,8 @@
 import { useTranslation } from "react-i18next";
 import type { WifiPackageDTO } from "contracts";
+import { Button } from "../../shared/ui/atoms/button.js";
+import { EmptyState } from "../../shared/ui/atoms/empty-state.js";
+import { Icon } from "../../shared/ui/atoms/icon.js";
 
 export interface WifiCatalogProps {
   packages: WifiPackageDTO[];
@@ -27,19 +30,24 @@ export function WifiCatalog({ packages, onBuy, isBuying }: WifiCatalogProps) {
   const { t, i18n } = useTranslation();
 
   if (packages.length === 0) {
-    return <p>{t("wifi.noPackages")}</p>;
+    return <EmptyState icon="wifi">{t("wifi.noPackages")}</EmptyState>;
   }
 
   return (
-    <ul>
+    <ul className="wifi-list">
       {packages.map((pkg) => (
-        <li key={pkg.id} data-testid="wifi-package">
-          <p>{pkg.name}</p>
-          <p>{formatPrice(pkg.priceMinor, pkg.currency, i18n.language)}</p>
-          <p>{t("wifi.duration", { minutes: pkg.durationMinutes })}</p>
-          <button type="button" onClick={() => onBuy(pkg.id)} disabled={isBuying}>
+        <li key={pkg.id} data-testid="wifi-package" className="wifi-package">
+          <div className="wifi-package__top">
+            <p className="wifi-package__name">{pkg.name}</p>
+            <p className="wifi-package__price">{formatPrice(pkg.priceMinor, pkg.currency, i18n.language)}</p>
+          </div>
+          <p className="wifi-package__duration">
+            <Icon name="clock" size={16} />
+            {t("wifi.duration", { minutes: pkg.durationMinutes })}
+          </p>
+          <Button block onClick={() => onBuy(pkg.id)} disabled={isBuying}>
             {t("wifi.buy")}
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

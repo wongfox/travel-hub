@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { WifiOrderDTO } from "contracts";
+import { StatusPanel } from "../../shared/ui/atoms/status-panel.js";
 
 export interface WifiEntitlementStatusProps {
   order: WifiOrderDTO;
@@ -21,22 +22,38 @@ export function WifiEntitlementStatus({ order }: WifiEntitlementStatusProps) {
         ? new Intl.DateTimeFormat(i18n.language, { timeStyle: "short" }).format(new Date(order.entitlementExpiresAt))
         : null;
       return (
-        <div role="status">
+        <StatusPanel tone="success" role="status">
           <p>{t("wifi.orderStatus.active")}</p>
           {validUntil && <p>{t("wifi.orderStatus.activeUntil", { time: validUntil })}</p>}
-        </div>
+        </StatusPanel>
       );
     }
     case "PAID":
-      return <p role="status">{t("wifi.orderStatus.paid")}</p>;
+      return (
+        <StatusPanel tone="pending" role="status">
+          <p>{t("wifi.orderStatus.paid")}</p>
+        </StatusPanel>
+      );
     case "CREATED":
     case "PAYMENT_PENDING":
-      return <p role="status">{t("wifi.orderStatus.paymentPending")}</p>;
+      return (
+        <StatusPanel tone="pending" role="status">
+          <p>{t("wifi.orderStatus.paymentPending")}</p>
+        </StatusPanel>
+      );
     case "PAYMENT_FAILED":
-      return <p role="alert">{t("wifi.orderStatus.failed")}</p>;
+      return (
+        <StatusPanel tone="error" role="alert">
+          <p>{t("wifi.orderStatus.failed")}</p>
+        </StatusPanel>
+      );
     case "REFUND_PENDING":
     case "REFUNDED":
-      return <p role="alert">{t("wifi.orderStatus.refunded")}</p>;
+      return (
+        <StatusPanel tone="error" role="alert">
+          <p>{t("wifi.orderStatus.refunded")}</p>
+        </StatusPanel>
+      );
     default:
       return null;
   }

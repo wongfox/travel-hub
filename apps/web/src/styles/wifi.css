@@ -1,0 +1,54 @@
+/* WiFi: package catalog cards (checkout return view uses the shared `.status-panel`). */
+.wifi-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.wifi-package {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-left: 6px solid var(--th-color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.wifi-package__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.wifi-package__name {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  min-width: 0;
+}
+
+.wifi-package__price {
+  flex: none;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--th-color-primary);
+  white-space: nowrap;
+}
+
+.wifi-package__duration {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: 0.125rem var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--th-color-accent);
+  color: var(--th-color-on-accent);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}

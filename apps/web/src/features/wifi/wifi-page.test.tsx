@@ -19,7 +19,7 @@ function buildFakeApiClient(overrides: Partial<ApiClient> = {}): ApiClient {
   };
 }
 
-const TRIP = { legs: [], nextMilestone: null } as unknown as TripDTO;
+const TRIP = { legs: [], nextMilestone: null, features: {} } as unknown as TripDTO;
 
 const PACKAGES: WifiPackageDTO[] = [
   { id: "WIFI-60", code: "wifi-60", name: "WiFi 60 min", priceMinor: 1500, currency: "PEN", durationMinutes: 60 },
