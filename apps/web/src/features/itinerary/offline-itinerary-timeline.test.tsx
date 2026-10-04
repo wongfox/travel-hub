@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import type { TripLeg } from "contracts";
+import type { BoardingPassDTO, TripLeg } from "contracts";
 import { createI18n } from "../../i18n/index.js";
 import { OfflineItineraryTimeline } from "./offline-itinerary-timeline.js";
 
@@ -18,10 +18,10 @@ function buildLeg(overrides: Partial<TripLeg>): TripLeg {
   };
 }
 
-function renderTimeline(legs: TripLeg[], now?: Date) {
+function renderTimeline(legs: TripLeg[], now?: Date, boardingPasses?: BoardingPassDTO[]) {
   return render(
     <I18nextProvider i18n={createI18n({ initialLocale: "en" })}>
-      <OfflineItineraryTimeline legs={legs} now={now} />
+      <OfflineItineraryTimeline legs={legs} now={now} boardingPasses={boardingPasses} />
     </I18nextProvider>,
   );
 }
@@ -47,5 +47,15 @@ describe("OfflineItineraryTimeline", () => {
     renderTimeline([]);
 
     expect(screen.queryAllByTestId("offline-itinerary-milestone")).toHaveLength(0);
+  });
+
+  it("renders the cached boarding pass seat, coach and barcode for its leg", () => {
+    renderTimeline([buildLeg({ id: "leg-1" })], new Date("2026-11-09T00:00:00Z"), [
+      { legId: "leg-1", barcodeFormat: "QR", barcodePayload: "BP-OFFLINE", seat: "7B", coach: "A", tier: "VOYAGER" },
+    ]);
+
+    const item = screen.getByTestId("offline-itinerary-milestone");
+    expect(item).toHaveTextContent("7B");
+    expect(item).toHaveTextContent("BP-OFFLINE");
   });
 });

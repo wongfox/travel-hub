@@ -47,7 +47,8 @@
     },
     "offline": {
       "lastUpdated": "Última atualização: {time}"
-    }
+    },
+    "passengers": "Passageiros"
   },
   "alerts": {
     "relocation": {
@@ -63,7 +64,12 @@
       "inProgress": "Em andamento",
       "completed": "Concluído"
     },
-    "documentsHeading": "Documentos"
+    "documentsHeading": "Documentos",
+    "boardingPass": "Cartão de embarque",
+    "departs": "Partida",
+    "arrives": "Chegada",
+    "seat": "Assento",
+    "coach": "Vagão"
   },
   "documents": {
     "heading": "Documentos de viagem",

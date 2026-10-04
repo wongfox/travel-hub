@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { AlertDTO } from "contracts";
+import { Alert } from "../../shared/ui/atoms/alert.js";
 
 export interface RelocationAlertsProps {
   alerts: AlertDTO[];
@@ -19,10 +20,10 @@ export function RelocationAlerts({ alerts }: RelocationAlertsProps) {
   return (
     <>
       {alerts.map((alert) => (
-        <div key={alert.id} role="alert" data-testid="relocation-alert">
-          <p>{t(alert.titleKey)}</p>
+        <Alert key={alert.id} tone="warning" role="alert" testId="relocation-alert">
+          <p className="alert__title">{t(alert.titleKey)}</p>
           <p>{t(alert.bodyKey)}</p>
-        </div>
+        </Alert>
       ))}
     </>
   );

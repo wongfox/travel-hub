@@ -4,6 +4,14 @@ import type { ServiceTier } from "contracts";
  * Design-token structure for tier-driven theming (design
  * `service-tier-experience`: adapt theme via configuration/design tokens,
  * never tier-specific code branches — see `resolveThemeTokens`).
+ *
+ * Roles (every pairing below is contrast-checked in `tokens.test.ts`):
+ * - `colorBackground` / `colorText` / `colorTextMuted`: page surface and its text.
+ * - `colorSurface` / `colorBorder`: elevated cards and their hairlines.
+ * - `colorPrimary` (+ `colorSecondary`, its darker variant): the tier's ink color,
+ *   used as text/icon color on `colorBackground`/`colorSurface` and as the fill
+ *   behind `colorOnPrimary` (boarding-pass hero, active states).
+ * - `colorAccent`: the tier's soft tint, a fill behind `colorOnAccent` (badges, chips).
  */
 export interface ThemeTokens {
   colorPrimary: string;
@@ -11,57 +19,79 @@ export interface ThemeTokens {
   colorAccent: string;
   colorBackground: string;
   colorText: string;
+  colorSurface: string;
+  colorTextMuted: string;
+  colorBorder: string;
+  colorOnPrimary: string;
+  colorOnAccent: string;
 }
+
+/** Light surface shared by every non-dark theme: the brand cream page with white cards. */
+const LIGHT_BASE = {
+  colorBackground: "#f9f7f0",
+  colorText: "#14231b",
+  colorSurface: "#ffffff",
+  colorTextMuted: "#55635a",
+  colorBorder: "#e4dfcf",
+} as const;
 
 /**
  * Applied whenever the resolved tier is `UNKNOWN` or otherwise unresolved
- * (spec `service-tier-experience` "Neutral fallback when tier is unknown").
+ * (spec `service-tier-experience` "Neutral fallback when tier is unknown"):
+ * the brand identity itself (Inca Rail green on cream), no tier color.
  */
 export const NEUTRAL_THEME_TOKENS: ThemeTokens = {
-  colorPrimary: "#1f2933",
-  colorSecondary: "#3e4c59",
-  colorAccent: "#616e7c",
-  colorBackground: "#ffffff",
-  colorText: "#102a43",
+  ...LIGHT_BASE,
+  colorPrimary: "#053220",
+  colorSecondary: "#0b4a33",
+  colorAccent: "#d9ccaa",
+  colorOnPrimary: "#f9f7f0",
+  colorOnAccent: "#053220",
 };
 
 /**
- * Placeholder per-tier palette. The exact palette is a Brand/BR open item
- * (design "Open Questions": tier-specific differences beyond menu/WiFi
- * rule are TBD, pending SIR contract and Brand definition); these values
- * exist so every tier is visually distinct today without blocking on
- * brand assets, and are expected to be replaced wholesale once Brand
- * delivers the real palette — the token *shape* (`ThemeTokens`) is what
- * downstream capabilities (Phase 6+) depend on, not these specific colors.
+ * Provisional per-tier palette on top of the shared brand base (the exact
+ * tier palette is still a Brand open item, design "Open Questions"): each tier
+ * only supplies its own ink/tint pair; the light surface, text and borders
+ * are the brand's, and `FIRST_CLASS` keeps a dark surface. Components never
+ * branch on the tier — they read these values as `--th-color-*` variables.
  */
 export const TIER_THEME_TOKENS: Record<ServiceTier, ThemeTokens> = {
   VOYAGER: {
-    colorPrimary: "#0b60b0",
-    colorSecondary: "#0a4d8c",
-    colorAccent: "#3d85c6",
-    colorBackground: "#ffffff",
-    colorText: "#0b1f33",
+    ...LIGHT_BASE,
+    colorPrimary: "#1d5f8f",
+    colorSecondary: "#14476c",
+    colorAccent: "#bcd9ee",
+    colorOnPrimary: "#ffffff",
+    colorOnAccent: "#0f2f47",
   },
   VISTADOME_360: {
-    colorPrimary: "#0f9d58",
-    colorSecondary: "#0b7a43",
-    colorAccent: "#34c98d",
-    colorBackground: "#ffffff",
-    colorText: "#0b2318",
+    ...LIGHT_BASE,
+    colorPrimary: "#0c6b6f",
+    colorSecondary: "#08504f",
+    colorAccent: "#bfe3df",
+    colorOnPrimary: "#ffffff",
+    colorOnAccent: "#08373a",
   },
   PRIME: {
-    colorPrimary: "#8e24aa",
-    colorSecondary: "#6a1b7a",
-    colorAccent: "#b567c9",
-    colorBackground: "#ffffff",
-    colorText: "#26102b",
+    ...LIGHT_BASE,
+    colorPrimary: "#7b2f55",
+    colorSecondary: "#5e2240",
+    colorAccent: "#efcddd",
+    colorOnPrimary: "#ffffff",
+    colorOnAccent: "#4a1832",
   },
   FIRST_CLASS: {
-    colorPrimary: "#b8860b",
-    colorSecondary: "#8f6a08",
-    colorAccent: "#d9a441",
-    colorBackground: "#0e0e0e",
-    colorText: "#fdf6e3",
+    colorBackground: "#0b1410",
+    colorText: "#f3efe3",
+    colorSurface: "#15231c",
+    colorTextMuted: "#b4bdb4",
+    colorBorder: "#2b3d33",
+    colorPrimary: "#d8b25a",
+    colorSecondary: "#b8963f",
+    colorAccent: "#d8b25a",
+    colorOnPrimary: "#1a1405",
+    colorOnAccent: "#1a1405",
   },
   UNKNOWN: NEUTRAL_THEME_TOKENS,
 };

@@ -19,6 +19,11 @@ export default defineConfig({
       filename: "service-worker.ts",
       injectManifest: {
         injectionPoint: "self.__WB_MANIFEST",
+        // Fonts and the logo must be precached for the offline shell to look the
+        // same as online. The latin-ext subsets (~100 KB, rare glyphs only) are
+        // left out: the text still renders from the latin subset + fallback fonts.
+        globPatterns: ["**/*.{js,css,html,woff2,svg}"],
+        globIgnores: ["**/*latin-ext*.woff2"],
       },
       manifest: {
         name: "Travel Hub",
@@ -26,8 +31,8 @@ export default defineConfig({
         description: "Inca Rail passenger companion — trip, boarding pass, and travel documents.",
         start_url: "/",
         display: "standalone",
-        background_color: "#ffffff",
-        theme_color: "#ffffff",
+        background_color: "#f9f7f0",
+        theme_color: "#053220",
         // Branded icons are not yet available (open design-asset item); the
         // manifest is otherwise valid without them and installability polish
         // is deferred to a later work unit.

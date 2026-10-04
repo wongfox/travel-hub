@@ -29,6 +29,18 @@ describe("LanguageSwitcher", () => {
     expect(screen.getByRole("button", { name: "Portuguese" })).toBeInTheDocument();
   });
 
+  it("shows compact locale codes visually while the accessible name stays the language name", () => {
+    render(
+      <I18nextProvider i18n={createI18n({ initialLocale: "en" })}>
+        <LanguageSwitcher />
+      </I18nextProvider>,
+    );
+
+    const button = screen.getByRole("button", { name: "Spanish" });
+    expect(button).toHaveTextContent("ES");
+    expect(button).toHaveClass("segmented__option");
+  });
+
   it("marks the currently active locale's button as pressed", () => {
     render(
       <I18nextProvider i18n={createI18n({ initialLocale: "en" })}>

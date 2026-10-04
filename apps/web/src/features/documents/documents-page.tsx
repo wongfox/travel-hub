@@ -4,6 +4,10 @@ import { useOfflineTripQuery } from "../../shared/trip/use-offline-trip-query.js
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
 import { FreshnessBanner } from "../../shared/offline/freshness-banner.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { TripTabBar } from "../../shared/ui/molecules/trip-tab-bar.js";
 import { TicketList } from "./ticket-list.js";
 import { OfflineTicketList } from "./offline-ticket-list.js";
 
@@ -26,24 +30,27 @@ export function DocumentsPage({ apiClient }: DocumentsPageProps) {
   const state = useOfflineTripQuery(apiClient);
 
   if (state.status === "loading") {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={2} />;
   }
 
   if (state.status === "unavailable") {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return (
+      <div className="page">
+        <Alert tone="error">{t("trip.loadError")}</Alert>
+      </div>
+    );
   }
 
   if (state.status === "cache") {
     const tier = resolveTripTier(state.snapshot.legs, null);
     return (
       <ThemeProvider tier={tier}>
-        <h2>{t("documents.heading")}</h2>
-        <FreshnessBanner fetchedAt={state.snapshot.fetchedAt} />
-        <OfflineTicketList tickets={state.snapshot.tickets} />
-        <nav>
-          <a href="/trip">{t("nav.home")}</a>
-          <a href="/trip/itinerary">{t("nav.itinerary")}</a>
-        </nav>
+        <div className="page">
+          <h2 className="page__title">{t("documents.heading")}</h2>
+          <FreshnessBanner fetchedAt={state.snapshot.fetchedAt} />
+          <OfflineTicketList tickets={state.snapshot.tickets} />
+        </div>
+        <TripTabBar current="documents" />
       </ThemeProvider>
     );
   }
@@ -53,12 +60,11 @@ export function DocumentsPage({ apiClient }: DocumentsPageProps) {
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("documents.heading")}</h2>
-      <TicketList documents={trip.documents} />
-      <nav>
-        <a href="/trip">{t("nav.home")}</a>
-        <a href="/trip/itinerary">{t("nav.itinerary")}</a>
-      </nav>
+      <div className="page">
+        <h2 className="page__title">{t("documents.heading")}</h2>
+        <TicketList documents={trip.documents} />
+      </div>
+      <TripTabBar current="documents" showPrecheckin={isPrecheckinOffered(trip)} />
     </ThemeProvider>
   );
 }

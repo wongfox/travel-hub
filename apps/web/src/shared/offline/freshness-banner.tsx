@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { Icon } from "../ui/atoms/icon.js";
 
 export interface FreshnessBannerProps {
   /** `TripSnapshot.fetchedAt` — an ISO instant, formatted in the viewer's own local time. */
@@ -20,5 +21,10 @@ export function FreshnessBanner({ fetchedAt }: FreshnessBannerProps) {
     new Date(fetchedAt),
   );
 
-  return <p role="status">{t("trip.offline.lastUpdated", { time })}</p>;
+  return (
+    <p role="status" className="freshness">
+      <Icon name="offline" size={18} />
+      {t("trip.offline.lastUpdated", { time })}
+    </p>
+  );
 }

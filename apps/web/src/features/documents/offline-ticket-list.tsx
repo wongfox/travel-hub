@@ -1,14 +1,5 @@
-import { useTranslation } from "react-i18next";
-import type { TicketKind } from "contracts";
 import type { OfflineTicket } from "../../shared/offline/trip-snapshot.js";
-
-const KIND_LABEL_KEYS: Record<TicketKind, string> = {
-  TRAIN: "documents.kind.train",
-  CONSETTUR: "documents.kind.consettur",
-  INC_ENTRY: "documents.kind.incEntry",
-  MEAL_TEATIME: "documents.kind.mealTeatime",
-  OTHER: "documents.kind.other",
-};
+import { TicketCard } from "./ticket-card.js";
 
 export interface OfflineTicketListProps {
   tickets: OfflineTicket[];
@@ -24,25 +15,17 @@ export interface OfflineTicketListProps {
  * spliced in place.
  */
 export function OfflineTicketList({ tickets }: OfflineTicketListProps) {
-  const { t } = useTranslation();
-
   return (
-    <ul>
+    <ul className="stack">
       {tickets.map((ticket, index) => (
-        <li key={index} data-testid="offline-ticket-item">
-          <p>{t(KIND_LABEL_KEYS[ticket.kind])}</p>
-          <p>{ticket.title}</p>
-          {ticket.barcodePayload && (
-            <p>
-              {t("documents.barcodeLabel")}: {ticket.barcodePayload}
-            </p>
-          )}
-          {ticket.fileId && (
-            <a href={`/api/documents/${ticket.fileId}`} target="_blank" rel="noreferrer">
-              {t("documents.viewFile")}
-            </a>
-          )}
-        </li>
+        <TicketCard
+          key={index}
+          testId="offline-ticket-item"
+          kind={ticket.kind}
+          title={ticket.title}
+          barcodePayload={ticket.barcodePayload}
+          fileId={ticket.fileId}
+        />
       ))}
     </ul>
   );

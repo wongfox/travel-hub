@@ -3,6 +3,10 @@ import type { ApiClient } from "../../shared/api/client.js";
 import { useTripQuery } from "../../shared/trip/use-trip-query.js";
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { TripTabBar } from "../../shared/ui/molecules/trip-tab-bar.js";
 import { resolveTripStatus } from "./resolve-trip-status.js";
 import { TripStatusBanner } from "./trip-status-banner.js";
 import { RelocationAlerts } from "./relocation-alerts.js";
@@ -25,11 +29,15 @@ export function TripHomePage({ apiClient }: TripHomePageProps) {
   const query = useTripQuery(apiClient);
 
   if (query.isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={2} />;
   }
 
   if (query.isError) {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return (
+      <div className="page">
+        <Alert tone="error">{t("trip.loadError")}</Alert>
+      </div>
+    );
   }
 
   const trip = query.data;
@@ -38,15 +46,17 @@ export function TripHomePage({ apiClient }: TripHomePageProps) {
 
   return (
     <ThemeProvider tier={tier}>
-      <RelocationAlerts alerts={trip.alerts} />
-      <TripStatusBanner status={status} nextMilestone={trip.nextMilestone} legs={trip.legs} />
-      <nav>
-        <a href="/trip/itinerary">{t("nav.itinerary")}</a>
-        <a href="/trip/documents">{t("nav.documents")}</a>
-        {trip.features.precheckinCaptureUi && trip.consentTextVersions?.precheckin ? (
-          <a href="/trip/precheckin">{t("nav.precheckin")}</a>
-        ) : null}
-      </nav>
+      <div className="page">
+        <RelocationAlerts alerts={trip.alerts} />
+        <TripStatusBanner
+          status={status}
+          nextMilestone={trip.nextMilestone}
+          legs={trip.legs}
+          tier={tier}
+          passengers={trip.passengers}
+        />
+      </div>
+      <TripTabBar current="home" showPrecheckin={isPrecheckinOffered(trip)} />
     </ThemeProvider>
   );
 }

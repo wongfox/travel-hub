@@ -1,0 +1,190 @@
+/*
+ * App shell: a centered phone-like column (max ~480px) with a brand-green
+ * header, a themed main area and a sticky bottom tab bar. The column is the
+ * whole viewport on phones; on wide screens it sits on a deep-green backdrop.
+ */
+#app-shell {
+  width: 100%;
+  max-width: var(--column-max);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#app-shell > .theme-root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 40rem) {
+  #app-shell {
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* Themed surface: every `ThemeProvider` paints its own page color + text. */
+.theme-root {
+  background: var(--th-color-background);
+  color: var(--th-color-text);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: calc(var(--safe-top) + var(--space-3)) calc(var(--safe-right) + var(--gutter)) var(--space-3)
+    calc(var(--safe-left) + var(--gutter));
+  background: var(--brand-green);
+  color: var(--brand-cream);
+}
+
+.app-header__brand {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.app-header__logo {
+  height: 1.625rem;
+  width: auto;
+}
+
+.app-header__title {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #cfd6cf;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main > .theme-root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Standard page body: gutters, vertical rhythm, room for the safe area. */
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) calc(var(--safe-right) + var(--gutter)) var(--space-8) calc(var(--safe-left) + var(--gutter));
+}
+
+.page__title {
+  font-size: var(--text-2xl);
+  color: var(--th-color-text);
+}
+
+/* Segmented language control (header). */
+.segmented {
+  display: inline-flex;
+  padding: var(--space-1);
+  gap: 2px;
+  border-radius: var(--radius-pill);
+  background: rgb(249 247 240 / 12%);
+}
+
+.segmented__option {
+  min-width: var(--tap-min);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--brand-cream);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.segmented__option[aria-pressed="true"] {
+  background: var(--brand-cream);
+  color: var(--brand-green);
+}
+
+.segmented__option:not([aria-pressed="true"]):hover {
+  background: rgb(249 247 240 / 18%);
+}
+
+/* Bottom tab navigation: sticky inside the themed column, so it never covers content. */
+.tab-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-tabbar);
+  margin-top: auto;
+  display: flex;
+  background: var(--th-color-surface);
+  border-top: 1px solid var(--th-color-border);
+  box-shadow: 0 -4px 14px rgb(5 50 32 / 6%);
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+}
+
+.tab-bar__link {
+  position: relative;
+  flex: 1;
+  min-height: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-1);
+  color: var(--th-color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.tab-bar__link[aria-current="page"] {
+  color: var(--th-color-primary);
+}
+
+.tab-bar__link[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 3px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--th-color-primary);
+}
+
+/* Plain in-page nav (screens not yet on the tab bar): a wrapped row of pill links. */
+.app-main nav:not(.tab-bar) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--gutter);
+}
+
+.app-main nav:not(.tab-bar) a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-pill);
+  background: var(--th-color-surface);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}

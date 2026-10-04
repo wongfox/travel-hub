@@ -6,6 +6,11 @@ const TOKEN_TO_CSS_VARIABLE: Record<keyof ThemeTokens, string> = {
   colorAccent: "--th-color-accent",
   colorBackground: "--th-color-background",
   colorText: "--th-color-text",
+  colorSurface: "--th-color-surface",
+  colorTextMuted: "--th-color-text-muted",
+  colorBorder: "--th-color-border",
+  colorOnPrimary: "--th-color-on-primary",
+  colorOnAccent: "--th-color-on-accent",
 };
 
 /**

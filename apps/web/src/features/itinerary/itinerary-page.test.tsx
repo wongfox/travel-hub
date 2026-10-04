@@ -69,7 +69,18 @@ describe("ItineraryPage", () => {
 
     expect(await screen.findByTestId("itinerary-milestone")).toBeInTheDocument();
     expect(screen.getByTestId("theme-provider")).toBeInTheDocument();
-    expect(screen.getByText("Itinerary")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Itinerary" })).toBeInTheDocument();
+  });
+
+  it("offers the trip tab bar with the itinerary tab marked as current", async () => {
+    const apiClient = buildFakeApiClient(vi.fn().mockResolvedValue(buildTrip()));
+
+    renderPage(apiClient);
+
+    await screen.findByTestId("itinerary-milestone");
+    expect(screen.getByRole("link", { name: "Itinerary" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Trip" })).toHaveAttribute("href", "/trip");
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute("href", "/trip/documents");
   });
 
   it("falls back to the cached itinerary with a freshness banner when the live fetch fails (task 7.1)", async () => {
