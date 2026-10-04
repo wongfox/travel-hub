@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../atoms/icon.js";
 
-export type TripTab = "home" | "itinerary" | "documents";
+export type TripTab = "home" | "itinerary" | "documents" | "precheckin";
 
 interface TabDefinition {
   id: TripTab | "precheckin";
@@ -29,8 +29,10 @@ const PRECHECKIN_TAB: TabDefinition = {
  * `TripHomePage`): it keeps the pages router-free and unit-testable. The
  * pre check-in tab is only offered where the caller already resolved that
  * feature gate (`trip.features.precheckinCaptureUi` + published consent text).
+ * Secondary screens (help, menu, WiFi, ...) pass `current={null}`: no tab is
+ * highlighted but the bar keeps every core destination one tap away.
  */
-export function TripTabBar({ current, showPrecheckin = false }: { current: TripTab; showPrecheckin?: boolean }) {
+export function TripTabBar({ current, showPrecheckin = false }: { current: TripTab | null; showPrecheckin?: boolean }) {
   const { t } = useTranslation();
   const tabs = showPrecheckin ? [...TABS, PRECHECKIN_TAB] : TABS;
 

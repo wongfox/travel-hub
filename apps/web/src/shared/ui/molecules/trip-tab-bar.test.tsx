@@ -37,4 +37,12 @@ describe("TripTabBar", () => {
     renderBar({ current: "home", showPrecheckin: true });
     expect(screen.getByRole("link", { name: "Pre check-in" })).toHaveAttribute("href", "/trip/precheckin");
   });
+
+  it("marks no tab as current on secondary screens (current=null)", () => {
+    renderBar({ current: null });
+
+    for (const name of ["Trip", "Itinerary", "Documents"]) {
+      expect(screen.getByRole("link", { name })).not.toHaveAttribute("aria-current");
+    }
+  });
 });

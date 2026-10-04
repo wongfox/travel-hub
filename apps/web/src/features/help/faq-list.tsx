@@ -11,11 +11,11 @@ export interface FaqListProps {
  */
 export function FaqList({ entries }: FaqListProps) {
   return (
-    <dl>
+    <dl className="faq">
       {entries.map((entry) => (
-        <div key={entry.id} data-testid="faq-item">
-          <dt>{entry.question}</dt>
-          <dd>{entry.answer}</dd>
+        <div key={entry.id} data-testid="faq-item" className="faq__item">
+          <dt className="faq__question">{entry.question}</dt>
+          <dd className="faq__answer">{entry.answer}</dd>
         </div>
       ))}
     </dl>

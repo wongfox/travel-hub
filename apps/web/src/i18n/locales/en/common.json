@@ -226,5 +226,16 @@
       "declined": "No problem, we will not ask you about this trip.",
       "error": "Something went wrong recording your consent. Please try again."
     }
+  },
+  "services": {
+    "heading": "Services",
+    "description": {
+      "help": "Answers and WhatsApp support",
+      "menu": "See what is on board",
+      "destination": "Plan your visit to Machu Picchu",
+      "wifi": "Get connected on board",
+      "push": "Alerts about delays and changes",
+      "pulse": "Tell us how it went"
+    }
   }
 }

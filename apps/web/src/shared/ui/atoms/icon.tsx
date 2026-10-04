@@ -9,7 +9,19 @@ export type IconName =
   | "check"
   | "offline"
   | "external"
-  | "train";
+  | "train"
+  | "help"
+  | "menu"
+  | "destination"
+  | "wifi"
+  | "bell"
+  | "pulse"
+  | "chevron"
+  | "shield"
+  | "camera"
+  | "upload"
+  | "chat"
+  | "user";
 
 /** 24px outline paths (stroke = currentColor); purely decorative, so always `aria-hidden`. */
 const PATHS: Record<IconName, string> = {
@@ -23,6 +35,18 @@ const PATHS: Record<IconName, string> = {
   check: "m5 12.5 4.5 4.5L19 7.5",
   offline: "M3 3l18 18M8.5 8.6A5 5 0 0 0 7 12a4 4 0 0 0 .5 8H17M17.5 14.5A3.5 3.5 0 0 0 16 8a5 5 0 0 0-5.2-3",
   external: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+  help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 16.5v.01",
+  menu: "M7 3v8M5 3v5a2 2 0 0 0 4 0V3M7 11v10M17 21V3c-2.2 1.2-3.5 3.8-3.5 7 0 1.7.8 3 3.5 3",
+  destination: "M12 21s-6-5.6-6-10.5a6 6 0 1 1 12 0C18 15.4 12 21 12 21ZM12 12.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z",
+  wifi: "M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0M12 19.5v.01",
+  bell: "M6 16v-5a6 6 0 1 1 12 0v5l1.5 2h-15L6 16ZM10 20.5a2 2 0 0 0 4 0",
+  pulse: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM8.5 14a4.5 4.5 0 0 0 7 0M9 9.5v.01M15 9.5v.01",
+  chevron: "m9 6 6 6-6 6",
+  shield: "M12 3 5 6v5c0 4.5 3 8.2 7 10 4-1.8 7-5.5 7-10V6l-7-3ZM9 12l2 2 4-4",
+  camera: "M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8ZM12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z",
+  upload: "M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3",
+  chat: "M20 12a8 8 0 0 1-11.9 7L4 20l1.1-4A8 8 0 1 1 20 12Z",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20a7.5 7.5 0 0 1 15 0",
   train: "M7 4h10a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V6a2 2 0 0 1 2-2Zm-2 9h14M8 18l-2 3m12-3 2 3M9 8h6",
 };
 

@@ -9,6 +9,7 @@ import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
 import { TripTabBar } from "../../shared/ui/molecules/trip-tab-bar.js";
 import { resolveTripStatus } from "./resolve-trip-status.js";
 import { TripStatusBanner } from "./trip-status-banner.js";
+import { ServicesGrid } from "./services-grid.js";
 import { RelocationAlerts } from "./relocation-alerts.js";
 
 export interface TripHomePageProps {
@@ -55,6 +56,7 @@ export function TripHomePage({ apiClient }: TripHomePageProps) {
           tier={tier}
           passengers={trip.passengers}
         />
+        <ServicesGrid trip={trip} />
       </div>
       <TripTabBar current="home" showPrecheckin={isPrecheckinOffered(trip)} />
     </ThemeProvider>

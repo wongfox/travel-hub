@@ -33,7 +33,7 @@ function renderPage(apiClient: ApiClient) {
 
 describe("DestinationPage", () => {
   it("renders the POI map, how-to-get-there guide, and circuit explanation once loaded", async () => {
-    const trip = { legs: [], nextMilestone: null } as unknown as TripDTO;
+    const trip = { legs: [], nextMilestone: null, features: {} } as unknown as TripDTO;
     const apiClient = buildFakeApiClient({
       get: vi.fn().mockImplementation((path: string) => {
         if (path === "/api/content/destination/poi_map") {
@@ -59,7 +59,7 @@ describe("DestinationPage", () => {
   });
 
   it("acceptance: renders no live/real-time position data anywhere on the page", async () => {
-    const trip = { legs: [], nextMilestone: null } as unknown as TripDTO;
+    const trip = { legs: [], nextMilestone: null, features: {} } as unknown as TripDTO;
     const apiClient = buildFakeApiClient({
       get: vi.fn().mockImplementation((path: string) => {
         if (path === "/api/content/destination/poi_map") {

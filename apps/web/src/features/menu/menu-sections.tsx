@@ -16,13 +16,13 @@ export function MenuSections({ sections }: MenuSectionsProps) {
   return (
     <>
       {sections.map((section) => (
-        <section key={section.id} data-testid="menu-section">
-          <h3>{section.title}</h3>
-          <ul>
+        <section key={section.id} data-testid="menu-section" className="menu-section">
+          <h3 className="menu-section__title">{section.title}</h3>
+          <ul className="menu-section__items">
             {section.items.map((item) => (
-              <li key={item.id} data-testid="menu-item">
-                <p>{item.name}</p>
-                {item.description && <p>{item.description}</p>}
+              <li key={item.id} data-testid="menu-item" className="menu-item">
+                <p className="menu-item__name">{item.name}</p>
+                {item.description && <p className="menu-item__desc">{item.description}</p>}
               </li>
             ))}
           </ul>

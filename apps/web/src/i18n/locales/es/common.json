@@ -226,5 +226,16 @@
       "declined": "Sin problema, no te preguntaremos sobre este viaje.",
       "error": "Algo salió mal al registrar tu consentimiento. Inténtalo de nuevo."
     }
+  },
+  "services": {
+    "heading": "Servicios",
+    "description": {
+      "help": "Respuestas y soporte por WhatsApp",
+      "menu": "Descubre lo que hay a bordo",
+      "destination": "Prepara tu visita a Machu Picchu",
+      "wifi": "Conéctate a bordo",
+      "push": "Avisos de retrasos y cambios",
+      "pulse": "Cuéntanos cómo te fue"
+    }
   }
 }

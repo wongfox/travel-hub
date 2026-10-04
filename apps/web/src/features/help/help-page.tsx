@@ -4,6 +4,10 @@ import { useFaqQuery } from "../../shared/content/use-content-queries.js";
 import { useTripQuery } from "../../shared/trip/use-trip-query.js";
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { PageError } from "../../shared/ui/atoms/page-error.js";
+import { ServicePage } from "../../shared/ui/templates/service-page.js";
 import { FaqList } from "./faq-list.js";
 import { WhatsAppButton } from "./whatsapp-button.js";
 
@@ -22,23 +26,25 @@ export function HelpPage({ apiClient }: HelpPageProps) {
   const tripQuery = useTripQuery(apiClient);
 
   if (faqQuery.isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={2} />;
   }
 
   if (faqQuery.isError) {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return <PageError>{t("trip.loadError")}</PageError>;
   }
 
   const tier = tripQuery.data ? resolveTripTier(tripQuery.data.legs, tripQuery.data.nextMilestone) : undefined;
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("help.heading")}</h2>
-      <FaqList entries={faqQuery.data.data} />
-      <WhatsAppButton />
-      <nav>
-        <a href="/trip">{t("nav.home")}</a>
-      </nav>
+      <ServicePage
+        title={t("help.heading")}
+        icon="help"
+        showPrecheckin={tripQuery.data ? isPrecheckinOffered(tripQuery.data) : false}
+      >
+        <FaqList entries={faqQuery.data.data} />
+        <WhatsAppButton />
+      </ServicePage>
     </ThemeProvider>
   );
 }

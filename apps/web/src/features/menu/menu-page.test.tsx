@@ -36,7 +36,7 @@ describe("MenuPage", () => {
       fallbackTier: false,
       etag: "x",
     };
-    const trip = { legs: [], nextMilestone: null } as unknown as TripDTO;
+    const trip = { legs: [], nextMilestone: null, features: {} } as unknown as TripDTO;
     const apiClient = buildFakeApiClient({
       get: vi.fn().mockImplementation((path: string) => {
         if (path === "/api/content/menu") return Promise.resolve(menu);
@@ -59,7 +59,7 @@ describe("MenuPage", () => {
       fallbackTier: false,
       etag: "x",
     };
-    const trip = { legs: [], nextMilestone: null } as unknown as TripDTO;
+    const trip = { legs: [], nextMilestone: null, features: {} } as unknown as TripDTO;
     const apiClient = buildFakeApiClient({
       get: vi.fn().mockImplementation((path: string) => {
         if (path === "/api/content/menu") return Promise.resolve(menu);

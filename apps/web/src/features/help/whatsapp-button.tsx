@@ -1,4 +1,6 @@
 import { useTranslation } from "react-i18next";
+import { ButtonLink } from "../../shared/ui/atoms/button.js";
+import { Icon } from "../../shared/ui/atoms/icon.js";
 import { buildWhatsAppDeepLink } from "./whatsapp-config.js";
 
 /**
@@ -11,8 +13,9 @@ export function WhatsAppButton() {
   const { t } = useTranslation();
 
   return (
-    <a href={buildWhatsAppDeepLink()} target="_blank" rel="noreferrer">
+    <ButtonLink href={buildWhatsAppDeepLink()} target="_blank" rel="noreferrer" block>
+      <Icon name="chat" size={20} />
       {t("help.whatsapp")}
-    </a>
+    </ButtonLink>
   );
 }
