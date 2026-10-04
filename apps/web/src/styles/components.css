@@ -1,0 +1,249 @@
+/* Shared UI primitives. Colors come from the tier theme (`--th-*`) or brand constants. */
+
+/* Button: primary = accessible brand action color, secondary = themed outline, ghost = text-only. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-5);
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  text-decoration: none;
+  text-align: center;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--brand-action);
+  color: #fff;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--brand-action-hover);
+}
+
+.btn--secondary {
+  background: transparent;
+  border-color: var(--th-color-primary);
+  color: var(--th-color-primary);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  background: var(--th-color-accent);
+  color: var(--th-color-on-accent);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--th-color-primary);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--th-color-accent);
+  color: var(--th-color-on-accent);
+}
+
+.btn--block {
+  width: 100%;
+}
+
+/* Card + list rows */
+.card {
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-5);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: var(--space-3) var(--space-4);
+  background: var(--th-color-surface);
+  border: 1px solid var(--th-color-border);
+  border-radius: var(--radius-md);
+}
+
+/* Badge / chip (tier tint) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.125rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  background: var(--th-color-accent);
+  color: var(--th-color-on-accent);
+  white-space: nowrap;
+}
+
+.badge[data-tone="neutral"] {
+  background: var(--th-color-border);
+  color: var(--th-color-text);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--th-color-border);
+  background: var(--th-color-surface);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+/* Alerts: self-contained light palette so contrast holds on any theme (incl. FIRST_CLASS dark). */
+.alert {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid;
+  border-left-width: 6px;
+}
+
+.alert__icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.alert__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.alert__title {
+  font-weight: var(--weight-semibold);
+}
+
+.alert--info {
+  background: #e4efe8;
+  border-color: #6fa583;
+  color: #053220;
+}
+
+.alert--warning {
+  background: #fff1c9;
+  border-color: #e0a800;
+  color: #5a3a00;
+}
+
+.alert--error {
+  background: #fde6e1;
+  border-color: var(--brand-accent);
+  color: #86190a;
+}
+
+.alert--success {
+  background: #def2e5;
+  border-color: #3f9d68;
+  color: #0b5a36;
+}
+
+/* Loading: spinner + skeleton */
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--th-color-text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.spinner {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 3px solid var(--th-color-border);
+  border-top-color: var(--th-color-primary);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.skeleton {
+  display: block;
+  height: 1rem;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--th-color-border) 25%, var(--th-color-surface) 50%, var(--th-color-border) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton--block {
+  height: 8rem;
+  border-radius: var(--radius-lg);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Form controls (consumed by phase B screens) */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field__label {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-4);
+  background: var(--th-color-surface);
+  color: var(--th-color-text);
+  border: 1.5px solid var(--th-color-text-muted);
+  border-radius: var(--radius-md);
+}
+
+.input:focus-visible,
+.select:focus-visible {
+  outline-offset: 1px;
+}

@@ -1,0 +1,73 @@
+/*
+ * Design tokens that do NOT change per service tier: the Inca Rail brand
+ * constants, type/space/radius/shadow/z-index/motion scales. The per-tier
+ * colors (`--th-color-*`) are NOT declared here: `ThemeProvider` injects them
+ * from `shared/theme/tokens.ts` (single source of truth, contrast-tested) as
+ * inline custom properties on `.theme-root`, and components only read them.
+ */
+:root {
+  /* Brand identity (Figma "Design System" cover). */
+  --brand-green: #053220;
+  --brand-green-deep: #032316;
+  --brand-cream: #f9f7f0;
+  --brand-accent: #ff3c1d; /* decorative + focus ring only: 3.3:1 on cream, too low for text fills */
+  --brand-action: #c42a0f; /* accessible variant of the accent for filled actions (white text 5.7:1) */
+  --brand-action-hover: #a82209;
+
+  /* Typography */
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Playfair Display Variable", Georgia, "Times New Roman", serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Spacing (4px base) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+
+  /* Shape */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+  --radius-xl: 1.75rem;
+  --radius-pill: 999px;
+
+  /* Elevation (green-tinted so shadows feel warm on cream) */
+  --shadow-sm: 0 1px 2px rgb(5 50 32 / 8%);
+  --shadow-md: 0 4px 14px rgb(5 50 32 / 10%), 0 1px 3px rgb(5 50 32 / 8%);
+  --shadow-lg: 0 14px 40px rgb(5 50 32 / 18%);
+
+  /* Layering */
+  --z-header: 20;
+  --z-tabbar: 30;
+  --z-overlay: 40;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Layout */
+  --tap-min: 2.75rem; /* 44px minimum touch target */
+  --column-max: 30rem; /* ~480px phone-like column on wide screens */
+  --gutter: var(--space-4);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}

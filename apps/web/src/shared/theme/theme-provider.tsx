@@ -8,7 +8,8 @@ import { themeTokensToCssVariables } from "./to-css-variables.js";
  * wrapping element, so any descendant can consume `var(--th-color-*)`
  * without importing the theme module directly (design
  * `service-tier-experience`: theme via configuration/tokens, not
- * tier-specific code branches).
+ * tier-specific code branches). The `theme-root` class lets the global
+ * stylesheet paint the themed page surface from those same variables.
  */
 export function ThemeProvider({
   tier,
@@ -21,7 +22,7 @@ export function ThemeProvider({
   const cssVariables = themeTokensToCssVariables(tokens) as CSSProperties;
 
   return (
-    <div data-testid="theme-provider" style={cssVariables}>
+    <div data-testid="theme-provider" className="theme-root" style={cssVariables}>
       {children}
     </div>
   );

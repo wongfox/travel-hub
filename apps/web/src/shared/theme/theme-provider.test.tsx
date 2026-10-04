@@ -17,6 +17,11 @@ describe("ThemeProvider", () => {
     expect(container.style.getPropertyValue("--th-color-accent")).toBe(NEUTRAL_THEME_TOKENS.colorAccent);
     expect(container.style.getPropertyValue("--th-color-background")).toBe(NEUTRAL_THEME_TOKENS.colorBackground);
     expect(container.style.getPropertyValue("--th-color-text")).toBe(NEUTRAL_THEME_TOKENS.colorText);
+    expect(container.style.getPropertyValue("--th-color-surface")).toBe(NEUTRAL_THEME_TOKENS.colorSurface);
+    expect(container.style.getPropertyValue("--th-color-text-muted")).toBe(NEUTRAL_THEME_TOKENS.colorTextMuted);
+    expect(container.style.getPropertyValue("--th-color-border")).toBe(NEUTRAL_THEME_TOKENS.colorBorder);
+    expect(container.style.getPropertyValue("--th-color-on-primary")).toBe(NEUTRAL_THEME_TOKENS.colorOnPrimary);
+    expect(container.style.getPropertyValue("--th-color-on-accent")).toBe(NEUTRAL_THEME_TOKENS.colorOnAccent);
   });
 
   it("applies the resolved tier's tokens when a tier is known", () => {
@@ -28,6 +33,16 @@ describe("ThemeProvider", () => {
 
     const container = screen.getByTestId("theme-provider");
     expect(container.style.getPropertyValue("--th-color-primary")).toBe(TIER_THEME_TOKENS.FIRST_CLASS.colorPrimary);
+  });
+
+  it("tags the provider element with the theme-root class so global styles can paint the themed surface", () => {
+    render(
+      <ThemeProvider tier="PRIME">
+        <span>content</span>
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId("theme-provider")).toHaveClass("theme-root");
   });
 
   it("renders its children", () => {

@@ -12,6 +12,11 @@ describe("themeTokensToCssVariables", () => {
       "--th-color-accent": NEUTRAL_THEME_TOKENS.colorAccent,
       "--th-color-background": NEUTRAL_THEME_TOKENS.colorBackground,
       "--th-color-text": NEUTRAL_THEME_TOKENS.colorText,
+      "--th-color-surface": NEUTRAL_THEME_TOKENS.colorSurface,
+      "--th-color-text-muted": NEUTRAL_THEME_TOKENS.colorTextMuted,
+      "--th-color-border": NEUTRAL_THEME_TOKENS.colorBorder,
+      "--th-color-on-primary": NEUTRAL_THEME_TOKENS.colorOnPrimary,
+      "--th-color-on-accent": NEUTRAL_THEME_TOKENS.colorOnAccent,
     });
   });
 
