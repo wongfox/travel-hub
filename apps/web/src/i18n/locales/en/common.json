@@ -47,7 +47,8 @@
     },
     "offline": {
       "lastUpdated": "Last updated: {time}"
-    }
+    },
+    "passengers": "Passengers"
   },
   "alerts": {
     "relocation": {
@@ -63,7 +64,12 @@
       "inProgress": "In progress",
       "completed": "Completed"
     },
-    "documentsHeading": "Documents"
+    "documentsHeading": "Documents",
+    "boardingPass": "Boarding pass",
+    "departs": "Departs",
+    "arrives": "Arrives",
+    "seat": "Seat",
+    "coach": "Coach"
   },
   "documents": {
     "heading": "Travel documents",

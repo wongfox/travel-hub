@@ -1,13 +1,5 @@
-import { useTranslation } from "react-i18next";
-import type { TicketDTO, TicketKind } from "contracts";
-
-const KIND_LABEL_KEYS: Record<TicketKind, string> = {
-  TRAIN: "documents.kind.train",
-  CONSETTUR: "documents.kind.consettur",
-  INC_ENTRY: "documents.kind.incEntry",
-  MEAL_TEATIME: "documents.kind.mealTeatime",
-  OTHER: "documents.kind.other",
-};
+import type { TicketDTO } from "contracts";
+import { TicketCard } from "./ticket-card.js";
 
 export interface TicketListProps {
   documents: TicketDTO[];
@@ -23,25 +15,17 @@ export interface TicketListProps {
  * boarding pass) shows its payload as text instead.
  */
 export function TicketList({ documents }: TicketListProps) {
-  const { t } = useTranslation();
-
   return (
-    <ul>
+    <ul className="stack">
       {documents.map((document) => (
-        <li key={document.id} data-testid="ticket-item">
-          <p>{t(KIND_LABEL_KEYS[document.kind])}</p>
-          <p>{document.title}</p>
-          {document.barcodePayload && (
-            <p>
-              {t("documents.barcodeLabel")}: {document.barcodePayload}
-            </p>
-          )}
-          {document.fileId && (
-            <a href={`/api/documents/${document.fileId}`} target="_blank" rel="noreferrer">
-              {t("documents.viewFile")}
-            </a>
-          )}
-        </li>
+        <TicketCard
+          key={document.id}
+          testId="ticket-item"
+          kind={document.kind}
+          title={document.title}
+          barcodePayload={document.barcodePayload}
+          fileId={document.fileId}
+        />
       ))}
     </ul>
   );

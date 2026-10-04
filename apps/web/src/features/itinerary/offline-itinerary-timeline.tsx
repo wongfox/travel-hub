@@ -1,17 +1,11 @@
-import { useTranslation } from "react-i18next";
-import type { TripLeg } from "contracts";
-import { formatLocalDateTime } from "../../shared/format/format-local-datetime.js";
-import { resolveMilestoneStatus, type MilestoneStatus } from "./resolve-milestone-status.js";
-
-const STATUS_LABEL_KEYS: Record<MilestoneStatus, string> = {
-  pending: "itinerary.status.pending",
-  next: "itinerary.status.next",
-  in_progress: "itinerary.status.inProgress",
-  completed: "itinerary.status.completed",
-};
+import type { BoardingPassDTO, TripLeg } from "contracts";
+import { BoardingPassCard } from "./boarding-pass-card.js";
+import { resolveMilestoneStatus } from "./resolve-milestone-status.js";
 
 export interface OfflineItineraryTimelineProps {
   legs: TripLeg[];
+  /** The snapshot's cached boarding passes (seat/coach/barcode), matched to legs by `legId`. */
+  boardingPasses?: BoardingPassDTO[];
   /** Injectable clock for deterministic tests; defaults to `Date.now`. */
   now?: Date;
 }
@@ -29,24 +23,18 @@ export interface OfflineItineraryTimelineProps {
  * — a leg can still resolve to pending/in_progress/completed offline, just
  * never the "next" label, which needs the server's own selection logic.
  */
-export function OfflineItineraryTimeline({ legs, now = new Date() }: OfflineItineraryTimelineProps) {
-  const { t, i18n } = useTranslation();
-
+export function OfflineItineraryTimeline({ legs, boardingPasses = [], now = new Date() }: OfflineItineraryTimelineProps) {
   return (
-    <ul>
-      {legs.map((leg) => {
-        const status = resolveMilestoneStatus(leg, null, now);
-
-        return (
-          <li key={leg.id} data-testid="offline-itinerary-milestone">
-            <p>
-              {leg.origin} → {leg.destination}
-            </p>
-            <p>{formatLocalDateTime(leg.departureLocal, i18n.language)}</p>
-            <p>{t(STATUS_LABEL_KEYS[status])}</p>
-          </li>
-        );
-      })}
+    <ul className="stack">
+      {legs.map((leg) => (
+        <BoardingPassCard
+          key={leg.id}
+          testId="offline-itinerary-milestone"
+          leg={leg}
+          status={resolveMilestoneStatus(leg, null, now)}
+          boardingPass={boardingPasses.find((pass) => pass.legId === leg.id)}
+        />
+      ))}
     </ul>
   );
 }

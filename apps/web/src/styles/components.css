@@ -201,7 +201,12 @@
   display: block;
   height: 1rem;
   border-radius: var(--radius-sm);
-  background: linear-gradient(90deg, var(--th-color-border) 25%, var(--th-color-surface) 50%, var(--th-color-border) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--th-color-border) 25%,
+    color-mix(in srgb, var(--th-color-border) 45%, var(--th-color-surface)) 50%,
+    var(--th-color-border) 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }

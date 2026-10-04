@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import type { NextMilestone, TripLeg } from "contracts";
+import type { NextMilestone, ServiceTier, TripLeg } from "contracts";
 import { createI18n } from "../../i18n/index.js";
 import { TripStatusBanner } from "./trip-status-banner.js";
 
@@ -18,7 +18,13 @@ function buildLeg(overrides: Partial<TripLeg>): TripLeg {
   };
 }
 
-function renderBanner(props: { status: "upcoming" | "in_progress" | "completed"; nextMilestone: NextMilestone; legs: TripLeg[] }) {
+function renderBanner(props: {
+  status: "upcoming" | "in_progress" | "completed";
+  nextMilestone: NextMilestone;
+  legs: TripLeg[];
+  tier?: ServiceTier;
+  passengers?: { ordinal: number; displayName: string }[];
+}) {
   return render(
     <I18nextProvider i18n={createI18n({ initialLocale: "en" })}>
       <TripStatusBanner {...props} />
@@ -53,5 +59,29 @@ describe("TripStatusBanner", () => {
 
     expect(screen.getByTestId("trip-status")).toHaveTextContent("Trip complete");
     expect(screen.getByTestId("next-milestone")).toHaveTextContent("Your trip is complete");
+  });
+
+  it("shows the tier badge and the passenger names when provided", () => {
+    renderBanner({
+      status: "upcoming",
+      nextMilestone: { legId: "leg-1", kind: "departure", atLocal: "2026-11-10T08:00:00" },
+      legs: [buildLeg({})],
+      tier: "PRIME",
+      passengers: [
+        { ordinal: 0, displayName: "Ana Quispe" },
+        { ordinal: 1, displayName: "Luis Quispe" },
+      ],
+    });
+
+    expect(screen.getByText("Prime")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Passengers" })).toBeInTheDocument();
+    expect(screen.getByText("Ana Quispe")).toBeInTheDocument();
+    expect(screen.getByText("Luis Quispe")).toBeInTheDocument();
+  });
+
+  it("omits the passengers section when there are no passengers", () => {
+    renderBanner({ status: "completed", nextMilestone: null, legs: [buildLeg({})], passengers: [] });
+
+    expect(screen.queryByRole("heading", { name: "Passengers" })).not.toBeInTheDocument();
   });
 });

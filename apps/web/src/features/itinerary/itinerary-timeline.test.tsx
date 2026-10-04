@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
-import type { NextMilestone, TicketDTO, TripLeg } from "contracts";
+import type { BoardingPassDTO, NextMilestone, TicketDTO, TripLeg } from "contracts";
 import { createI18n } from "../../i18n/index.js";
 import { ItineraryTimeline } from "./itinerary-timeline.js";
 
@@ -22,6 +22,7 @@ function renderTimeline(props: {
   legs: TripLeg[];
   documents: TicketDTO[];
   nextMilestone: NextMilestone;
+  boardingPasses?: BoardingPassDTO[];
   now?: Date;
 }) {
   return render(
@@ -58,5 +59,32 @@ describe("ItineraryTimeline", () => {
 
     const milestone = screen.getByTestId("itinerary-milestone");
     expect(within(milestone).getByText("Consettur bus")).toBeInTheDocument();
+  });
+
+  it("renders the boarding pass seat, coach and barcode payload on the leg they belong to", () => {
+    const legs = [buildLeg({ id: "leg-1" }), buildLeg({ id: "leg-2", origin: "Machu Picchu", destination: "Poroy" })];
+    const boardingPasses: BoardingPassDTO[] = [
+      { legId: "leg-1", barcodeFormat: "QR", barcodePayload: "BP-LEG-1", seat: "12A", coach: "C", tier: "VOYAGER" },
+    ];
+
+    renderTimeline({ legs, documents: [], nextMilestone: null, boardingPasses, now: new Date("2026-11-10T09:00:00Z") });
+
+    const [first, second] = screen.getAllByTestId("itinerary-milestone");
+    expect(within(first!).getByText("12A")).toBeInTheDocument();
+    expect(within(first!).getByText("C")).toBeInTheDocument();
+    expect(within(first!).getByText("Seat")).toBeInTheDocument();
+    expect(within(first!).getByText("Coach")).toBeInTheDocument();
+    expect(within(first!).getByText("BP-LEG-1")).toBeInTheDocument();
+    expect(within(second!).queryByText("Seat")).not.toBeInTheDocument();
+  });
+
+  it("shows both the departure and the arrival time of the leg", () => {
+    renderTimeline({ legs: [buildLeg({})], documents: [], nextMilestone: null, now: new Date("2026-11-10T09:00:00Z") });
+
+    const milestone = screen.getByTestId("itinerary-milestone");
+    expect(within(milestone).getByText("Departs")).toBeInTheDocument();
+    expect(within(milestone).getByText("Arrives")).toBeInTheDocument();
+    expect(milestone).toHaveTextContent("8:00");
+    expect(milestone).toHaveTextContent("11:30");
   });
 });
