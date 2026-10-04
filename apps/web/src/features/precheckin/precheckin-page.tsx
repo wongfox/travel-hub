@@ -5,6 +5,14 @@ import type { ApiClient } from "../../shared/api/client.js";
 import { TRIP_QUERY_KEY, useTripQuery } from "../../shared/trip/use-trip-query.js";
 import { resolveTripTier } from "../../shared/trip/resolve-trip-tier.js";
 import { ThemeProvider } from "../../shared/theme/theme-provider.js";
+import { Button } from "../../shared/ui/atoms/button.js";
+import { Icon } from "../../shared/ui/atoms/icon.js";
+import { EmptyState } from "../../shared/ui/atoms/empty-state.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { PageError } from "../../shared/ui/atoms/page-error.js";
+import { StatusPanel } from "../../shared/ui/atoms/status-panel.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { ServicePage } from "../../shared/ui/templates/service-page.js";
 import type { MediaDevicesLike } from "./capture/camera-capture.js";
 import { PrecheckinConsentGate } from "./consent/precheckin-consent-gate.js";
 import { PrecheckinSubmissionFlow } from "./precheckin-submission-flow.js";
@@ -40,11 +48,11 @@ export function PrecheckinPage({ apiClient, mediaDevices }: PrecheckinPageProps)
   const [justSubmitted, setJustSubmitted] = useState<ReadonlySet<number>>(new Set());
 
   if (tripQuery.isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={2} />;
   }
 
   if (tripQuery.isError) {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return <PageError>{t("trip.loadError")}</PageError>;
   }
 
   const trip = tripQuery.data;
@@ -52,18 +60,12 @@ export function PrecheckinPage({ apiClient, mediaDevices }: PrecheckinPageProps)
   const consentTextVersion = trip.consentTextVersions?.precheckin;
   const available = trip.features.precheckinCaptureUi && Boolean(consentTextVersion);
 
-  const nav = (
-    <nav>
-      <a href="/trip">{t("nav.home")}</a>
-    </nav>
-  );
-
   if (!available || !consentTextVersion) {
     return (
       <ThemeProvider tier={tier}>
-        <h2>{t("precheckin.page.heading")}</h2>
-        <p>{t("precheckin.page.unavailable")}</p>
-        {nav}
+        <ServicePage title={t("precheckin.page.heading")} icon="precheckin">
+          <EmptyState icon="precheckin">{t("precheckin.page.unavailable")}</EmptyState>
+        </ServicePage>
       </ThemeProvider>
     );
   }
@@ -86,21 +88,23 @@ export function PrecheckinPage({ apiClient, mediaDevices }: PrecheckinPageProps)
   let body;
   if (selected && justSubmitted.has(selected.ordinal)) {
     body = (
-      <div>
-        <p role="status">{t("precheckin.page.received")}</p>
+      <div className="stack">
+        <StatusPanel tone="success" role="status">
+          <p>{t("precheckin.page.received")}</p>
+        </StatusPanel>
         {hasPendingOthers && (
-          <button type="button" onClick={() => setSelectedOrdinal(null)}>
+          <Button variant="secondary" block onClick={() => setSelectedOrdinal(null)}>
             {t("precheckin.page.choose")}
-          </button>
+          </Button>
         )}
       </div>
     );
   } else if (selected && selected.precheckinStatus !== "none") {
     body = (
-      <div role="status">
+      <StatusPanel tone="success" role="status">
         <p>{t(`precheckin.page.status.${selected.precheckinStatus}`)}</p>
         <p>{t("precheckin.page.statusOnly")}</p>
-      </div>
+      </StatusPanel>
     );
   } else if (selected) {
     body = (
@@ -120,25 +124,33 @@ export function PrecheckinPage({ apiClient, mediaDevices }: PrecheckinPageProps)
               {...(mediaDevices ? { mediaDevices } : {})}
             />
           ) : (
-            <p role="alert">{t("precheckin.page.unavailable")}</p>
+            <Alert tone="error">{t("precheckin.page.unavailable")}</Alert>
           )
         }
       </PrecheckinConsentGate>
     );
   } else {
     body = (
-      <div>
-        <p>{t("precheckin.page.choosePassenger")}</p>
-        <ul>
+      <div className="stack">
+        <p className="lead">{t("precheckin.page.choosePassenger")}</p>
+        <ul className="passenger-cards">
           {passengers.map((passenger) => {
             const status = justSubmitted.has(passenger.ordinal) ? "received" : passenger.precheckinStatus;
             return (
-              <li key={passenger.ordinal}>
-                <span>{passenger.displayName}</span> <span>{t(`precheckin.page.status.${status}`)}</span>
+              <li key={passenger.ordinal} className="passenger-card">
+                <div className="passenger-card__row">
+                  <span className="passenger-card__avatar">
+                    <Icon name="user" size={22} />
+                  </span>
+                  <span className="passenger-card__name">{passenger.displayName}</span>
+                  <span className="badge" data-tone={status === "none" ? "neutral" : "success"}>
+                    {t(`precheckin.page.status.${status}`)}
+                  </span>
+                </div>
                 {status === "none" && (
-                  <button type="button" onClick={() => setSelectedOrdinal(passenger.ordinal)}>
+                  <Button block onClick={() => setSelectedOrdinal(passenger.ordinal)}>
                     {t("precheckin.page.start", { name: passenger.displayName })}
-                  </button>
+                  </Button>
                 )}
               </li>
             );
@@ -150,9 +162,9 @@ export function PrecheckinPage({ apiClient, mediaDevices }: PrecheckinPageProps)
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("precheckin.page.heading")}</h2>
-      {body}
-      {nav}
+      <ServicePage title={t("precheckin.page.heading")} icon="precheckin" current="precheckin" showPrecheckin>
+        {body}
+      </ServicePage>
     </ThemeProvider>
   );
 }

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DocumentTypeSchema, type DocumentType } from "contracts";
 import { ApiError, type ApiClient } from "../../shared/api/client.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { Button } from "../../shared/ui/atoms/button.js";
 import type { MediaDevicesLike } from "./capture/camera-capture.js";
 import { PrecheckinCaptureStep, type PrecheckinCaptureAccepted } from "./capture/precheckin-capture-step.js";
 import { submitPrecheckin } from "./submit-precheckin.js";
@@ -16,6 +18,17 @@ export interface PrecheckinSubmissionFlowProps {
   onSubmitted: () => void;
   /** Injectable for tests; defaults to `navigator.mediaDevices`. */
   mediaDevices?: MediaDevicesLike;
+}
+
+/** Decorative three-step progress (photo, ID, details); the step headings carry the meaning. */
+function StepDots({ current }: { current: 1 | 2 | 3 }) {
+  return (
+    <ol className="steps" aria-hidden="true">
+      {[1, 2, 3].map((step) => (
+        <li key={step} className="steps__dot" data-state={step < current ? "done" : step === current ? "current" : "todo"} />
+      ))}
+    </ol>
+  );
 }
 
 type SubmitState = "idle" | "submitting" | "error" | "unavailable";
@@ -77,42 +90,51 @@ export function PrecheckinSubmissionFlow({
   }
 
   if (submitState === "unavailable") {
-    return <p role="alert">{t("precheckin.submit.unavailable")}</p>;
+    return <Alert tone="error">{t("precheckin.submit.unavailable")}</Alert>;
   }
 
   if (!photo) {
     return (
-      <PrecheckinCaptureStep
-        key="photo"
-        role="photo"
-        onAccepted={handleAccepted}
-        {...(mediaDevices ? { mediaDevices } : {})}
-      />
+      <div className="stack">
+        <StepDots current={1} />
+        <PrecheckinCaptureStep
+          key="photo"
+          role="photo"
+          onAccepted={handleAccepted}
+          {...(mediaDevices ? { mediaDevices } : {})}
+        />
+      </div>
     );
   }
 
   if (!idFront) {
     return (
-      <PrecheckinCaptureStep
-        key="id_front"
-        role="id_front"
-        onAccepted={handleAccepted}
-        {...(mediaDevices ? { mediaDevices } : {})}
-      />
+      <div className="stack">
+        <StepDots current={2} />
+        <PrecheckinCaptureStep
+          key="id_front"
+          role="id_front"
+          onAccepted={handleAccepted}
+          {...(mediaDevices ? { mediaDevices } : {})}
+        />
+      </div>
     );
   }
 
   const submitting = submitState === "submitting";
   return (
     <form
+      className="stack"
       onSubmit={(event) => {
         event.preventDefault();
         void handleSubmit();
       }}
     >
-      <label>
-        {t("precheckin.submit.docTypeLabel")}
+      <StepDots current={3} />
+      <label className="field">
+        <span className="field__label">{t("precheckin.submit.docTypeLabel")}</span>
         <select
+          className="select"
           value={docType}
           onChange={(event) => setDocType(event.target.value as DocumentType | "")}
           disabled={submitting}
@@ -125,10 +147,10 @@ export function PrecheckinSubmissionFlow({
           ))}
         </select>
       </label>
-      {submitState === "error" && <p role="alert">{t("precheckin.submit.error")}</p>}
-      <button type="submit" disabled={docType === "" || submitting}>
+      {submitState === "error" && <Alert tone="error">{t("precheckin.submit.error")}</Alert>}
+      <Button type="submit" block disabled={docType === "" || submitting}>
         {submitting ? t("precheckin.submit.submitting") : t("precheckin.submit.submit")}
-      </button>
+      </Button>
     </form>
   );
 }

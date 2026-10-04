@@ -95,21 +95,31 @@ export function CameraCapture({
   }
 
   return (
-    <div data-testid={`camera-capture-${role}`}>
-      <video
-        ref={videoRef}
-        autoPlay
-        muted
-        playsInline
-        data-testid={`camera-video-${role}`}
-        // Ready only once the first frame is decoded: before that `videoWidth` is 0 and a capture would draw an empty canvas.
-        onLoadedData={() => setReady(true)}
-      />
-      {ready && (
-        <button type="button" onClick={() => void handleCapture()}>
-          {t("precheckin.capture.captureButton")}
-        </button>
-      )}
+    <div
+      data-testid={`camera-capture-${role}`}
+      className={`camera camera--${role === "photo" ? "face" : "id"}`}
+      data-ready={ready}
+    >
+      <div className="camera__frame">
+        <video
+          className="camera__video"
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          data-testid={`camera-video-${role}`}
+          // Ready only once the first frame is decoded: before that `videoWidth` is 0 and a capture would draw an empty canvas.
+          onLoadedData={() => setReady(true)}
+        />
+        <span className="camera__guide" aria-hidden="true" />
+      </div>
+      <div className="camera__bar">
+        {ready && (
+          <button type="button" className="camera__shutter" onClick={() => void handleCapture()}>
+            <span className="visually-hidden">{t("precheckin.capture.captureButton")}</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

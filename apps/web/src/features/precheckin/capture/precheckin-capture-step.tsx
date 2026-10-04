@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Alert } from "../../../shared/ui/atoms/alert.js";
 import { CameraCapture, type MediaDevicesLike } from "./camera-capture.js";
 import { FileUploadFallback } from "./file-upload-fallback.js";
 import {
@@ -75,13 +76,13 @@ export function PrecheckinCaptureStep({
   }
 
   return (
-    <div>
-      <h3>{t(`precheckin.capture.roles.${role}`)}</h3>
+    <div className="capture-step">
+      <h3 className="capture-step__title">{t(`precheckin.capture.roles.${role}`)}</h3>
       {rejection && (
-        <p role="alert">
+        <Alert tone="warning">
           {t("precheckin.capture.recapturePrompt")}{" "}
           {rejection.map((reason) => t(`precheckin.capture.qualityIssues.${reason}`)).join(" ")}
-        </p>
+        </Alert>
       )}
       {mode === "camera" ? (
         <CameraCapture
