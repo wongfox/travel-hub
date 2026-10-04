@@ -2,6 +2,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Locale } from "contracts";
 import { ApiError, type ApiClient } from "../../shared/api/client.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { Button } from "../../shared/ui/atoms/button.js";
+import { Icon } from "../../shared/ui/atoms/icon.js";
+import { StatusPanel } from "../../shared/ui/atoms/status-panel.js";
 import { PurposeConsentGate } from "../../shared/consent/purpose-consent-gate.js";
 import { createPushSubscription } from "../../shared/push/get-push.js";
 import {
@@ -71,7 +75,11 @@ export function PushOptIn({
     if (!a2hsPromptEnabled) {
       return null;
     }
-    return <p data-testid="push-a2hs-explainer">{t("push.a2hsExplainer")}</p>;
+    return (
+      <Alert tone="info" testId="push-a2hs-explainer">
+        {t("push.a2hsExplainer")}
+      </Alert>
+    );
   }
 
   // Consent comes BEFORE the browser permission prompt: the enable button
@@ -128,15 +136,22 @@ function PushEnableButton({ apiClient, locale, subscribeToBrowserPush, onConsent
   }
 
   if (state === "subscribed") {
-    return <p role="status">{t("push.subscribed")}</p>;
+    return (
+      <StatusPanel tone="success" role="status">
+        <p>{t("push.subscribed")}</p>
+      </StatusPanel>
+    );
   }
 
   return (
-    <div>
-      <button onClick={() => void handleOptIn()} disabled={state === "subscribing"}>
+    <div className="opt-in">
+      <span className="opt-in__icon">
+        <Icon name="bell" size={32} />
+      </span>
+      <Button block onClick={() => void handleOptIn()} disabled={state === "subscribing"}>
         {t("push.optIn")}
-      </button>
-      {state === "error" && <p role="alert">{t("push.optInError")}</p>}
+      </Button>
+      {state === "error" && <Alert tone="error">{t("push.optInError")}</Alert>}
     </div>
   );
 }

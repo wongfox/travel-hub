@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConsentPurpose } from "contracts";
 import type { ApiClient } from "../api/client.js";
+import { Alert } from "../ui/atoms/alert.js";
 import { cacheGrantedConsent, clearCachedConsent, hasCachedGrantedConsent } from "./consent-cache.js";
 import { PurposeConsentScreen } from "./purpose-consent-screen.js";
 import { submitConsent } from "./submit-consent.js";
@@ -75,17 +76,17 @@ export function PurposeConsentGate({
     return <>{typeof children === "function" ? children({ onConsentRequired, ...(recordId ? { consentRecordId: recordId } : {}) }) : children}</>;
   }
   if (state === "declined") {
-    return <p role="status">{t(`${i18nPrefix}.declined`)}</p>;
+    return <Alert tone="info">{t(`${i18nPrefix}.declined`)}</Alert>;
   }
   return (
-    <div>
+    <div className="stack">
       <PurposeConsentScreen
         i18nPrefix={i18nPrefix}
         onAccept={() => void record(true)}
         onDecline={() => void record(false)}
         submitting={state === "submitting"}
       />
-      {state === "error" && <p role="alert">{t(`${i18nPrefix}.error`)}</p>}
+      {state === "error" && <Alert tone="error">{t(`${i18nPrefix}.error`)}</Alert>}
     </div>
   );
 }

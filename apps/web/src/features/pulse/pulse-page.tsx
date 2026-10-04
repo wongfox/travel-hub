@@ -10,6 +10,13 @@ import { resolvePulseTriggerLeg } from "../../shared/pulse/resolve-pulse-trigger
 import { hasAnsweredPulseLocally, markPulseAnsweredLocally } from "../../shared/pulse/pulse-answered-storage.js";
 import { requestPulsePrompt } from "../../shared/pulse/get-pulse.js";
 import { useSubmitPulseResponseMutation } from "../../shared/pulse/use-pulse-mutations.js";
+import { isPrecheckinOffered } from "../../shared/trip/is-precheckin-offered.js";
+import { EmptyState } from "../../shared/ui/atoms/empty-state.js";
+import { LoadingState } from "../../shared/ui/atoms/loading-state.js";
+import { PageError } from "../../shared/ui/atoms/page-error.js";
+import { ServicePage } from "../../shared/ui/templates/service-page.js";
+import { Alert } from "../../shared/ui/atoms/alert.js";
+import { StatusPanel } from "../../shared/ui/atoms/status-panel.js";
 import { PulsePrompt } from "./pulse-prompt.js";
 
 export interface PulsePageProps {
@@ -42,11 +49,11 @@ export function PulsePage({ apiClient }: PulsePageProps) {
     (justAnsweredLegId === triggerLeg.id || hasAnsweredPulseLocally(trip.linkId, triggerLeg.id));
 
   if (tripQuery.isPending) {
-    return <p role="status">{t("trip.loading")}</p>;
+    return <LoadingState label={t("trip.loading")} skeletons={1} />;
   }
 
   if (tripQuery.isError || !trip) {
-    return <p role="alert">{t("trip.loadError")}</p>;
+    return <PageError>{t("trip.loadError")}</PageError>;
   }
 
   const tier = resolveTripTier(trip.legs, trip.nextMilestone);
@@ -75,13 +82,15 @@ export function PulsePage({ apiClient }: PulsePageProps) {
 
   return (
     <ThemeProvider tier={tier}>
-      <h2>{t("pulse.heading")}</h2>
+      <ServicePage title={t("pulse.heading")} icon="pulse" showPrecheckin={isPrecheckinOffered(trip)}>
       {!trip.features.pulseCapture || !pulseConsentTextVersion ? (
-        <p>{t("pulse.unavailable")}</p>
+        <EmptyState icon="pulse">{t("pulse.unavailable")}</EmptyState>
       ) : !triggerLeg ? (
-        <p>{t("pulse.noMoment")}</p>
+        <EmptyState icon="pulse">{t("pulse.noMoment")}</EmptyState>
       ) : answeredLocally ? (
-        <p role="status">{t("pulse.thanks")}</p>
+        <StatusPanel tone="success" role="status">
+          <p>{t("pulse.thanks")}</p>
+        </StatusPanel>
       ) : (
         <PurposeConsentGate
           apiClient={apiClient}
@@ -101,10 +110,8 @@ export function PulsePage({ apiClient }: PulsePageProps) {
           )}
         </PurposeConsentGate>
       )}
-      {submitMutation.isError && <p role="alert">{t("pulse.submitError")}</p>}
-      <nav>
-        <a href="/trip">{t("nav.home")}</a>
-      </nav>
+      {submitMutation.isError && <Alert tone="error">{t("pulse.submitError")}</Alert>}
+      </ServicePage>
     </ThemeProvider>
   );
 }
